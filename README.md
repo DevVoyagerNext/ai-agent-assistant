@@ -1,3 +1,4 @@
+```
 personal-ai-assistant/
 ├── backend/        # Go 语言后端代码 (Gin/Go-zero)
 ├── frontend/       # 前端代码 (Vue/React)
@@ -7,3 +8,5 @@ personal-ai-assistant/
 
 后端项目启动方式：cd backend && go run main.go
 前端项目启动方式：cd frontend && npm run dev
+
+```
