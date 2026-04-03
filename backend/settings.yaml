@@ -1,0 +1,30 @@
+mysql:
+  host: 127.0.0.1
+  port: 3306
+  config: charset=utf8mb4&parseTime=True&loc=Local
+  db-name: ai_study_assistant
+  username: root
+  password: 123456
+  max-idle-conns: 10
+  max-open-conns: 100
+  log-mode: "error"
+
+jwt:
+  signing-key: "ai-study-assistant-secret-key"
+  expires-time: 7200
+  refresh-expires-time: 1209600
+  buffer-time: 86400
+  issuer: "ai-study-assistant"
+
+redis:
+  db: 0
+  addr: "localhost:6379"
+  password: "123456"
+
+email:
+  from: "1503464068@qq.com"
+  nickname: "AI Study Assistant"
+  secret: "lrzykfmkwmahgacg"
+  host: "smtp.qq.com"
+  port: 465
+  is-ssl: true
