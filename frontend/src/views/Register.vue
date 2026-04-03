@@ -5,6 +5,26 @@ import axios from 'axios'
 import Toast from '../components/Toast.vue'
 import { User, Mail, Lock, ShieldCheck, PenTool, Loader2 } from 'lucide-vue-next'
 
+interface ApiResponse<T> {
+  code: number
+  msg: string
+  data: T
+}
+
+interface AuthUser {
+  username: string
+  email: string
+  avatarUrl: string
+  signature: string
+}
+
+interface AuthData {
+  token: string
+  refreshToken: string
+  expiresAt: number
+  user: AuthUser
+}
+
 const router = useRouter()
 const loading = ref(false)
 const errorMsg = ref('')
@@ -122,14 +142,18 @@ const handleRegister = async () => {
   errorMsg.value = ''
 
   try {
-    const response = await axios.post('http://localhost:8080/v1/user/register', form)
-    if (response.data.code === 200) {
-      const { token } = response.data.data
+    const response = await axios.post<ApiResponse<AuthData>>('http://localhost:8080/v1/user/register', form)
+    const payload = response.data
+    if (payload?.code === 200 && payload.data) {
+      const { token, refreshToken, expiresAt, user } = payload.data
       localStorage.setItem('token', token)
+      localStorage.setItem('refreshToken', refreshToken)
+      localStorage.setItem('expiresAt', String(expiresAt))
+      localStorage.setItem('user', JSON.stringify(user))
       showToast('注册成功！')
       setTimeout(() => router.push('/'), 1500)
     } else {
-      showToast(response.data.msg || '注册失败', 'error')
+      showToast(payload?.msg || '注册失败', 'error')
     }
   } catch (err: any) {
     showToast(err.response?.data?.msg || '服务器连接失败', 'error')
