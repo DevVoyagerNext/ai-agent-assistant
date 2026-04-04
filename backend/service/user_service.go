@@ -93,7 +93,7 @@ func (u *UserService) Login(ctx context.Context, email, password, ip, ua string)
 			<p><b>设备信息:</b> %s</p>
 			<p>如果这不是您的操作，请及时修改密码。</p>
 		`, email, loginTime, ip, ua)
-		go utils.SendEmail([]string{email}, subject, body)
+		go utils.SendEmail(global.GVA_CONFIG.Email, []string{email}, subject, body)
 
 		return errmsg.UserPasswordError, "", "", 0, dto.UserInfoRes{}
 	}
@@ -223,7 +223,7 @@ func (u *UserService) SendRegisterCode(ctx context.Context, email string) int {
 	// 发送邮件
 	subject := "注册验证码"
 	body := fmt.Sprintf("您的注册验证码为: <b>%s</b>，有效期为 3 分钟，请勿泄露给他人。", code)
-	err := utils.SendEmail([]string{email}, subject, body)
+	err := utils.SendEmail(global.GVA_CONFIG.Email, []string{email}, subject, body)
 	if err != nil {
 		fmt.Printf("发送邮件失败: %v\n", err)
 		return errmsg.EmailSendFailedError

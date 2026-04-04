@@ -1,7 +1,7 @@
 package utils
 
 import (
-	"backend/global"
+	"backend/config"
 	"crypto/tls"
 
 	"gopkg.in/gomail.v2"
@@ -18,16 +18,17 @@ type Email struct {
 // to: 收件人列表
 // subject: 邮件主题
 // body: 邮件内容
-func SendEmail(to []string, subject string, body string) error {
-	e := global.GVA_CONFIG.Email
+func SendEmail(cfg config.Email, to []string, subject string, body string) error {
 	m := gomail.NewMessage()
-	m.SetHeader("From", m.FormatAddress(e.From, e.Nickname))
+	m.SetHeader("From", m.FormatAddress(cfg.From, cfg.Nickname))
 	m.SetHeader("To", to...)
 	m.SetHeader("Subject", subject)
 	m.SetBody("text/html", body)
 
-	d := gomail.NewDialer(e.Host, e.Port, e.From, e.Secret)
-	d.TLSConfig = &tls.Config{InsecureSkipVerify: true}
+	d := gomail.NewDialer(cfg.Host, cfg.Port, cfg.From, cfg.Secret)
+	if cfg.IsSSL {
+		d.TLSConfig = &tls.Config{InsecureSkipVerify: true}
+	}
 
 	return d.DialAndSend(m)
 }

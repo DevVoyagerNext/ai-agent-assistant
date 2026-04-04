@@ -17,6 +17,11 @@ const routes = [
         path: 'study/:node_id',
         name: 'Study',
         component: () => import('../views/StudyRoom.vue')
+      },
+      {
+        path: 'me',
+        name: 'UserProfile',
+        component: () => import('../views/UserProfile.vue')
       }
     ]
   },
@@ -41,6 +46,17 @@ const routes = [
 const router = createRouter({
   history: createWebHistory(),
   routes
+})
+
+router.beforeEach((to) => {
+  const isProtected = to.name === 'UserProfile'
+  if (!isProtected) return true
+
+  const token = localStorage.getItem('token')
+  if (!token) {
+    return { name: 'Login' }
+  }
+  return true
 })
 
 export default router

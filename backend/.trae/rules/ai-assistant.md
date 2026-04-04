@@ -7,6 +7,7 @@
 - `router/`: 路由层。存放各个模块的路由定义（如 user_router.go, order_router.go）。此目录下必须包含一个总的汇集路由文件（如 enter.go 或 router.go），负责初始化 Gin 引擎并按模块将所有子路由注册挂载。
 - `controller/`: 控制层 (Controller)。处理请求绑定、参数校验及响应发送。
 - `service/`: 业务逻辑层。负责核心业务、事务控制、数据处理。
+- `middleware/`: 中间件层。存放全局中间件（如日志、认证、权限等）。
 - `model/`: 数据层。定义实体模型及 TableName。
 - `dto/`: 存放请求(Req)与响应(Res)的结构体。
 - `pkg/utils/`: 存放统一返回格式(response)、错误码定义(errmsg)。
@@ -44,3 +45,9 @@
 - **标签使用**：所有 DTO 结构体必须包含 `json` 标签，校验使用 `binding` 标签。
 - **注释**：公有函数必须编写行首注释，说明功能、参数及返回值。
 - **Context**：所有 Service 和 Model 层函数必须将 `ctx context.Context` 作为第一个参数。
+
+## 6. 工具包(Utils)规范
+- **职责边界**：`pkg/utils/` 仅存放跨业务模块的通用纯函数（如字符串处理、加解密、类型校验）。严禁在 Utils 中包含任何具体业务逻辑（如生成特定格式的注册验证码），严禁依赖 `model`, `service`, `global` 层，严禁读取配置或操作 DB/Redis。
+- **文件与函数组织**：
+    - 允许按功能点拆分单函数文件（如 `email.go`, `xss.go`），但文件命名必须清晰表达其所属功能域。
+    - 若同一领域（如字符串处理、加解密）函数增多，应将其聚合至专门的子包（如 `pkg/utils/strutil`, `pkg/utils/crypto`）而非在 `utils` 根目录下无限平铺。

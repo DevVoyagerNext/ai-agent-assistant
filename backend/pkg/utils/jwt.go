@@ -1,7 +1,6 @@
 package utils
 
 import (
-	"backend/global"
 	"errors"
 	"time"
 
@@ -17,12 +16,18 @@ type CustomClaims struct {
 
 // JWT JWT结构体
 type JWT struct {
-	SigningKey []byte
+	SigningKey          []byte
+	Issuer              string
+	ExpiresTime         int64
+	RefreshExpiresTime  int64
 }
 
-func NewJWT() *JWT {
+func NewJWT(signingKey, issuer string, expiresTime, refreshExpiresTime int64) *JWT {
 	return &JWT{
-		SigningKey: []byte(global.GVA_CONFIG.JWT.SigningKey),
+		SigningKey:         []byte(signingKey),
+		Issuer:             issuer,
+		ExpiresTime:        expiresTime,
+		RefreshExpiresTime: refreshExpiresTime,
 	}
 }
 
@@ -30,9 +35,9 @@ func NewJWT() *JWT {
 func (j *JWT) CreateClaims(userID uint, role string, isRefresh bool) CustomClaims {
 	var expireTime int64
 	if isRefresh {
-		expireTime = global.GVA_CONFIG.JWT.RefreshExpiresTime
+		expireTime = j.RefreshExpiresTime
 	} else {
-		expireTime = global.GVA_CONFIG.JWT.ExpiresTime
+		expireTime = j.ExpiresTime
 	}
 
 	return CustomClaims{
@@ -40,7 +45,7 @@ func (j *JWT) CreateClaims(userID uint, role string, isRefresh bool) CustomClaim
 		Role:   role,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Duration(expireTime) * time.Second)),
-			Issuer:    global.GVA_CONFIG.JWT.Issuer,
+			Issuer:    j.Issuer,
 			NotBefore: jwt.NewNumericDate(time.Now()),
 		},
 	}

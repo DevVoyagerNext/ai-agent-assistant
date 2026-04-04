@@ -1,4 +1,4 @@
-import axios from 'axios'
+import axios, { AxiosHeaders } from 'axios'
 
 const request = axios.create({
   baseURL: 'http://localhost:8080/v1',
@@ -10,7 +10,9 @@ request.interceptors.request.use(
   config => {
     const token = localStorage.getItem('token')
     if (token) {
-      config.headers.Authorization = `Bearer ${token}`
+      const headers = AxiosHeaders.from(config.headers)
+      headers.set('x-token', token)
+      config.headers = headers
     }
     return config
   },

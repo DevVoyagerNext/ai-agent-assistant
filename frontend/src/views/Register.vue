@@ -110,7 +110,7 @@ const handleRegister = async () => {
       localStorage.setItem('expiresAt', String(expiresAt))
       localStorage.setItem('user', JSON.stringify(user))
       showToast('注册成功！正在跳转...')
-      setTimeout(() => router.push('/'), 1500)
+      setTimeout(() => router.push('/me'), 1500)
     } else {
       showToast(payload?.msg || '注册失败', 'error')
     }

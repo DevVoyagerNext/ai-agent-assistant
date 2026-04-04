@@ -56,7 +56,7 @@ const handleLogin = async () => {
       localStorage.setItem('expiresAt', String(expiresAt))
       localStorage.setItem('user', JSON.stringify(user))
       showToast('登录成功！')
-      setTimeout(() => router.push('/'), 1500)
+      setTimeout(() => router.push('/me'), 1500)
     } else {
       showToast(payload?.msg || '登录失败', 'error')
     }

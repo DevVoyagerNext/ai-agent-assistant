@@ -25,7 +25,12 @@ func JWTAuth() gin.HandlerFunc {
 		}
 
 		// 解析 Token
-		j := utils.NewJWT()
+		j := utils.NewJWT(
+			global.GVA_CONFIG.JWT.SigningKey,
+			global.GVA_CONFIG.JWT.Issuer,
+			global.GVA_CONFIG.JWT.ExpiresTime,
+			global.GVA_CONFIG.JWT.RefreshExpiresTime,
+		)
 		claims, err := j.ParseToken(tokenString)
 		if err != nil {
 			// Token 过期
