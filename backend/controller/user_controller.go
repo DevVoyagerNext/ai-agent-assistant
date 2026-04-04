@@ -102,7 +102,9 @@ func (u *UserController) Login(c *gin.Context) {
 	}
 
 	// 2. 调用服务执行登录
-	errCode, token, refreshToken, expiresAt, userInfo := u.userService.Login(c.Request.Context(), req.Email, req.Password, c)
+	ip := c.ClientIP()
+	ua := c.Request.UserAgent()
+	errCode, token, refreshToken, expiresAt, userInfo := u.userService.Login(c.Request.Context(), req.Email, req.Password, ip, ua)
 	if errCode != errmsg.CodeSuccess {
 		response.FailWithCode(errCode, c)
 		return

@@ -6,23 +6,35 @@ import Login from '../views/Login.vue'
 const routes = [
   {
     path: '/',
-    name: 'KnowledgeGraph',
-    component: KnowledgeGraph
+    component: () => import('../layouts/DefaultLayout.vue'),
+    children: [
+      {
+        path: '',
+        name: 'KnowledgeGraph',
+        component: KnowledgeGraph
+      },
+      {
+        path: 'study/:node_id',
+        name: 'Study',
+        component: () => import('../views/StudyRoom.vue')
+      }
+    ]
   },
   {
-    path: '/register',
-    name: 'Register',
-    component: Register
-  },
-  {
-    path: '/login',
-    name: 'Login',
-    component: Login
-  },
-  {
-    path: '/study/:node_id',
-    name: 'Study',
-    component: () => import('../views/StudyRoom.vue')
+    path: '/auth',
+    component: () => import('../layouts/AuthLayout.vue'),
+    children: [
+      {
+        path: '/register',
+        name: 'Register',
+        component: Register
+      },
+      {
+        path: '/login',
+        name: 'Login',
+        component: Login
+      }
+    ]
   }
 ]
 

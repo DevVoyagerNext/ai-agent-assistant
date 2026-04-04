@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
 
@@ -18,9 +17,8 @@ type UserService struct{}
 
 // GetUserInfo 获取用户信息 (返回脱敏后的 DTO)
 func (u *UserService) GetUserInfo(ctx context.Context, userID uint) (int, dto.UserInfoRes) {
-	var user model.User
 	var userInfo dto.UserInfoRes
-	err := global.GVA_DB.Where("id = ?", userID).First(&user).Error
+	user, err := model.GetUserByID(ctx, userID)
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return errmsg.UserNotExist, userInfo
@@ -39,7 +37,7 @@ func (u *UserService) GetUserInfo(ctx context.Context, userID uint) (int, dto.Us
 }
 
 // Login 用户登录
-func (u *UserService) Login(ctx context.Context, email, password string, c *gin.Context) (int, string, string, int64, dto.UserInfoRes) {
+func (u *UserService) Login(ctx context.Context, email, password, ip, ua string) (int, string, string, int64, dto.UserInfoRes) {
 	// 1. 检查频率限制 (基于邮箱)
 	key1m := fmt.Sprintf("login:fail:%s:1m", email)
 	key1h := fmt.Sprintf("login:fail:%s:1h", email)
@@ -59,8 +57,7 @@ func (u *UserService) Login(ctx context.Context, email, password string, c *gin.
 	}
 
 	// 2. 检查用户是否存在
-	var user model.User
-	err := global.GVA_DB.Where("email = ?", email).First(&user).Error
+	user, err := model.GetUserByEmail(ctx, email)
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return errmsg.UserNotExist, "", "", 0, dto.UserInfoRes{}
@@ -85,8 +82,6 @@ func (u *UserService) Login(ctx context.Context, email, password string, c *gin.
 		}
 
 		// 发送邮件提醒
-		ip := c.ClientIP()
-		ua := c.Request.UserAgent()
 		loginTime := time.Now().Format("2006-01-02 15:04:05")
 		subject := "登录失败提醒"
 		body := fmt.Sprintf(`
@@ -115,7 +110,7 @@ func (u *UserService) Login(ctx context.Context, email, password string, c *gin.
 
 	// 6. 更新最后登录时间
 	now := time.Now()
-	global.GVA_DB.Model(&user).Update("last_login_at", &now)
+	model.UpdateUserLastLogin(ctx, user.ID, now)
 
 	// 直接构造脱敏信息，减少数据库查询
 	userInfo := dto.UserInfoRes{
@@ -154,8 +149,7 @@ func (u *UserService) Register(ctx context.Context, username, email, password, c
 	}
 
 	// 2. 检查用户是否已存在
-	var count int64
-	global.GVA_DB.Model(&model.User{}).Where("username = ? OR email = ?", username, email).Count(&count)
+	count, _ := model.CheckUserExist(ctx, username, email)
 	if count > 0 {
 		return errmsg.UserAlreadyExistsError, "", "", 0, dto.UserInfoRes{}
 	}
@@ -175,7 +169,7 @@ func (u *UserService) Register(ctx context.Context, username, email, password, c
 	}
 
 	// 4. 入库
-	err = global.GVA_DB.Create(&user).Error
+	err = model.CreateUser(ctx, &user)
 	if err != nil {
 		return errmsg.CodeError, "", "", 0, dto.UserInfoRes{}
 	}

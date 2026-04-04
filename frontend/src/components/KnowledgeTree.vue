@@ -3,14 +3,7 @@ import { onMounted, ref, watch } from 'vue'
 import { Graph } from '@antv/x6'
 import { useRouter } from 'vue-router'
 
-interface NodeData {
-  id: string
-  name: string
-  status: 'unstarted' | 'learning' | 'completed'
-  parentId?: string
-  x?: number
-  y?: number
-}
+import type { Node as NodeData } from '../types/userProgress'
 
 const props = defineProps<{
   nodes: NodeData[]

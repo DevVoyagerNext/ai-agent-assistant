@@ -3,15 +3,12 @@ package main
 import (
 	"backend/global"
 	"backend/initialize"
+	"backend/router"
 )
 
 func main() {
-	// 初始化Viper
-	global.GVA_VP = initialize.Viper()
-	// 初始化GORM
-	global.GVA_DB = initialize.Gorm()
-	// 初始化Redis
-	global.GVA_REDIS = initialize.Redis()
+	// 初始化所有基础组件
+	initialize.InitAll()
 
 	if global.GVA_DB != nil {
 		// 程序结束前关闭数据库连接
@@ -20,6 +17,6 @@ func main() {
 	}
 
 	// 启动路由
-	r := initialize.Routers()
+	r := router.InitRouter()
 	r.Run(":8080")
 }

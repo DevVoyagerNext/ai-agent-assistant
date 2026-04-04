@@ -1,29 +1,10 @@
 <script setup lang="ts">
 import { reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import axios from 'axios'
+import { register, sendCode as sendCodeApi } from '../api/auth'
+import { validateEmail, validatePassword, validateUsername, validateCode } from '../utils/validate'
 import Toast from '../components/Toast.vue'
 import { User, Mail, Lock, ShieldCheck, PenTool, Loader2 } from 'lucide-vue-next'
-
-interface ApiResponse<T> {
-  code: number
-  msg: string
-  data: T
-}
-
-interface AuthUser {
-  username: string
-  email: string
-  avatarUrl: string
-  signature: string
-}
-
-interface AuthData {
-  token: string
-  refreshToken: string
-  expiresAt: number
-  user: AuthUser
-}
 
 const router = useRouter()
 const loading = ref(false)
@@ -52,41 +33,23 @@ const form = reactive({
 })
 
 const validate = () => {
-  // Username: 1-10位，中英文、下划线
-  const userRegex = /^[a-zA-Z0-9_\u4e00-\u9fa5]{1,10}$/
-  if (!userRegex.test(form.username)) {
-    return '用户名需为1-10位中英文或下划线'
-  }
+  const userErr = validateUsername(form.username)
+  if (userErr) return userErr
 
   const emailErr = validateEmail(form.email)
   if (emailErr) return emailErr
 
-  // Password: 8-20位，包含字母、数字、特殊符号中的至少两种
-  const passRegex = /^(?![0-9]+$)(?![a-zA-Z]+$)(?![!@#$%^&*]+$)[0-9A-Za-z!@#$%^&*]{8,20}$/
-  if (!passRegex.test(form.password)) {
-    return '密码需为8-20位，且包含字母/数字/符号中的至少两种'
-  }
+  const passErr = validatePassword(form.password)
+  if (passErr) return passErr
 
-  // Code: 4位数字或字母
-  const codeRegex = /^[a-zA-Z0-9]{4}$/
-  if (!codeRegex.test(form.code)) {
-    return '验证码需为4位数字或字母'
-  }
+  const codeErr = validateCode(form.code)
+  if (codeErr) return codeErr
 
   // Signature: 不超过30个字
   if (form.signature.length > 30) {
     return '个性签名不能超过30个字'
   }
 
-  return null
-}
-
-const validateEmail = (email: string) => {
-  // Email: 合法 QQ 邮箱
-  const emailRegex = /^[1-9][0-9]{4,10}@qq\.com$/
-  if (!emailRegex.test(email)) {
-    return '请输入合法的 QQ 邮箱格式'
-  }
   return null
 }
 
@@ -98,31 +61,27 @@ const startCountdown = () => {
     } else {
       if (timer.value) {
         clearInterval(timer.value)
-        timer.value = null
       }
     }
   }, 1000)
 }
 
 const handleSendCode = async () => {
-  const err = validateEmail(form.email)
-  if (err) {
-    showToast(err, 'error')
+  const emailErr = validateEmail(form.email)
+  if (emailErr) {
+    showToast(emailErr, 'error')
     return
   }
 
   sendLoading.value = true
-  errorMsg.value = ''
-
   try {
-    const response = await axios.post('http://localhost:8080/v1/user/send-email', {
-      email: form.email
-    })
-    if (response.data.code === 200) {
-      showToast('验证码已发送至您的邮箱，请注意查收')
+    const response = await sendCodeApi({ email: form.email })
+    const payload = response.data
+    if (payload?.code === 200) {
+      showToast('验证码发送成功！')
       startCountdown()
     } else {
-      showToast(response.data.msg || '发送失败', 'error')
+      showToast(payload?.msg || '发送验证码失败', 'error')
     }
   } catch (err: any) {
     showToast(err.response?.data?.msg || '服务器连接失败', 'error')
@@ -142,7 +101,7 @@ const handleRegister = async () => {
   errorMsg.value = ''
 
   try {
-    const response = await axios.post<ApiResponse<AuthData>>('http://localhost:8080/v1/user/register', form)
+    const response = await register(form)
     const payload = response.data
     if (payload?.code === 200 && payload.data) {
       const { token, refreshToken, expiresAt, user } = payload.data
@@ -150,7 +109,7 @@ const handleRegister = async () => {
       localStorage.setItem('refreshToken', refreshToken)
       localStorage.setItem('expiresAt', String(expiresAt))
       localStorage.setItem('user', JSON.stringify(user))
-      showToast('注册成功！')
+      showToast('注册成功！正在跳转...')
       setTimeout(() => router.push('/'), 1500)
     } else {
       showToast(payload?.msg || '注册失败', 'error')

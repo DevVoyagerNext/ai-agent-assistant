@@ -3,7 +3,8 @@
 ## 1. 完整目录架构与职责
 - `global/`: 存放全局变量（DB, Redis, Config 实例）。
 - `config/`: 配置文件结构体定义。
-- `initialize/`: 存放 Viper(配置)、Gorm(数据库)、Zap(日志)、Router(路由) 的初始化代码。
+- `initialize/`: 存放各类基础组件的初始化代码（Viper配置、Gorm数据库、Zap日志等）。此目录下必须包含一个总的汇集初始化文件（如 enter.go 或 init.go），对外暴露统一的 InitAll() 方法，按严格顺序调度各组件。
+- `router/`: 路由层。存放各个模块的路由定义（如 user_router.go, order_router.go）。此目录下必须包含一个总的汇集路由文件（如 enter.go 或 router.go），负责初始化 Gin 引擎并按模块将所有子路由注册挂载。
 - `controller/`: 控制层 (Controller)。处理请求绑定、参数校验及响应发送。
 - `service/`: 业务逻辑层。负责核心业务、事务控制、数据处理。
 - `model/`: 数据层。定义实体模型及 TableName。

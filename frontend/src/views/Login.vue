@@ -1,29 +1,10 @@
 <script setup lang="ts">
 import { reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import axios from 'axios'
+import { login } from '../api/auth'
+import { validateEmail, validatePassword } from '../utils/validate'
 import Toast from '../components/Toast.vue'
 import { Mail, Lock, Loader2 } from 'lucide-vue-next'
-
-interface ApiResponse<T> {
-  code: number
-  msg: string
-  data: T
-}
-
-interface AuthUser {
-  username: string
-  email: string
-  avatarUrl: string
-  signature: string
-}
-
-interface AuthData {
-  token: string
-  refreshToken: string
-  expiresAt: number
-  user: AuthUser
-}
 
 const router = useRouter()
 const loading = ref(false)
@@ -46,17 +27,11 @@ const form = reactive({
 })
 
 const validate = () => {
-  // Email: 合法 QQ 邮箱
-  const emailRegex = /^[1-9][0-9]{4,10}@qq\.com$/
-  if (!emailRegex.test(form.email)) {
-    return '请输入合法的 QQ 邮箱格式'
-  }
+  const emailErr = validateEmail(form.email)
+  if (emailErr) return emailErr
 
-  // Password: 8-20位，包含字母、数字、特殊符号中的至少两种
-  const passRegex = /^(?![0-9]+$)(?![a-zA-Z]+$)(?![!@#$%^&*]+$)[0-9A-Za-z!@#$%^&*]{8,20}$/
-  if (!passRegex.test(form.password)) {
-    return '密码需为8-20位，且包含字母/数字/符号中的至少两种'
-  }
+  const passErr = validatePassword(form.password)
+  if (passErr) return passErr
 
   return null
 }
@@ -72,7 +47,7 @@ const handleLogin = async () => {
   errorMsg.value = ''
 
   try {
-    const response = await axios.post<ApiResponse<AuthData>>('http://localhost:8080/v1/user/login', form)
+    const response = await login(form)
     const payload = response.data
     if (payload?.code === 200 && payload.data) {
       const { token, refreshToken, expiresAt, user } = payload.data

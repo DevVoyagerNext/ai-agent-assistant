@@ -3,7 +3,7 @@ import { onMounted } from 'vue'
 import KnowledgeTree from '../components/KnowledgeTree.vue'
 import Sidebar from '../components/Sidebar.vue'
 import AIAgent from '../components/AIAgent.vue'
-import { useUserProgressStore } from '../store/userProgress'
+import { useUserProgressStore } from '../store/useUserProgressStore'
 
 const store = useUserProgressStore()
 
