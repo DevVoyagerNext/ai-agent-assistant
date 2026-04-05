@@ -1,6 +1,7 @@
 package service
 
 import (
+	"backend/dao"
 	"backend/dto"
 	"backend/global"
 	"backend/model"
@@ -18,7 +19,7 @@ type UserService struct{}
 // GetUserInfo 获取用户信息 (返回脱敏后的 DTO)
 func (u *UserService) GetUserInfo(ctx context.Context, userID uint) (int, dto.UserInfoRes) {
 	var userInfo dto.UserInfoRes
-	user, err := model.GetUserByID(ctx, userID)
+	user, err := dao.GetUserByID(ctx, userID)
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return errmsg.UserNotExist, userInfo
@@ -26,11 +27,21 @@ func (u *UserService) GetUserInfo(ctx context.Context, userID uint) (int, dto.Us
 		return errmsg.CodeError, userInfo
 	}
 
+	// 获取统计信息
+	followersCount, _ := dao.GetUserFollowersCount(ctx, userID)
+	followingCount, _ := dao.GetUserFollowingCount(ctx, userID)
+	learnedSubjectsCount, _ := dao.GetUserLearnedSubjectsCount(ctx, userID)
+	sharedNotesCount, _ := dao.GetUserSharedNotesCount(ctx, userID)
+
 	userInfo = dto.UserInfoRes{
-		Username:  user.Username,
-		Email:     utils.DesensitizeEmail(user.Email),
-		AvatarUrl: user.AvatarUrl,
-		Signature: user.Signature,
+		Username:             user.Username,
+		Email:                utils.DesensitizeEmail(user.Email),
+		AvatarUrl:            user.AvatarUrl,
+		Signature:            user.Signature,
+		FollowersCount:       followersCount,
+		FollowingCount:       followingCount,
+		LearnedSubjectsCount: learnedSubjectsCount,
+		SharedNotesCount:     sharedNotesCount,
 	}
 
 	return errmsg.CodeSuccess, userInfo
@@ -57,7 +68,7 @@ func (u *UserService) Login(ctx context.Context, email, password, ip, ua string)
 	}
 
 	// 2. 检查用户是否存在
-	user, err := model.GetUserByEmail(ctx, email)
+	user, err := dao.GetUserByEmail(ctx, email)
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return errmsg.UserNotExist, "", "", 0, dto.UserInfoRes{}
@@ -110,14 +121,24 @@ func (u *UserService) Login(ctx context.Context, email, password, ip, ua string)
 
 	// 6. 更新最后登录时间
 	now := time.Now()
-	model.UpdateUserLastLogin(ctx, user.ID, now)
+	dao.UpdateUserLastLogin(ctx, user.ID, now)
+
+	// 获取统计信息
+	followersCount, _ := dao.GetUserFollowersCount(ctx, user.ID)
+	followingCount, _ := dao.GetUserFollowingCount(ctx, user.ID)
+	learnedSubjectsCount, _ := dao.GetUserLearnedSubjectsCount(ctx, user.ID)
+	sharedNotesCount, _ := dao.GetUserSharedNotesCount(ctx, user.ID)
 
 	// 直接构造脱敏信息，减少数据库查询
 	userInfo := dto.UserInfoRes{
-		Username:  user.Username,
-		Email:     utils.DesensitizeEmail(user.Email),
-		AvatarUrl: user.AvatarUrl,
-		Signature: user.Signature,
+		Username:             user.Username,
+		Email:                utils.DesensitizeEmail(user.Email),
+		AvatarUrl:            user.AvatarUrl,
+		Signature:            user.Signature,
+		FollowersCount:       followersCount,
+		FollowingCount:       followingCount,
+		LearnedSubjectsCount: learnedSubjectsCount,
+		SharedNotesCount:     sharedNotesCount,
 	}
 
 	return errmsg.CodeSuccess, token, refreshToken, expiresAt, userInfo
@@ -149,7 +170,7 @@ func (u *UserService) Register(ctx context.Context, username, email, password, c
 	}
 
 	// 2. 检查用户是否已存在
-	count, _ := model.CheckUserExist(ctx, username, email)
+	count, _ := dao.CheckUserExist(ctx, username, email)
 	if count > 0 {
 		return errmsg.UserAlreadyExistsError, "", "", 0, dto.UserInfoRes{}
 	}
@@ -169,7 +190,7 @@ func (u *UserService) Register(ctx context.Context, username, email, password, c
 	}
 
 	// 4. 入库
-	err = model.CreateUser(ctx, &user)
+	err = dao.CreateUser(ctx, &user)
 	if err != nil {
 		return errmsg.CodeError, "", "", 0, dto.UserInfoRes{}
 	}
@@ -182,11 +203,16 @@ func (u *UserService) Register(ctx context.Context, username, email, password, c
 	}
 
 	// 直接构造脱敏信息，不再调用 GetUserInfo，因为数据就在内存中
+	// 新注册用户统计数据全为 0
 	userInfo := dto.UserInfoRes{
-		Username:  user.Username,
-		Email:     utils.DesensitizeEmail(user.Email),
-		AvatarUrl: user.AvatarUrl,
-		Signature: user.Signature,
+		Username:             user.Username,
+		Email:                utils.DesensitizeEmail(user.Email),
+		AvatarUrl:            user.AvatarUrl,
+		Signature:            user.Signature,
+		FollowersCount:       0,
+		FollowingCount:       0,
+		LearnedSubjectsCount: 0,
+		SharedNotesCount:     0,
 	}
 
 	// 6. 清除验证码和错误记录

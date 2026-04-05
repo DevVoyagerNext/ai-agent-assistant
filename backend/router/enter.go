@@ -8,12 +8,17 @@ import (
 
 // InitRouter 初始化路由
 func InitRouter() *gin.Engine {
-	r := gin.Default()
-	r.Use(middleware.CorsMiddleware())
+	r := gin.New()
+	r.Use(
+		middleware.ZapRecovery(),
+		middleware.RequestID(),
+		middleware.ZapLogger(),
+		middleware.CorsMiddleware(),
+	)
 
 	// 注册子路由
 	userRouter := &UserRouter{}
-	
+
 	// v1 路由组
 	v1 := r.Group("/v1")
 	userRouter.InitUserRouter(v1)

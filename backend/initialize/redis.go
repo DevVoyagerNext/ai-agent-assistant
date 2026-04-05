@@ -3,9 +3,9 @@ package initialize
 import (
 	"backend/global"
 	"context"
-	"fmt"
 
 	"github.com/redis/go-redis/v9"
+	"go.uber.org/zap"
 )
 
 func Redis() *redis.Client {
@@ -17,10 +17,10 @@ func Redis() *redis.Client {
 	})
 	pong, err := client.Ping(context.Background()).Result()
 	if err != nil {
-		fmt.Println("Redis 连接测试失败, err:", err)
+		global.GVA_LOG.Error("Redis 连接测试失败", zap.Error(err))
 		return nil
 	} else {
-		fmt.Println("Redis 连接测试成功, 响应:", pong)
+		global.GVA_LOG.Info("Redis 连接测试成功", zap.String("pong", pong))
 		return client
 	}
 }

@@ -28,3 +28,14 @@ email:
   host: "smtp.qq.com"
   port: 465
   is-ssl: true
+
+log:
+  enabled: true
+  level: "info"
+  format: "console"
+  output-paths:
+    - "stdout"
+  error-output-paths:
+    - "stderr"
+  disable-caller: false
+  disable-stacktrace: false

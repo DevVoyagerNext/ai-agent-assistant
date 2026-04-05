@@ -30,6 +30,17 @@ func Gorm() *gorm.DB {
 		// 自动迁移表
 		err = db.AutoMigrate(
 			&model.User{},
+			&model.Subject{},
+			&model.KnowledgeNode{},
+			&model.KnowledgeContent{},
+			&model.UserStudyNote{},
+			&model.UserStudyStatus{},
+			&model.Image{},
+			&model.NoteShare{},
+			&model.UserNodeDifficulty{},
+			&model.UserDailyActivity{},
+			&model.UserFollow{},
+			&model.UserPrivateNote{},
 		)
 		if err != nil {
 			return nil

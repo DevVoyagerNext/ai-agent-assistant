@@ -10,6 +10,7 @@
 - `middleware/`: 中间件层。存放全局中间件（如日志、认证、权限等）。
 - `model/`: 数据层。定义实体模型及 TableName。
 - `dto/`: 存放请求(Req)与响应(Res)的结构体。
+- `dao/`: 数据持久层 (Data Access Object)。负责具体的数据库 CRUD 操作。
 - `pkg/utils/`: 存放统一返回格式(response)、错误码定义(errmsg)。
 
 ## 2. 命名风格规范 (Naming Convention)

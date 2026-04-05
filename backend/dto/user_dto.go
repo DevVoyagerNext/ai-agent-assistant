@@ -28,6 +28,12 @@ type UserInfoRes struct {
 	Email     string `json:"email"`
 	AvatarUrl string `json:"avatarUrl"`
 	Signature string `json:"signature"`
+
+	// 核心统计数据
+	FollowersCount       int64 `json:"followersCount"`       // 被关注数量 (粉丝数)
+	FollowingCount       int64 `json:"followingCount"`       // 关注数量
+	LearnedSubjectsCount int64 `json:"learnedSubjectsCount"` // 已学/在学教材总数
+	SharedNotesCount     int64 `json:"sharedNotesCount"`     // 分享笔记总数
 }
 
 // LoginReq 用户登录请求
