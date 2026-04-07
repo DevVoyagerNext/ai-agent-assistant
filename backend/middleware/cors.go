@@ -20,13 +20,22 @@ func CorsMiddleware() gin.HandlerFunc {
 
 	return func(c *gin.Context) {
 		origin := c.GetHeader("Origin")
-		if _, ok := allowedOrigins[origin]; ok {
+		allowOrigin := false
+		if origin != "" {
+			if gin.Mode() != gin.ReleaseMode {
+				allowOrigin = true
+			} else {
+				_, allowOrigin = allowedOrigins[origin]
+			}
+		}
+
+		if allowOrigin {
 			c.Header("Access-Control-Allow-Origin", origin)
 			c.Header("Vary", "Origin")
 			c.Header("Access-Control-Allow-Credentials", "true")
 			c.Header("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS")
-			c.Header("Access-Control-Allow-Headers", "Content-Type,Authorization,X-Requested-With,X-Token")
-			c.Header("Access-Control-Expose-Headers", "Content-Length,Content-Type,New-Token,New-Expires-At")
+			c.Header("Access-Control-Allow-Headers", "Content-Type,Authorization,X-Requested-With,X-Token,x-token,X-Request-Id,x-request-id")
+			c.Header("Access-Control-Expose-Headers", "Content-Length,Content-Type,New-Token,New-Expires-At,X-Request-Id")
 			c.Header("Access-Control-Max-Age", "86400")
 		}
 

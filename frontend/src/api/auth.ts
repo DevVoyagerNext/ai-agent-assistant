@@ -11,5 +11,5 @@ export const register = (data: RegisterRequest) => {
 }
 
 export const sendCode = (data: SendCodeRequest) => {
-  return request.post<ApiResponse<unknown>>('/user/send-code', data)
+  return request.post<ApiResponse<unknown>>('/user/send-email', data)
 }
