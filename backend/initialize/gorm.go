@@ -38,7 +38,8 @@ func Gorm() *gorm.DB {
 			&model.Image{},
 			&model.NoteShare{},
 			&model.UserNodeDifficulty{},
-			&model.UserDailyActivity{},
+			&model.UserActivityLog{},
+			&model.UserDailyActionStat{},
 			&model.UserFollow{},
 			&model.UserPrivateNote{},
 		)

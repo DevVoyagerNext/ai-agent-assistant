@@ -7,11 +7,20 @@ import (
 	"time"
 )
 
+// DailyActivityCount 用于接收聚合后的每日活跃度
+type DailyActivityCount struct {
+	ActivityDate  time.Time `gorm:"column:activity_date"`
+	ActivityCount int       `gorm:"column:activity_count"`
+}
+
 // GetUserActivities 获取用户一年的活跃度
-func GetUserActivities(ctx context.Context, userID uint, startTime, endTime time.Time) ([]model.UserDailyActivity, error) {
-	var activities []model.UserDailyActivity
+func GetUserActivities(ctx context.Context, userID uint, startTime, endTime time.Time) ([]DailyActivityCount, error) {
+	var activities []DailyActivityCount
 	err := global.GVA_DB.WithContext(ctx).
+		Table("user_daily_action_stats").
+		Select("activity_date, sum(action_count) as activity_count").
 		Where("user_id = ? AND activity_date >= ? AND activity_date <= ?", userID, startTime, endTime).
+		Group("activity_date").
 		Find(&activities).Error
 	return activities, err
 }
