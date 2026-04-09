@@ -30,7 +30,7 @@ const (
 	UserSignatureError     = 3007
 
 	// Login errors
-	LoginLimit1mError = 4001
-	LoginLimit1hError = 4002
+	LoginLimit1mError  = 4001
+	LoginLimit1hError  = 4002
 	LoginLimit24hError = 4003
 )

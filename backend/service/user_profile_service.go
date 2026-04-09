@@ -59,7 +59,7 @@ func (u *UserService) GetLearnedSubjects(ctx context.Context, userID uint) (int,
 	for _, subject := range subjects {
 		learned, _ := dao.GetLearnedNodeCountBySubject(ctx, userID, subject.ID)
 		total, _ := dao.GetTotalNodeCountBySubject(ctx, subject.ID)
-		
+
 		res.List = append(res.List, dto.LearnedSubjectItem{
 			SubjectID:   subject.ID,
 			SubjectName: subject.Name,

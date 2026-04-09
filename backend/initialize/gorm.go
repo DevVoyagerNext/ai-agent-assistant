@@ -31,6 +31,12 @@ func Gorm() *gorm.DB {
 		err = db.AutoMigrate(
 			&model.User{},
 			&model.Subject{},
+			&model.SubjectCategory{},
+			&model.SubjectCategoryRel{},
+			&model.UserCollectFolder{},
+			&model.UserCollectItem{},
+			&model.UserSubjectLike{},
+			&model.UserSubjectProgress{},
 			&model.KnowledgeNode{},
 			&model.NodeMetric{},
 			&model.KnowledgeContent{},

@@ -16,10 +16,10 @@ type CustomClaims struct {
 
 // JWT JWT结构体
 type JWT struct {
-	SigningKey          []byte
-	Issuer              string
-	ExpiresTime         int64
-	RefreshExpiresTime  int64
+	SigningKey         []byte
+	Issuer             string
+	ExpiresTime        int64
+	RefreshExpiresTime int64
 }
 
 func NewJWT(signingKey, issuer string, expiresTime, refreshExpiresTime int64) *JWT {

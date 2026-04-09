@@ -18,15 +18,18 @@ func InitRouter() *gin.Engine {
 
 	// 注册子路由
 	userRouter := &UserRouter{}
+	subjectRouter := &SubjectRouter{}
 
 	// v1 路由组
 	v1 := r.Group("/v1")
 	userRouter.InitUserRouter(v1)
+	subjectRouter.InitSubjectRouter(v1)
 
 	// auth v1 路由组
 	authV1 := r.Group("/v1")
 	authV1.Use(middleware.JWTAuth())
 	userRouter.InitAuthUserRouter(authV1)
+	subjectRouter.InitAuthSubjectRouter(authV1)
 
 	return r
 }
