@@ -10,6 +10,11 @@ const routes = [
     children: [
       {
         path: '',
+        name: 'SubjectMarket',
+        component: () => import('../views/SubjectMarket.vue')
+      },
+      {
+        path: 'graph',
         name: 'KnowledgeGraph',
         component: KnowledgeGraph
       },
@@ -49,7 +54,8 @@ const router = createRouter({
 })
 
 router.beforeEach((to) => {
-  const isProtected = to.name === 'UserProfile'
+  const protectedRoutes = ['UserProfile', 'KnowledgeGraph', 'Study']
+  const isProtected = protectedRoutes.includes(to.name as string)
   if (!isProtected) return true
 
   const token = localStorage.getItem('token')

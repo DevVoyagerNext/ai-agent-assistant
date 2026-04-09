@@ -32,6 +32,7 @@ func Gorm() *gorm.DB {
 			&model.User{},
 			&model.Subject{},
 			&model.KnowledgeNode{},
+			&model.NodeMetric{},
 			&model.KnowledgeContent{},
 			&model.UserStudyNote{},
 			&model.UserStudyStatus{},

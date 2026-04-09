@@ -10,7 +10,7 @@ const nodeId = route.params.node_id
 <template>
   <div class="study-room">
     <header class="study-header">
-      <button class="back-btn" @click="router.push('/')">
+      <button class="back-btn" @click="router.push('/graph')">
         <ArrowLeft :size="20" />
         返回图谱
       </button>

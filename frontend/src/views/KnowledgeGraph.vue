@@ -1,10 +1,13 @@
 <script setup lang="ts">
 import { onMounted } from 'vue'
+import { useRouter } from 'vue-router'
+import { ArrowLeft } from 'lucide-vue-next'
 import KnowledgeTree from '../components/KnowledgeTree.vue'
 import Sidebar from '../components/Sidebar.vue'
 import AIAgent from '../components/AIAgent.vue'
 import { useUserProgressStore } from '../store/useUserProgressStore'
 
+const router = useRouter()
 const store = useUserProgressStore()
 
 onMounted(() => {
@@ -16,7 +19,13 @@ onMounted(() => {
   <div class="knowledge-graph-page">
     <div class="main-content">
       <header class="page-header">
-        <h1>知识全景图</h1>
+        <div class="header-left">
+          <button class="back-btn" @click="router.push('/')">
+            <ArrowLeft :size="20" />
+            返回大厅
+          </button>
+          <h1>知识全景图</h1>
+        </div>
         <div class="user-stats">
           <div class="stat-item">
             <span class="label">已掌握节点:</span>
@@ -62,6 +71,31 @@ onMounted(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.back-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border: 1px solid #e2e8f0;
+  padding: 6px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  color: #475569;
+  font-size: 14px;
+  transition: all 0.2s;
+}
+
+.back-btn:hover {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
 }
 
 .page-header h1 {
