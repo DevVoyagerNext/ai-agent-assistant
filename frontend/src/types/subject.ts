@@ -18,3 +18,8 @@ export interface Subject {
   progressPercent: number;
   lastNodeId: number;
 }
+
+export interface SubjectSearchRes {
+  total: number;
+  list: Subject[];
+}

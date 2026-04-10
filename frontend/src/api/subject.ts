@@ -1,6 +1,6 @@
 import request from '../utils/request'
 import type { ApiResponse } from '../types/index'
-import type { Subject, SubjectCategory } from '../types/subject'
+import type { Subject, SubjectCategory, SubjectSearchRes } from '../types/subject'
 
 // 获取教材分类
 export const getSubjectCategories = () => {
@@ -15,4 +15,10 @@ export const getAllSubjects = () => {
 // 通过分类获取该分类下的教材
 export const getSubjectsByCategory = (categoryId: number) => {
   return request.get<ApiResponse<Subject[]>>(`/subjects/category/${categoryId}`)
+}
+
+export const searchSubjects = (keyword: string, page = 1, pageSize = 20) => {
+  return request.get<ApiResponse<SubjectSearchRes>>('/subjects/search', {
+    params: { keyword, page, pageSize }
+  })
 }

@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch, onBeforeUnmount } from 'vue'
 import { Search, BookOpen, Star, ArrowRight, User, Compass } from 'lucide-vue-next'
 import { useRouter } from 'vue-router'
-import { getSubjectCategories, getAllSubjects, getSubjectsByCategory } from '../api/subject'
+import { getSubjectCategories, getAllSubjects, getSubjectsByCategory, searchSubjects } from '../api/subject'
 import type { Subject, SubjectCategory } from '../types/subject'
 
 const router = useRouter()
@@ -13,6 +13,11 @@ const categories = ref<SubjectCategory[]>([])
 const currentCategory = ref<number | 'all'>('all')
 const searchQuery = ref('')
 const loading = ref(false)
+const page = ref(1)
+const pageSize = ref(20)
+const total = ref(0)
+let searchTimer: number | undefined
+let searchSeq = 0
 
 const fetchCategories = async () => {
   try {
@@ -37,12 +42,15 @@ const fetchSubjects = async () => {
     
     if (res.data?.code === 200 && res.data.data) {
       subjects.value = res.data.data
+      total.value = res.data.data.length
     } else {
       subjects.value = []
+      total.value = 0
     }
   } catch (error) {
     console.error('获取教材失败', error)
     subjects.value = []
+    total.value = 0
   } finally {
     loading.value = false
   }
@@ -55,6 +63,12 @@ onMounted(async () => {
 })
 
 const handleCategoryChange = async (catId: number | 'all') => {
+  if (searchQuery.value) {
+    searchQuery.value = ''
+    page.value = 1
+    total.value = 0
+    searchSeq += 1
+  }
   currentCategory.value = catId
   await fetchSubjects()
 }
@@ -80,13 +94,79 @@ const getCoverStyle = (subject: Subject) => {
   }
 }
 
-// 过滤后的全量列表 (目前只处理前端的搜索词过滤)
-const filteredSubjects = computed(() => {
-  if (!searchQuery.value) return subjects.value
-  return subjects.value.filter(s => {
-    return s.name.toLowerCase().includes(searchQuery.value.toLowerCase()) || 
-           s.description.toLowerCase().includes(searchQuery.value.toLowerCase())
-  })
+const isSearchMode = computed(() => searchQuery.value.trim().length > 0)
+const hasMore = computed(() => isSearchMode.value && subjects.value.length < total.value)
+const tagText = computed(() => (isSearchMode.value ? '搜索结果' : getCategoryName(currentCategory.value)))
+
+const runSearch = async (reset: boolean) => {
+  const keyword = searchQuery.value.trim()
+  if (!keyword) {
+    page.value = 1
+    total.value = 0
+    await fetchSubjects()
+    return
+  }
+
+  if (reset) {
+    page.value = 1
+    subjects.value = []
+    total.value = 0
+  }
+
+  const currentPage = page.value
+  const seq = (searchSeq += 1)
+  loading.value = true
+  try {
+    const res = await searchSubjects(keyword, currentPage, pageSize.value)
+    if (seq !== searchSeq) return
+    if (res.data?.code === 200 && res.data.data) {
+      total.value = res.data.data.total || 0
+      const list = res.data.data.list || []
+      subjects.value = currentPage === 1 ? list : [...subjects.value, ...list]
+    } else {
+      subjects.value = []
+      total.value = 0
+    }
+  } catch (error) {
+    if (seq !== searchSeq) return
+    console.error('搜索教材失败', error)
+    subjects.value = []
+    total.value = 0
+  } finally {
+    if (seq === searchSeq) loading.value = false
+  }
+}
+
+const handleSearchClick = async () => {
+  await runSearch(true)
+}
+
+const loadMore = async () => {
+  if (!hasMore.value || loading.value) return
+  page.value += 1
+  await runSearch(false)
+}
+
+watch(
+  () => searchQuery.value,
+  (val) => {
+    if (searchTimer) window.clearTimeout(searchTimer)
+    const keyword = val.trim()
+    if (!keyword) {
+      page.value = 1
+      total.value = 0
+      searchSeq += 1
+      fetchSubjects()
+      return
+    }
+    searchTimer = window.setTimeout(() => {
+      runSearch(true)
+    }, 400)
+  }
+)
+
+onBeforeUnmount(() => {
+  if (searchTimer) window.clearTimeout(searchTimer)
 })
 
 const goToStudy = (id: number) => {
@@ -133,7 +213,7 @@ const handleUserAction = () => {
             placeholder="搜索你感兴趣的教材，例如 'AI Agent'..." 
             class="search-input"
           />
-          <button class="search-btn">探索</button>
+          <button class="search-btn" @click="handleSearchClick">探索</button>
         </div>
       </div>
       <div class="hero-bg-shapes">
@@ -179,15 +259,15 @@ const handleUserAction = () => {
         </div>
 
         <!-- 课程列表 -->
-        <div v-else-if="filteredSubjects.length > 0" class="subject-grid">
-          <div v-for="subject in filteredSubjects" :key="subject.id" class="subject-card" @click="goToStudy(subject.id)">
+        <div v-else-if="subjects.length > 0" class="subject-grid">
+          <div v-for="subject in subjects" :key="subject.id" class="subject-card" @click="goToStudy(subject.id)">
             <div class="card-cover" :style="getCoverStyle(subject)">
               <div class="card-overlay">
                 <button class="start-btn">开始学习 <ArrowRight :size="16" /></button>
               </div>
             </div>
             <div class="card-body">
-              <span class="category-tag">{{ getCategoryName(currentCategory) }}</span>
+              <span class="category-tag">{{ tagText }}</span>
               <h3 class="subject-title">{{ subject.name }}</h3>
               <p class="subject-desc">{{ subject.description }}</p>
               <div class="card-footer">
@@ -196,6 +276,10 @@ const handleUserAction = () => {
               </div>
             </div>
           </div>
+        </div>
+
+        <div v-if="!loading && hasMore" class="load-more-wrap">
+          <button class="load-more-btn" @click="loadMore">加载更多</button>
         </div>
         
         <!-- 空状态 -->
@@ -646,6 +730,27 @@ const handleUserAction = () => {
 }
 
 .reset-btn:hover {
+  background: #dbeafe;
+}
+
+.load-more-wrap {
+  margin-top: 24px;
+  display: flex;
+  justify-content: center;
+}
+
+.load-more-btn {
+  background: #eff6ff;
+  color: #3b82f6;
+  border: none;
+  padding: 10px 24px;
+  border-radius: 99px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.load-more-btn:hover {
   background: #dbeafe;
 }
 
