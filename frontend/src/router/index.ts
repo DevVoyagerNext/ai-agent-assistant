@@ -1,5 +1,4 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import KnowledgeGraph from '../views/KnowledgeGraph.vue'
 import Register from '../views/Register.vue'
 import Login from '../views/Login.vue'
 
@@ -14,14 +13,9 @@ const routes = [
         component: () => import('../views/SubjectMarket.vue')
       },
       {
-        path: 'graph',
-        name: 'KnowledgeGraph',
-        component: KnowledgeGraph
-      },
-      {
-        path: 'study/:node_id',
-        name: 'Study',
-        component: () => import('../views/StudyRoom.vue')
+        path: 'subject/:id',
+        name: 'SubjectDetail',
+        component: () => import('../views/SubjectDetail.vue')
       },
       {
         path: 'me',
@@ -54,7 +48,7 @@ const router = createRouter({
 })
 
 router.beforeEach((to) => {
-  const protectedRoutes = ['UserProfile', 'KnowledgeGraph', 'Study']
+  const protectedRoutes = ['UserProfile']
   const isProtected = protectedRoutes.includes(to.name as string)
   if (!isProtected) return true
 

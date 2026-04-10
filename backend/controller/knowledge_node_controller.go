@@ -1,0 +1,99 @@
+package controller
+
+import (
+	"backend/pkg/errmsg"
+	"backend/pkg/utils/response"
+	"backend/service"
+	"strconv"
+
+	"github.com/gin-gonic/gin"
+)
+
+type KnowledgeNodeController struct {
+	nodeService service.KnowledgeNodeService
+	authService service.AuthService
+}
+
+// GetTopLevelNodes 获取教材顶级知识点
+func (con *KnowledgeNodeController) GetTopLevelNodes(c *gin.Context) {
+	subjectIdStr := c.Query("subjectId")
+	subjectId, err := strconv.Atoi(subjectIdStr)
+	if err != nil || subjectId <= 0 {
+		response.FailWithMsg(errmsg.CodeError, "教材ID格式错误", c)
+		return
+	}
+
+	userId, _ := con.authService.GetUserID(c) // 允许游客
+
+	nodes, err := con.nodeService.GetTopLevelNodes(c.Request.Context(), subjectId, userId)
+	if err != nil {
+		response.FailWithMsg(errmsg.CodeError, "获取顶级知识点失败", c)
+		return
+	}
+
+	response.Ok(nodes, c)
+}
+
+// GetChildNodes 获取某个知识点的直属子节点
+func (con *KnowledgeNodeController) GetChildNodes(c *gin.Context) {
+	parentIdStr := c.Param("parentId")
+	parentId, err := strconv.Atoi(parentIdStr)
+	if err != nil || parentId <= 0 {
+		response.FailWithMsg(errmsg.CodeError, "知识点ID格式错误", c)
+		return
+	}
+
+	userId, _ := con.authService.GetUserID(c) // 允许游客
+
+	nodes, err := con.nodeService.GetChildNodes(c.Request.Context(), parentId, userId)
+	if err != nil {
+		response.FailWithMsg(errmsg.CodeError, "获取子节点失败", c)
+		return
+	}
+
+	response.Ok(nodes, c)
+}
+
+// GetNodeDetail 获取知识点详情（包含正文、难度评价、用户进度）
+func (con *KnowledgeNodeController) GetNodeDetail(c *gin.Context) {
+	nodeIdStr := c.Param("nodeId")
+	nodeId, err := strconv.Atoi(nodeIdStr)
+	if err != nil || nodeId <= 0 {
+		response.FailWithMsg(errmsg.CodeError, "知识点ID格式错误", c)
+		return
+	}
+
+	userId, _ := con.authService.GetUserID(c) // 允许游客
+
+	detail, err := con.nodeService.GetNodeDetail(c.Request.Context(), nodeId, userId)
+	if err != nil {
+		response.FailWithMsg(errmsg.CodeError, "获取知识点详情失败", c)
+		return
+	}
+
+	response.Ok(detail, c)
+}
+
+// GetUserStudyNote 获取用户对某个知识点的随堂笔记
+func (con *KnowledgeNodeController) GetUserStudyNote(c *gin.Context) {
+	nodeIdStr := c.Param("nodeId")
+	nodeId, err := strconv.Atoi(nodeIdStr)
+	if err != nil || nodeId <= 0 {
+		response.FailWithMsg(errmsg.CodeError, "知识点ID格式错误", c)
+		return
+	}
+
+	userId, err := con.authService.GetUserID(c)
+	if err != nil || userId == 0 {
+		response.FailWithCode(errmsg.UserTokenNotExist, c) // 必须登录
+		return
+	}
+
+	note, err := con.nodeService.GetUserStudyNote(c.Request.Context(), nodeId, userId)
+	if err != nil {
+		response.FailWithMsg(errmsg.CodeError, "获取随堂笔记失败", c)
+		return
+	}
+
+	response.Ok(note, c)
+}

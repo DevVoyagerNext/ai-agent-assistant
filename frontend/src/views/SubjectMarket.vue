@@ -239,8 +239,8 @@ onBeforeUnmount(() => {
 })
 
 const goToStudy = (id: number) => {
-  // 跳转到知识图谱
-  router.push(`/graph`)
+  // 跳转到沉浸式学习页
+  router.push(`/subject/${id}`)
 }
 
 const handleUserAction = () => {
