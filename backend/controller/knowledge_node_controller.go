@@ -36,16 +36,16 @@ func (con *KnowledgeNodeController) GetTopLevelNodes(c *gin.Context) {
 
 // GetChildNodes 获取某个知识点的直属子节点
 func (con *KnowledgeNodeController) GetChildNodes(c *gin.Context) {
-	parentIdStr := c.Param("parentId")
-	parentId, err := strconv.Atoi(parentIdStr)
-	if err != nil || parentId <= 0 {
+	parentNodeIdStr := c.Param("nodeId")
+	parentNodeId, err := strconv.Atoi(parentNodeIdStr)
+	if err != nil || parentNodeId <= 0 {
 		response.FailWithMsg(errmsg.CodeError, "知识点ID格式错误", c)
 		return
 	}
 
 	userId, _ := con.authService.GetUserID(c) // 允许游客
 
-	nodes, err := con.nodeService.GetChildNodes(c.Request.Context(), parentId, userId)
+	nodes, err := con.nodeService.GetChildNodes(c.Request.Context(), parentNodeId, userId)
 	if err != nil {
 		response.FailWithMsg(errmsg.CodeError, "获取子节点失败", c)
 		return

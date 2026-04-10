@@ -3,7 +3,11 @@ import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { getTopNodes, getChildNodes, getNodeDetail, getNodeNote } from '../api/node'
 import type { SubjectNode, SubjectNodeDetail, NodeNote } from '../types/node'
-import { ChevronRight, ChevronDown, FileText, ArrowLeft, Edit3, CheckCircle2, Circle } from 'lucide-vue-next'
+import { 
+  ChevronRight, ChevronDown, FileText, ArrowLeft, 
+  Edit3, CheckCircle2, Circle, BookOpen, 
+  Clock, Award, BookOpenCheck, Loader2
+} from 'lucide-vue-next'
 
 const route = useRoute()
 const router = useRouter()
@@ -11,7 +15,6 @@ const subjectId = Number(route.params.id)
 const isLoggedIn = computed(() => !!localStorage.getItem('token'))
 
 // ----------------- 目录树相关 -----------------
-// 定义一个扩展类型用于在树中维护展开状态和子节点
 interface TreeNode extends SubjectNode {
   expanded?: boolean;
   children?: TreeNode[];
@@ -27,6 +30,10 @@ const fetchTopNodes = async () => {
     const res = await getTopNodes(subjectId)
     if (res.data?.code === 200 && res.data.data) {
       topNodes.value = res.data.data.map(node => ({ ...node, expanded: false, children: [] }))
+      // 默认加载第一个顶级节点
+      if (topNodes.value.length > 0) {
+        await toggleNode(topNodes.value[0])
+      }
     }
   } catch (error) {
     console.error('获取顶级节点失败', error)
@@ -60,7 +67,7 @@ const toggleNode = async (node: TreeNode) => {
     }
   }
 
-  // 顺便也加载一下当前点击的节点详情（可选）
+  // 加载当前节点的详情和笔记
   await selectNode(node.id)
 }
 
@@ -109,7 +116,6 @@ onMounted(() => {
 const goBack = () => {
   router.push('/')
 }
-
 </script>
 
 <template>
@@ -119,26 +125,37 @@ const goBack = () => {
       <div class="sidebar-header">
         <button class="back-btn" @click="goBack">
           <ArrowLeft :size="18" />
-          返回大厅
+          <span>返回大厅</span>
         </button>
-        <h3>课程目录</h3>
+        <div class="course-title-wrap">
+          <BookOpenCheck class="title-icon" :size="20" />
+          <h3>教材目录</h3>
+        </div>
       </div>
       
       <div class="tree-container">
-        <div v-if="loadingTree" class="loading-state">加载目录中...</div>
-        <div v-else-if="topNodes.length === 0" class="empty-state">暂无目录数据</div>
+        <div v-if="loadingTree" class="loading-state">
+          <Loader2 class="spin" :size="24" />
+          <span>正在构建知识树...</span>
+        </div>
+        <div v-else-if="topNodes.length === 0" class="empty-state">
+          <FileText :size="32" />
+          <span>暂无目录数据</span>
+        </div>
         <ul v-else class="tree-list">
           <template v-for="node in topNodes" :key="node.id">
-            <!-- 递归树节点，由于层级不深，先写死两层或抽取递归组件，这里手写简易递归 -->
             <li class="tree-item">
               <div 
                 class="node-content" 
-                :class="{ active: currentNodeId === node.id }"
+                :class="{ 
+                  active: currentNodeId === node.id,
+                  'is-parent': node.isLeaf === 0
+                }"
                 @click="toggleNode(node)"
               >
                 <span class="expand-icon" v-if="node.isLeaf === 0">
-                  <ChevronDown v-if="node.expanded" :size="16" />
-                  <ChevronRight v-else :size="16" />
+                  <ChevronDown v-if="node.expanded" :size="14" />
+                  <ChevronRight v-else :size="14" />
                 </span>
                 <span class="expand-icon placeholder" v-else></span>
                 
@@ -148,45 +165,50 @@ const goBack = () => {
                 <span class="node-name">{{ node.name }}</span>
               </div>
               
-              <!-- 子节点 -->
-              <ul v-if="node.expanded && node.children && node.children.length > 0" class="tree-list sub-list">
-                <li v-for="child in node.children" :key="child.id" class="tree-item">
-                  <div 
-                    class="node-content sub-content" 
-                    :class="{ active: currentNodeId === child.id }"
-                    @click="toggleNode(child)"
-                  >
-                    <span class="expand-icon" v-if="child.isLeaf === 0">
-                      <ChevronDown v-if="child.expanded" :size="16" />
-                      <ChevronRight v-else :size="16" />
-                    </span>
-                    <span class="expand-icon placeholder" v-else></span>
+              <!-- 子节点递归渲染 (支持多层) -->
+              <transition name="fade">
+                <ul v-if="node.expanded && node.children && node.children.length > 0" class="tree-list sub-list">
+                  <li v-for="child in node.children" :key="child.id" class="tree-item">
+                    <div 
+                      class="node-content sub-content" 
+                      :class="{ active: currentNodeId === child.id }"
+                      @click="toggleNode(child)"
+                    >
+                      <span class="expand-icon" v-if="child.isLeaf === 0">
+                        <ChevronDown v-if="child.expanded" :size="14" />
+                        <ChevronRight v-else :size="14" />
+                      </span>
+                      <span class="expand-icon placeholder" v-else></span>
 
-                    <CheckCircle2 v-if="child.userProgressStatus === 'completed'" class="status-icon completed" :size="16" />
-                    <Circle v-else class="status-icon unstarted" :size="16" />
+                      <CheckCircle2 v-if="child.userProgressStatus === 'completed'" class="status-icon completed" :size="16" />
+                      <Circle v-else class="status-icon unstarted" :size="16" />
 
-                    <span class="node-name">{{ child.name }}</span>
-                  </div>
-                  
-                  <!-- 支持第三层级（如果有） -->
-                  <ul v-if="child.expanded && child.children && child.children.length > 0" class="tree-list sub-list">
-                    <li v-for="grandchild in child.children" :key="grandchild.id" class="tree-item">
-                      <div 
-                        class="node-content sub-content grand-content" 
-                        :class="{ active: currentNodeId === grandchild.id }"
-                        @click="selectNode(grandchild.id)"
-                      >
-                        <span class="expand-icon placeholder"></span>
-                        <CheckCircle2 v-if="grandchild.userProgressStatus === 'completed'" class="status-icon completed" :size="16" />
-                        <Circle v-else class="status-icon unstarted" :size="16" />
-                        <span class="node-name">{{ grandchild.name }}</span>
-                      </div>
-                    </li>
-                  </ul>
-                  <div v-if="child.loadingChildren" class="loading-sub">加载中...</div>
-                </li>
-              </ul>
-              <div v-if="node.loadingChildren" class="loading-sub">加载中...</div>
+                      <span class="node-name">{{ child.name }}</span>
+                    </div>
+                    
+                    <ul v-if="child.expanded && child.children && child.children.length > 0" class="tree-list sub-list">
+                      <li v-for="grandchild in child.children" :key="grandchild.id" class="tree-item">
+                        <div 
+                          class="node-content grand-content" 
+                          :class="{ active: currentNodeId === grandchild.id }"
+                          @click="selectNode(grandchild.id)"
+                        >
+                          <span class="expand-icon placeholder"></span>
+                          <CheckCircle2 v-if="grandchild.userProgressStatus === 'completed'" class="status-icon completed" :size="16" />
+                          <Circle v-else class="status-icon unstarted" :size="16" />
+                          <span class="node-name">{{ grandchild.name }}</span>
+                        </div>
+                      </li>
+                    </ul>
+                    <div v-if="child.loadingChildren" class="loading-sub">
+                      <Loader2 class="spin" :size="14" />
+                    </div>
+                  </li>
+                </ul>
+              </transition>
+              <div v-if="node.loadingChildren" class="loading-sub">
+                <Loader2 class="spin" :size="14" />
+              </div>
             </li>
           </template>
         </ul>
@@ -195,56 +217,86 @@ const goBack = () => {
 
     <!-- 中间正文区 -->
     <main class="main-content">
-      <div v-if="loadingDetail" class="loading-state">
-        内容加载中...
+      <div v-if="loadingDetail" class="content-skeleton">
+        <div class="skeleton-header"></div>
+        <div class="skeleton-line"></div>
+        <div class="skeleton-line short"></div>
+        <div class="skeleton-body"></div>
       </div>
       <div v-else-if="nodeDetail" class="content-area">
-        <div class="content-header">
-          <h1>{{ nodeDetail.name }}</h1>
-          <div class="tags">
-            <span class="tag">难度: {{ nodeDetail.easyCount }}易 / {{ nodeDetail.mediumCount }}中 / {{ nodeDetail.hardCount }}难</span>
-            <span class="tag status" :class="nodeDetail.userProgressStatus">
-              {{ nodeDetail.userProgressStatus === 'completed' ? '已掌握' : nodeDetail.userProgressStatus === 'learning' ? '学习中' : '未开始' }}
-            </span>
+        <header class="content-header">
+          <div class="breadcrumb">
+            <BookOpen :size="14" />
+            <span>教材正文</span>
           </div>
-        </div>
-        <div class="markdown-body">
-          <!-- 实际项目中建议使用 marked.js + highlight.js 渲染 -->
-          <pre>{{ nodeDetail.content }}</pre>
-        </div>
+          <h1>{{ nodeDetail.name }}</h1>
+          <div class="meta-info">
+            <div class="difficulty-tags">
+              <span class="diff-tag easy">易 {{ nodeDetail.easyCount }}</span>
+              <span class="diff-tag medium">中 {{ nodeDetail.mediumCount }}</span>
+              <span class="diff-tag hard">难 {{ nodeDetail.hardCount }}</span>
+            </div>
+            <div class="status-badge" :class="nodeDetail.userProgressStatus">
+              <Award v-if="nodeDetail.userProgressStatus === 'completed'" :size="14" />
+              <Clock v-else :size="14" />
+              <span>{{ nodeDetail.userProgressStatus === 'completed' ? '已掌握' : nodeDetail.userProgressStatus === 'learning' ? '学习中' : '未开始' }}</span>
+            </div>
+          </div>
+        </header>
+
+        <article class="markdown-article">
+          <div class="content-body">
+            <!-- 预留 Markdown 渲染，目前显示原始内容 -->
+            <div class="markdown-placeholder">
+              {{ nodeDetail.content }}
+            </div>
+          </div>
+        </article>
       </div>
-      <div v-else class="empty-state">
-        <FileText :size="48" color="#cbd5e1" />
-        <p>请在左侧选择要学习的章节</p>
+      <div v-else class="empty-view">
+        <div class="empty-illustration">
+          <FileText :size="64" />
+        </div>
+        <h2>开启你的沉浸式学习</h2>
+        <p>在左侧选择感兴趣的知识点，即刻开启深度学习之旅</p>
       </div>
     </main>
 
     <!-- 右侧随堂笔记区 -->
     <aside class="note-sidebar">
       <div class="note-header">
-        <Edit3 :size="20" class="note-icon" />
-        <h3>随堂笔记</h3>
+        <div class="note-title">
+          <Edit3 :size="18" />
+          <h3>随堂笔记</h3>
+        </div>
       </div>
       
-      <div class="note-container">
-        <div v-if="!isLoggedIn" class="not-logged-in">
-          <p>登录后即可记录随堂笔记</p>
-          <button class="login-btn" @click="router.push('/login')">去登录</button>
+      <div class="note-main">
+        <div v-if="!isLoggedIn" class="note-login-guide">
+          <div class="guide-icon">🔒</div>
+          <p>随堂笔记已锁定</p>
+          <p class="sub-p">登录后即可随时记录学习感悟</p>
+          <button class="primary-btn" @click="router.push('/login')">去登录</button>
         </div>
-        <div v-else-if="!currentNodeId" class="empty-note">
-          <p>请先选择一个知识点</p>
+        <div v-else-if="!currentNodeId" class="note-empty">
+          <p>选中一个知识点来记录笔记吧</p>
         </div>
-        <div v-else class="note-editor">
-          <textarea 
-            class="note-textarea" 
-            :value="nodeNote?.noteContent || ''"
-            placeholder="在这里记录你的思考和感悟..."
-            readonly
-          ></textarea>
-          <div class="note-footer">
-            <span class="save-time" v-if="nodeNote?.updatedAt">上次保存: {{ nodeNote.updatedAt }}</span>
-            <span class="save-time" v-else>暂无笔记</span>
-            <button class="save-btn" disabled>保存笔记(仅展示)</button>
+        <div v-else class="note-active">
+          <div class="editor-wrap">
+            <textarea 
+              v-model="nodeNote!.noteContent"
+              class="note-textarea" 
+              placeholder="在这里输入你的随堂笔记..."
+              readonly
+            ></textarea>
+          </div>
+          <div class="editor-footer">
+            <div class="save-status">
+              <Clock :size="12" />
+              <span v-if="nodeNote?.updatedAt">上次同步: {{ nodeNote.updatedAt }}</span>
+              <span v-else>尚未记录笔记</span>
+            </div>
+            <button class="action-btn disabled">保存 (只读)</button>
           </div>
         </div>
       </div>
@@ -257,257 +309,246 @@ const goBack = () => {
   display: flex;
   height: 100vh;
   width: 100vw;
-  background: #f8fafc;
+  background: #fff;
   overflow: hidden;
+  color: #1e293b;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
 
-/* 左侧侧边栏 */
+/* 通用动画 */
+.spin { animation: spin 1s linear infinite; }
+@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+.fade-enter-active, .fade-leave-active { transition: opacity 0.3s; }
+.fade-enter-from, .fade-leave-to { opacity: 0; }
+
+/* 左侧目录树 */
 .sidebar {
-  width: 300px;
-  background: white;
-  border-right: 1px solid #e2e8f0;
+  width: 320px;
+  background: #fcfdfe;
+  border-right: 1px solid #edf2f7;
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
 }
 
 .sidebar-header {
-  padding: 16px 20px;
-  border-bottom: 1px solid #f1f5f9;
+  padding: 24px 20px 16px;
+  background: #fff;
 }
 
 .back-btn {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  background: transparent;
+  gap: 8px;
+  background: #f1f5f9;
   border: none;
-  color: #64748b;
-  font-size: 14px;
+  color: #475569;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 6px 12px;
+  border-radius: 6px;
   cursor: pointer;
-  margin-bottom: 12px;
-  padding: 4px 0;
-  transition: color 0.2s;
+  margin-bottom: 20px;
+  transition: all 0.2s;
 }
 
-.back-btn:hover {
-  color: #3b82f6;
+.back-btn:hover { background: #e2e8f0; color: #0f172a; }
+
+.course-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #1e293b;
 }
 
-.sidebar-header h3 {
-  font-size: 16px;
-  font-weight: 600;
-  color: #0f172a;
-}
+.course-title-wrap h3 { font-size: 17px; font-weight: 700; }
+.title-icon { color: #3b82f6; }
 
 .tree-container {
   flex: 1;
   overflow-y: auto;
-  padding: 12px 0;
+  padding: 8px 0;
 }
 
-.tree-list {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-}
-
-.sub-list {
-  background: #fafafa;
-}
+.tree-list { list-style: none; padding: 0; margin: 0; }
+.sub-list { background: rgba(248, 250, 252, 0.5); }
 
 .node-content {
   display: flex;
   align-items: center;
   padding: 10px 16px;
   cursor: pointer;
-  transition: background 0.2s;
-  color: #334155;
+  transition: all 0.2s;
+  color: #475569;
   font-size: 14px;
+  border-left: 3px solid transparent;
 }
 
-.node-content:hover {
-  background: #f1f5f9;
-}
-
+.node-content:hover { background: #f1f5f9; color: #0f172a; }
 .node-content.active {
   background: #eff6ff;
   color: #2563eb;
-  font-weight: 500;
+  font-weight: 600;
+  border-left-color: #3b82f6;
 }
 
-.sub-content {
-  padding-left: 32px;
-}
-
-.grand-content {
-  padding-left: 48px;
-}
+.sub-content { padding-left: 34px; }
+.grand-content { padding-left: 52px; }
 
 .expand-icon {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 20px;
+  width: 18px;
   color: #94a3b8;
-  margin-right: 4px;
+  margin-right: 6px;
 }
 
-.expand-icon.placeholder {
-  visibility: hidden;
-}
+.expand-icon.placeholder { visibility: hidden; }
 
-.status-icon {
-  margin-right: 8px;
-}
+.status-icon { margin-right: 8px; flex-shrink: 0; }
+.status-icon.completed { color: #10b981; }
+.status-icon.unstarted { color: #cbd5e1; }
 
-.status-icon.completed {
-  color: #10b981;
-}
+.node-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-.status-icon.unstarted {
-  color: #cbd5e1;
-}
-
-.node-name {
-  flex: 1;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.loading-sub {
-  padding: 8px 16px 8px 48px;
-  font-size: 12px;
-  color: #94a3b8;
-}
+.loading-sub { padding: 8px 16px 8px 52px; display: flex; color: #3b82f6; }
 
 /* 中间正文区 */
 .main-content {
   flex: 1;
-  background: white;
+  background: #fff;
   overflow-y: auto;
-  display: flex;
-  flex-direction: column;
+  position: relative;
 }
 
 .content-area {
-  padding: 40px;
-  max-width: 800px;
+  max-width: 880px;
   margin: 0 auto;
-  width: 100%;
+  padding: 60px 40px;
 }
 
-.content-header {
-  margin-bottom: 30px;
-  border-bottom: 1px solid #f1f5f9;
-  padding-bottom: 20px;
+.content-header { margin-bottom: 40px; }
+
+.breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: #94a3b8;
+  margin-bottom: 12px;
 }
 
 .content-header h1 {
-  font-size: 28px;
-  font-weight: 700;
+  font-size: 32px;
+  font-weight: 800;
   color: #0f172a;
-  margin-bottom: 16px;
+  margin-bottom: 20px;
+  line-height: 1.2;
 }
 
-.tags {
-  display: flex;
-  gap: 12px;
-}
+.meta-info { display: flex; align-items: center; justify-content: space-between; }
 
-.tag {
+.difficulty-tags { display: flex; gap: 8px; }
+
+.diff-tag {
   font-size: 12px;
-  padding: 4px 10px;
-  background: #f1f5f9;
-  color: #64748b;
+  padding: 2px 10px;
   border-radius: 4px;
-  font-weight: 500;
+  font-weight: 600;
 }
 
-.tag.status.completed { background: #d1fae5; color: #059669; }
-.tag.status.learning { background: #dbeafe; color: #2563eb; }
-.tag.status.unstarted { background: #f1f5f9; color: #64748b; }
+.diff-tag.easy { background: #d1fae5; color: #065f46; }
+.diff-tag.medium { background: #fef3c7; color: #92400e; }
+.diff-tag.hard { background: #fee2e2; color: #991b1b; }
 
-.markdown-body {
-  font-size: 16px;
+.status-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 4px 12px;
+  border-radius: 20px;
+}
+
+.status-badge.completed { background: #10b981; color: #fff; }
+.status-badge.learning { background: #3b82f6; color: #fff; }
+.status-badge.unstarted { background: #f1f5f9; color: #64748b; }
+
+.content-body {
+  font-size: 17px;
   line-height: 1.8;
   color: #334155;
 }
 
-.markdown-body pre {
-  background: #f8fafc;
-  padding: 16px;
-  border-radius: 8px;
-  overflow-x: auto;
+.markdown-placeholder {
   white-space: pre-wrap;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-family: inherit;
+  background: #f8fafc;
+  padding: 24px;
+  border-radius: 12px;
+  border: 1px solid #f1f5f9;
 }
 
 /* 右侧笔记区 */
 .note-sidebar {
-  width: 320px;
-  background: #f8fafc;
-  border-left: 1px solid #e2e8f0;
+  width: 360px;
+  background: #fff;
+  border-left: 1px solid #edf2f7;
   display: flex;
   flex-direction: column;
-  flex-shrink: 0;
 }
 
 .note-header {
-  padding: 20px;
+  padding: 24px 20px;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.note-title {
   display: flex;
   align-items: center;
-  gap: 8px;
-  border-bottom: 1px solid #e2e8f0;
+  gap: 10px;
+  color: #7c3aed;
 }
 
-.note-icon {
-  color: #8b5cf6;
-}
+.note-title h3 { font-size: 17px; font-weight: 700; color: #1e293b; }
 
-.note-header h3 {
-  font-size: 16px;
-  font-weight: 600;
-  color: #0f172a;
-}
+.note-main { flex: 1; display: flex; flex-direction: column; padding: 20px; background: #fcfdfe; }
 
-.note-container {
-  flex: 1;
-  padding: 20px;
-  display: flex;
-  flex-direction: column;
-}
-
-.not-logged-in, .empty-note {
+.note-login-guide, .note-empty, .empty-view {
   flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  color: #64748b;
-  font-size: 14px;
+  text-align: center;
 }
 
-.login-btn {
-  margin-top: 12px;
-  padding: 8px 24px;
-  background: #3b82f6;
-  color: white;
+.guide-icon { font-size: 40px; margin-bottom: 16px; }
+.note-login-guide p { font-weight: 600; color: #1e293b; margin-bottom: 4px; }
+.sub-p { font-size: 13px; color: #94a3b8; margin-bottom: 20px; }
+
+.primary-btn {
+  background: #7c3aed;
+  color: #fff;
   border: none;
-  border-radius: 6px;
+  padding: 10px 24px;
+  border-radius: 8px;
+  font-weight: 600;
   cursor: pointer;
-  font-weight: 500;
 }
 
-.note-editor {
+.note-active { flex: 1; display: flex; flex-direction: column; gap: 16px; }
+
+.editor-wrap {
   flex: 1;
-  display: flex;
-  flex-direction: column;
-  background: white;
+  background: #fff;
   border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  overflow: hidden;
+  border-radius: 12px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+  display: flex;
 }
 
 .note-textarea {
@@ -515,47 +556,40 @@ const goBack = () => {
   border: none;
   resize: none;
   padding: 16px;
-  font-size: 14px;
+  font-size: 15px;
   line-height: 1.6;
   color: #334155;
   outline: none;
-  background: transparent;
 }
 
-.note-footer {
-  padding: 12px 16px;
-  border-top: 1px solid #f1f5f9;
+.editor-footer { display: flex; flex-direction: column; gap: 12px; }
+
+.save-status {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  background: #fafafa;
-}
-
-.save-time {
+  gap: 6px;
   font-size: 12px;
   color: #94a3b8;
 }
 
-.save-btn {
-  background: #8b5cf6;
-  color: white;
+.action-btn {
+  width: 100%;
+  padding: 10px;
+  border-radius: 8px;
+  font-weight: 600;
   border: none;
-  padding: 6px 16px;
-  border-radius: 4px;
-  font-size: 13px;
-  cursor: not-allowed;
-  opacity: 0.7;
 }
 
-/* 公共空状态和加载态 */
-.loading-state, .empty-state {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  color: #94a3b8;
-  font-size: 14px;
-  gap: 12px;
-}
+.action-btn.disabled { background: #f1f5f9; color: #cbd5e1; cursor: not-allowed; }
+
+/* 骨架屏 */
+.content-skeleton { padding: 60px 40px; max-width: 800px; margin: 0 auto; width: 100%; }
+.skeleton-header { height: 40px; width: 60%; background: #f1f5f9; border-radius: 8px; margin-bottom: 24px; }
+.skeleton-line { height: 16px; width: 100%; background: #f1f5f9; border-radius: 4px; margin-bottom: 12px; }
+.skeleton-line.short { width: 40%; }
+.skeleton-body { height: 300px; width: 100%; background: #f1f5f9; border-radius: 12px; margin-top: 40px; }
+
+.empty-view h2 { margin-top: 20px; font-size: 22px; font-weight: 700; color: #1e293b; }
+.empty-view p { color: #94a3b8; margin-top: 8px; max-width: 280px; }
+.empty-illustration { color: #e2e8f0; }
 </style>

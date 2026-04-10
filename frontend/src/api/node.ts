@@ -10,8 +10,8 @@ export const getTopNodes = (subjectId: number) => {
 }
 
 // 获取某个知识点的直属子知识点
-export const getChildNodes = (parentId: number) => {
-  return request.get<ApiResponse<SubjectNode[]>>(`/nodes/${parentId}/children`)
+export const getChildNodes = (nodeId: number) => {
+  return request.get<ApiResponse<SubjectNode[]>>(`/nodes/${nodeId}/children`)
 }
 
 // 获取知识点详情（含正文/层级等）
