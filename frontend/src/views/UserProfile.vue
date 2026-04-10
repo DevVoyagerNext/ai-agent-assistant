@@ -1,16 +1,23 @@
 <script setup lang="ts">
-import { computed, reactive } from 'vue'
+import { computed, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import Toast from '../components/Toast.vue'
 import Skeleton from '../components/Skeleton.vue'
 import { 
   ArrowLeft, LogOut, RefreshCcw, 
-  Activity, BookOpen, Share2, Book, Users, Star, Layers, FolderHeart, CheckCircle 
+  Activity, BookOpen, Share2, Book, Users, Star, Layers, FolderHeart 
 } from 'lucide-vue-next'
 import { useUserProfile } from '../composables/useUserProfile'
 import ActivityCalendar from '../components/ActivityCalendar.vue'
 
 const router = useRouter()
+const isAuthenticated = computed(() => !!localStorage.getItem('token'))
+
+onMounted(() => {
+  if (!isAuthenticated.value) {
+    router.replace('/login')
+  }
+})
 const {
   userInfo,
   activities,
@@ -64,6 +71,10 @@ const isGlobalLoading = computed(() =>
 )
 
 const handleRefresh = () => {
+  if (!isAuthenticated.value) {
+    router.replace('/login')
+    return
+  }
   refreshAll()
   if (!errorUserInfo.value) {
     showToast('刷新成功', 'success')
@@ -119,7 +130,7 @@ const getCoverStyle = (id: number) => {
           <RefreshCcw :size="18" :class="{ 'spin': isGlobalLoading }" />
           刷新
         </button>
-        <button class="danger-btn" @click="handleLogout">
+        <button v-if="isAuthenticated" class="danger-btn" @click="handleLogout">
           <LogOut :size="18" />
           退出登录
         </button>

@@ -7,16 +7,23 @@ import type { Subject, SubjectCategory } from '../types/subject'
 
 const router = useRouter()
 const isLoggedIn = ref(false)
+const syncLoginState = () => {
+  isLoggedIn.value = !!localStorage.getItem('token')
+}
 
 const subjects = ref<Subject[]>([])
 const categories = ref<SubjectCategory[]>([])
 const currentCategory = ref<number | 'all'>('all')
 const searchQuery = ref('')
+const committedKeyword = ref('')
+const suggestions = ref<Subject[]>([])
+const showSuggestions = ref(false)
 const loading = ref(false)
 const page = ref(1)
 const pageSize = ref(20)
 const total = ref(0)
-let searchTimer: number | undefined
+let suggestTimer: number | undefined
+let suggestSeq = 0
 let searchSeq = 0
 
 const fetchCategories = async () => {
@@ -57,19 +64,33 @@ const fetchSubjects = async () => {
 }
 
 onMounted(async () => {
-  isLoggedIn.value = !!localStorage.getItem('token')
+  syncLoginState()
   await fetchCategories()
   await fetchSubjects()
 })
 
 const handleCategoryChange = async (catId: number | 'all') => {
-  if (searchQuery.value) {
-    searchQuery.value = ''
-    page.value = 1
-    total.value = 0
-    searchSeq += 1
-  }
+  searchQuery.value = ''
+  committedKeyword.value = ''
+  suggestions.value = []
+  showSuggestions.value = false
+  page.value = 1
+  total.value = 0
+  searchSeq += 1
+  suggestSeq += 1
   currentCategory.value = catId
+  await fetchSubjects()
+}
+
+const resetSearch = async () => {
+  searchQuery.value = ''
+  committedKeyword.value = ''
+  suggestions.value = []
+  showSuggestions.value = false
+  page.value = 1
+  total.value = 0
+  searchSeq += 1
+  suggestSeq += 1
   await fetchSubjects()
 }
 
@@ -94,12 +115,12 @@ const getCoverStyle = (subject: Subject) => {
   }
 }
 
-const isSearchMode = computed(() => searchQuery.value.trim().length > 0)
+const isSearchMode = computed(() => committedKeyword.value.trim().length > 0)
 const hasMore = computed(() => isSearchMode.value && subjects.value.length < total.value)
 const tagText = computed(() => (isSearchMode.value ? '搜索结果' : getCategoryName(currentCategory.value)))
 
 const runSearch = async (reset: boolean) => {
-  const keyword = searchQuery.value.trim()
+  const keyword = committedKeyword.value.trim()
   if (!keyword) {
     page.value = 1
     total.value = 0
@@ -138,6 +159,13 @@ const runSearch = async (reset: boolean) => {
 }
 
 const handleSearchClick = async () => {
+  const keyword = searchQuery.value.trim()
+  suggestions.value = []
+  showSuggestions.value = false
+  committedKeyword.value = keyword
+  page.value = 1
+  total.value = 0
+  searchSeq += 1
   await runSearch(true)
 }
 
@@ -147,26 +175,67 @@ const loadMore = async () => {
   await runSearch(false)
 }
 
+const fetchSuggestions = async () => {
+  const keyword = searchQuery.value.trim()
+  if (!keyword || keyword === committedKeyword.value.trim()) {
+    suggestions.value = []
+    showSuggestions.value = false
+    return
+  }
+
+  const seq = (suggestSeq += 1)
+  try {
+    const res = await searchSubjects(keyword, 1, 8)
+    if (seq !== suggestSeq) return
+    if (res.data?.code === 200 && res.data.data) {
+      suggestions.value = res.data.data.list || []
+      showSuggestions.value = suggestions.value.length > 0
+    } else {
+      suggestions.value = []
+      showSuggestions.value = false
+    }
+  } catch (error) {
+    if (seq !== suggestSeq) return
+    console.error('搜索建议失败', error)
+    suggestions.value = []
+    showSuggestions.value = false
+  }
+}
+
+const selectSuggestion = async (subject: Subject) => {
+  searchQuery.value = subject.name
+  committedKeyword.value = subject.name
+  suggestions.value = []
+  showSuggestions.value = false
+  page.value = 1
+  total.value = 0
+  searchSeq += 1
+  await runSearch(true)
+}
+
 watch(
   () => searchQuery.value,
   (val) => {
-    if (searchTimer) window.clearTimeout(searchTimer)
+    if (suggestTimer) window.clearTimeout(suggestTimer)
     const keyword = val.trim()
     if (!keyword) {
       page.value = 1
       total.value = 0
+      committedKeyword.value = ''
+      suggestions.value = []
+      showSuggestions.value = false
       searchSeq += 1
       fetchSubjects()
       return
     }
-    searchTimer = window.setTimeout(() => {
-      runSearch(true)
+    suggestTimer = window.setTimeout(() => {
+      fetchSuggestions()
     }, 400)
   }
 )
 
 onBeforeUnmount(() => {
-  if (searchTimer) window.clearTimeout(searchTimer)
+  if (suggestTimer) window.clearTimeout(suggestTimer)
 })
 
 const goToStudy = (id: number) => {
@@ -175,6 +244,7 @@ const goToStudy = (id: number) => {
 }
 
 const handleUserAction = () => {
+  syncLoginState()
   if (isLoggedIn.value) {
     router.push('/me')
   } else {
@@ -205,15 +275,31 @@ const handleUserAction = () => {
         <h1 class="hero-title">探索知识的无限可能</h1>
         <p class="hero-subtitle">发现最前沿的 AI 技术、编程语言与计算机科学课程。无需等待，即刻开启你的专属学习图谱。</p>
         
-        <div class="search-bar">
-          <Search class="search-icon" :size="20" />
-          <input 
-            v-model="searchQuery" 
-            type="text" 
-            placeholder="搜索你感兴趣的教材，例如 'AI Agent'..." 
-            class="search-input"
-          />
-          <button class="search-btn" @click="handleSearchClick">探索</button>
+        <div class="search-wrap">
+          <div class="search-bar">
+            <Search class="search-icon" :size="20" />
+            <input 
+              v-model="searchQuery" 
+              type="text" 
+              placeholder="搜索你感兴趣的教材，例如 'AI Agent'..." 
+              class="search-input"
+              @focus="showSuggestions = suggestions.length > 0"
+              @keydown.enter.prevent="handleSearchClick"
+            />
+            <button class="search-btn" @click="handleSearchClick">探索</button>
+          </div>
+          <div v-if="showSuggestions" class="search-dropdown">
+            <button
+              v-for="s in suggestions"
+              :key="s.id"
+              type="button"
+              class="search-item"
+              @click="selectSuggestion(s)"
+            >
+              <span class="search-item-title">{{ s.name }}</span>
+              <span class="search-item-progress">{{ s.progressPercent || 0 }}%</span>
+            </button>
+          </div>
         </div>
       </div>
       <div class="hero-bg-shapes">
@@ -226,7 +312,7 @@ const handleUserAction = () => {
     <main class="main-content">
       <!-- 全量教材大厅 -->
       <section class="all-subjects-section">
-        <div class="section-header">
+        <div class="section-header" v-if="!isSearchMode">
           <h2 class="section-title">
             <BookOpen class="title-icon" :size="24" />
             发现教材
@@ -234,7 +320,7 @@ const handleUserAction = () => {
         </div>
         
         <!-- 分类筛选器 -->
-        <div class="category-filter">
+        <div class="category-filter" v-if="!isSearchMode">
           <button 
             class="filter-btn"
             :class="{ active: currentCategory === 'all' }"
@@ -258,37 +344,44 @@ const handleUserAction = () => {
           <h3>加载中...</h3>
         </div>
 
-        <!-- 课程列表 -->
-        <div v-else-if="subjects.length > 0" class="subject-grid">
-          <div v-for="subject in subjects" :key="subject.id" class="subject-card" @click="goToStudy(subject.id)">
-            <div class="card-cover" :style="getCoverStyle(subject)">
-              <div class="card-overlay">
-                <button class="start-btn">开始学习 <ArrowRight :size="16" /></button>
+        <template v-else>
+          <div v-if="subjects.length > 0" class="subject-grid">
+            <div v-for="subject in subjects" :key="subject.id" class="subject-card" @click="goToStudy(subject.id)">
+              <div class="card-cover" :style="getCoverStyle(subject)">
+                <div class="card-overlay">
+                  <button class="start-btn">开始学习 <ArrowRight :size="16" /></button>
+                </div>
               </div>
-            </div>
-            <div class="card-body">
-              <span class="category-tag">{{ tagText }}</span>
-              <h3 class="subject-title">{{ subject.name }}</h3>
-              <p class="subject-desc">{{ subject.description }}</p>
-              <div class="card-footer">
-                <div class="stat" v-if="subject.isLiked"><Star class="star-icon" :size="16" /> 已点赞</div>
-                <div class="stat"><BookOpen :size="16" /> {{ subject.progressPercent || 0 }}% 进度</div>
+              <div class="card-body">
+                <span class="category-tag">{{ tagText }}</span>
+                <h3 class="subject-title">{{ subject.name }}</h3>
+                <p class="subject-desc">{{ subject.description }}</p>
+                <div class="card-footer">
+                  <div class="stat" v-if="subject.isLiked"><Star class="star-icon" :size="16" /> 已点赞</div>
+                  <div class="stat"><BookOpen :size="16" /> {{ subject.progressPercent || 0 }}% 进度</div>
+                </div>
               </div>
             </div>
           </div>
-        </div>
 
-        <div v-if="!loading && hasMore" class="load-more-wrap">
-          <button class="load-more-btn" @click="loadMore">加载更多</button>
-        </div>
-        
-        <!-- 空状态 -->
-        <div v-else class="empty-state">
-          <div class="empty-icon">🔍</div>
-          <h3>未找到相关教材</h3>
-          <p>尝试更换关键词或分类筛选</p>
-          <button class="reset-btn" @click="searchQuery = ''; handleCategoryChange('all')">重置筛选</button>
-        </div>
+          <div v-if="subjects.length > 0 && hasMore" class="load-more-wrap">
+            <button class="load-more-btn" @click="loadMore">加载更多</button>
+          </div>
+
+          <div v-else-if="subjects.length === 0 && isSearchMode" class="empty-state">
+            <div class="empty-icon">🔍</div>
+            <h3>未找到相关教材</h3>
+            <p>尝试更换关键词或分类筛选</p>
+            <button class="reset-btn" @click="resetSearch">重置筛选</button>
+          </div>
+
+          <div v-else-if="subjects.length === 0" class="empty-state">
+            <div class="empty-icon">📚</div>
+            <h3>暂无教材</h3>
+            <p>请稍后重试</p>
+            <button class="reset-btn" @click="fetchSubjects">刷新列表</button>
+          </div>
+        </template>
       </section>
     </main>
   </div>
@@ -390,6 +483,12 @@ const handleUserAction = () => {
   line-height: 1.6;
 }
 
+.search-wrap {
+  position: relative;
+  max-width: 600px;
+  margin: 0 auto;
+}
+
 .search-bar {
   display: flex;
   align-items: center;
@@ -397,8 +496,7 @@ const handleUserAction = () => {
   padding: 8px;
   border-radius: 99px;
   box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
-  max-width: 600px;
-  margin: 0 auto;
+  width: 100%;
 }
 
 .search-icon {
@@ -429,6 +527,52 @@ const handleUserAction = () => {
 
 .search-btn:hover {
   background: #2563eb;
+}
+
+.search-dropdown {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + 10px);
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(226, 232, 240, 0.9);
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 18px 30px rgba(15, 23, 42, 0.12);
+  z-index: 20;
+}
+
+.search-item {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+}
+
+.search-item + .search-item {
+  border-top: 1px solid rgba(241, 245, 249, 0.9);
+}
+
+.search-item:hover {
+  background: rgba(241, 245, 249, 0.9);
+}
+
+.search-item-title {
+  font-size: 14px;
+  font-weight: 650;
+  color: #0f172a;
+}
+
+.search-item-progress {
+  font-size: 13px;
+  font-weight: 800;
+  color: #3b82f6;
 }
 
 /* 装饰背景 */
