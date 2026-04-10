@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"backend/dto"
 	"backend/pkg/errmsg"
 	"backend/pkg/utils/response"
 	"backend/service"
@@ -96,4 +97,34 @@ func (con *KnowledgeNodeController) GetUserStudyNote(c *gin.Context) {
 	}
 
 	response.Ok(note, c)
+}
+
+// UpdateNodeStatus 更新知识点学习状态
+func (con *KnowledgeNodeController) UpdateNodeStatus(c *gin.Context) {
+	nodeIdStr := c.Param("nodeId")
+	nodeId, err := strconv.Atoi(nodeIdStr)
+	if err != nil || nodeId <= 0 {
+		response.FailWithMsg(errmsg.CodeError, "知识点ID格式错误", c)
+		return
+	}
+
+	var req dto.UpdateNodeStatusReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.FailWithMsg(errmsg.CodeError, "参数错误: "+err.Error(), c)
+		return
+	}
+
+	userId, err := con.authService.GetUserID(c)
+	if err != nil || userId == 0 {
+		response.FailWithCode(errmsg.UserTokenNotExist, c) // 必须登录
+		return
+	}
+
+	err = con.nodeService.UpdateNodeStatus(c.Request.Context(), userId, nodeId, req.Status)
+	if err != nil {
+		response.FailWithMsg(errmsg.CodeError, "更新状态失败", c)
+		return
+	}
+
+	response.Ok(nil, c)
 }

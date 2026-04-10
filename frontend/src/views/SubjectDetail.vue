@@ -1,12 +1,20 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { getTopNodes, getChildNodes, getNodeDetail, getNodeNote } from '../api/node'
-import type { SubjectNode, SubjectNodeDetail, NodeNote } from '../types/node'
+import markdownit from 'markdown-it'
+import hljs from 'highlight.js'
+import 'highlight.js/styles/github.css' // 切换回浅色主题，适合灰色背景
 import { 
-  ChevronRight, ChevronDown, FileText, ArrowLeft, 
-  Edit3, CheckCircle2, Circle, BookOpen, 
-  Clock, Award, BookOpenCheck, Loader2
+  getTopNodes, getChildNodes, getNodeDetail, getNodeNote,
+  updateNodeStatus
+} from '../api/node'
+import type { SubjectNode, SubjectNodeDetail, NodeNote } from '../types/node'
+import TreeItem from '../components/TreeItem.vue'
+import { 
+  FileText, ArrowLeft, 
+  Edit3, BookOpen, 
+  Clock, Award, BookOpenCheck, Loader2,
+  LayoutList, LayoutPanelLeft, CheckCircle2
 } from 'lucide-vue-next'
 
 const route = useRoute()
@@ -23,6 +31,7 @@ interface TreeNode extends SubjectNode {
 
 const topNodes = ref<TreeNode[]>([])
 const loadingTree = ref(false)
+const expandMode = ref<'normal' | 'accordion'>('normal') // 模式一：normal, 模式二：accordion
 
 const fetchTopNodes = async () => {
   loadingTree.value = true
@@ -30,9 +39,8 @@ const fetchTopNodes = async () => {
     const res = await getTopNodes(subjectId)
     if (res.data?.code === 200 && res.data.data) {
       topNodes.value = res.data.data.map(node => ({ ...node, expanded: false, children: [] }))
-      // 默认加载第一个顶级节点
       if (topNodes.value.length > 0) {
-        await toggleNode(topNodes.value[0])
+        await selectNode(topNodes.value[0].id)
       }
     }
   } catch (error) {
@@ -42,66 +50,235 @@ const fetchTopNodes = async () => {
   }
 }
 
-const toggleNode = async (node: TreeNode) => {
-  // 如果是叶子节点，直接加载详情
-  if (node.isLeaf === 1) {
-    await selectNode(node.id)
-    return
-  }
+const ensureChildrenLoaded = async (node: TreeNode) => {
+  if (node.isLeaf === 1) return
+  if (node.children && node.children.length > 0) return
 
-  // 展开/收起
-  node.expanded = !node.expanded
-  
-  // 如果展开且没有子节点，则去拉取
-  if (node.expanded && (!node.children || node.children.length === 0)) {
-    node.loadingChildren = true
-    try {
-      const res = await getChildNodes(node.id)
-      if (res.data?.code === 200 && res.data.data) {
-        node.children = res.data.data.map(child => ({ ...child, expanded: false, children: [] }))
+  node.loadingChildren = true
+  try {
+    const res = await getChildNodes(node.id)
+    if (res.data?.code === 200 && res.data.data) {
+      node.children = res.data.data.map(child => ({ ...child, expanded: false, children: [] }))
+    } else {
+      node.children = []
+    }
+  } catch (error) {
+    console.error('获取子节点失败', error)
+    node.children = []
+  } finally {
+    node.loadingChildren = false
+  }
+}
+
+const findParentAndSiblings = (nodes: TreeNode[], targetId: number): { parent: TreeNode | null, siblings: TreeNode[] } | null => {
+  for (const node of nodes) {
+    if (node.children) {
+      const found = node.children.find(c => c.id === targetId)
+      if (found) {
+        return { parent: node, siblings: node.children }
       }
-    } catch (error) {
-      console.error('获取子节点失败', error)
-    } finally {
-      node.loadingChildren = false
+      const result = findParentAndSiblings(node.children, targetId)
+      if (result) return result
+    }
+  }
+  // 检查是否在顶级节点中
+  if (nodes.find(n => n.id === targetId)) {
+    return { parent: null, siblings: nodes }
+  }
+  return null
+}
+
+const toggleExpand = async (node: TreeNode) => {
+  if (node.isLeaf === 1) return
+  
+  const targetExpanded = !node.expanded
+  
+  // 模式二：手风琴模式，且当前是准备展开时
+  if (expandMode.value === 'accordion' && targetExpanded) {
+    const result = findParentAndSiblings(topNodes.value, node.id)
+    if (result) {
+      // 收起同级其他节点
+      result.siblings.forEach(s => {
+        if (s.id !== node.id) {
+          s.expanded = false
+        }
+      })
     }
   }
 
-  // 加载当前节点的详情和笔记
+  node.expanded = targetExpanded
+  
+  if (node.expanded) {
+    await ensureChildrenLoaded(node)
+  }
+}
+
+const handleNodeClick = async (node: TreeNode) => {
   await selectNode(node.id)
+  if (node.isLeaf === 0) {
+    node.expanded = true
+    await ensureChildrenLoaded(node)
+  }
 }
 
 // ----------------- 正文和笔记相关 -----------------
+// 初始化 Markdown 解析器
+const md = markdownit({
+  html: true,
+  linkify: true,
+  typographer: true,
+  highlight: (str: string, lang: string, attrs: string) => {
+    if (lang && hljs.getLanguage(lang)) {
+      try {
+        return hljs.highlight(str, { language: lang, ignoreIllegals: true }).value;
+      } catch (__) {}
+    }
+    return ''; // 使用默认转义
+  }
+})
+
+// 统一包装代码块，应用自定义样式
+const defaultFence = md.renderer.rules.fence || function(tokens, idx, options, env, slf) {
+  return slf.renderToken(tokens, idx, options);
+};
+
+md.renderer.rules.fence = (tokens, idx, options, env, slf) => {
+  const token = tokens[idx];
+  const info = token.info ? token.info.trim() : '';
+  const langName = info.split(/\s+/g)[0];
+  
+  let highlighted = '';
+  if (options.highlight) {
+    // markdown-it 14.x options.highlight expects 3 arguments: (str, lang, attrs)
+    highlighted = options.highlight(token.content, langName, '') || '';
+  }
+
+  if (!highlighted) {
+    highlighted = md.utils.escapeHtml(token.content);
+  }
+
+  return `<pre class="hljs"><code>${highlighted}</code></pre>\n`;
+}
+
+// 解码 HTML 实体（如 &#x20;）
+const decodeEntities = (text: string) => {
+  if (!text) return ''
+  return text
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
+    .replace(/&#([0-9]+);/g, (_, dec) => String.fromCharCode(parseInt(dec, 10)))
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+}
+
 const currentNodeId = ref<number | null>(null)
 const nodeDetail = ref<SubjectNodeDetail | null>(null)
 const nodeNote = ref<NodeNote | null>(null)
 const loadingDetail = ref(false)
+const updatingStatus = ref(false)
+
+const renderedMarkdown = computed(() => {
+  if (!nodeDetail.value?.content) return ''
+  // 渲染前先解码可能存在的乱码实体
+  const decodedContent = decodeEntities(nodeDetail.value.content)
+  return md.render(decodedContent)
+})
+
+// 缓存对象：以 nodeId 为 key
+const detailCache = new Map<number, SubjectNodeDetail>()
+const noteCache = new Map<number, NodeNote | null>()
 
 const selectNode = async (id: number) => {
-  if (currentNodeId.value === id) return
   currentNodeId.value = id
+  
+  // 1. 检查缓存：如果命中，直接使用并返回
+  if (detailCache.has(id)) {
+    console.log(`[Cache Hit] Node ID: ${id}`)
+    nodeDetail.value = detailCache.get(id) || null
+    nodeNote.value = noteCache.get(id) || null
+    return
+  }
+
   loadingDetail.value = true
   
   try {
-    const resDetail = await getNodeDetail(id)
+    // 并发请求详情和笔记（如果已登录）
+    const detailPromise = getNodeDetail(id)
+    const notePromise = isLoggedIn.value ? getNodeNote(id) : Promise.resolve({ data: { code: 200, data: null } })
+
+    const [resDetail, resNote] = await Promise.all([detailPromise, notePromise])
+
+    // 处理详情
+    console.log('[GetNodeDetail]', { nodeId: id, response: resDetail.data })
     if (resDetail.data?.code === 200 && resDetail.data.data) {
-      nodeDetail.value = resDetail.data.data
+      const detail = resDetail.data.data
+      nodeDetail.value = detail
+      detailCache.set(id, detail) // 存入缓存
     } else {
       nodeDetail.value = null
     }
 
+    // 处理笔记
     if (isLoggedIn.value) {
-      const resNote = await getNodeNote(id)
+      console.log('[GetNodeNote]', { nodeId: id, response: resNote.data })
       if (resNote.data?.code === 200 && resNote.data.data) {
-        nodeNote.value = resNote.data.data
+        const note = resNote.data.data
+        nodeNote.value = note
+        noteCache.set(id, note) // 存入缓存
       } else {
         nodeNote.value = null
+        noteCache.set(id, null) // 即使没有笔记也缓存 null，避免重复请求
       }
+    } else {
+      nodeNote.value = null
     }
   } catch (error) {
     console.error('获取详情或笔记失败', error)
   } finally {
     loadingDetail.value = false
+  }
+}
+
+const updateStatus = async () => {
+  if (!currentNodeId.value || updatingStatus.value) return
+  
+  updatingStatus.value = true
+  try {
+    const res = await updateNodeStatus(currentNodeId.value, 'completed')
+    if (res.data?.code === 200) {
+      // 1. 更新当前详情状态
+      if (nodeDetail.value) {
+        nodeDetail.value.userProgressStatus = 'completed'
+      }
+      
+      // 2. 更新树形目录中的节点状态
+      const updateNodeInTree = (nodes: TreeNode[]) => {
+        for (const node of nodes) {
+          if (node.id === currentNodeId.value) {
+            node.userProgressStatus = 'completed'
+            return true
+          }
+          if (node.children && updateNodeInTree(node.children)) {
+            return true
+          }
+        }
+        return false
+      }
+      updateNodeInTree(topNodes.value)
+      
+      // 3. 更新缓存
+      if (detailCache.has(currentNodeId.value)) {
+        const cached = detailCache.get(currentNodeId.value)
+        if (cached) cached.userProgressStatus = 'completed'
+      }
+    }
+  } catch (error) {
+    console.error('更新学习状态失败', error)
+  } finally {
+    updatingStatus.value = false
   }
 }
 
@@ -130,6 +307,24 @@ const goBack = () => {
         <div class="course-title-wrap">
           <BookOpenCheck class="title-icon" :size="20" />
           <h3>教材目录</h3>
+          <div class="mode-switch-btns">
+            <button 
+              class="mode-btn" 
+              :class="{ active: expandMode === 'normal' }"
+              title="自由模式：可展开多个节点"
+              @click="expandMode = 'normal'"
+            >
+              <LayoutList :size="16" />
+            </button>
+            <button 
+              class="mode-btn" 
+              :class="{ active: expandMode === 'accordion' }"
+              title="手风琴模式：展开时自动收起同级"
+              @click="expandMode = 'accordion'"
+            >
+              <LayoutPanelLeft :size="16" />
+            </button>
+          </div>
         </div>
       </div>
       
@@ -143,87 +338,31 @@ const goBack = () => {
           <span>暂无目录数据</span>
         </div>
         <ul v-else class="tree-list">
-          <template v-for="node in topNodes" :key="node.id">
-            <li class="tree-item">
-              <div 
-                class="node-content" 
-                :class="{ 
-                  active: currentNodeId === node.id,
-                  'is-parent': node.isLeaf === 0
-                }"
-                @click="toggleNode(node)"
-              >
-                <span class="expand-icon" v-if="node.isLeaf === 0">
-                  <ChevronDown v-if="node.expanded" :size="14" />
-                  <ChevronRight v-else :size="14" />
-                </span>
-                <span class="expand-icon placeholder" v-else></span>
-                
-                <CheckCircle2 v-if="node.userProgressStatus === 'completed'" class="status-icon completed" :size="16" />
-                <Circle v-else class="status-icon unstarted" :size="16" />
-                
-                <span class="node-name">{{ node.name }}</span>
-              </div>
-              
-              <!-- 子节点递归渲染 (支持多层) -->
-              <transition name="fade">
-                <ul v-if="node.expanded && node.children && node.children.length > 0" class="tree-list sub-list">
-                  <li v-for="child in node.children" :key="child.id" class="tree-item">
-                    <div 
-                      class="node-content sub-content" 
-                      :class="{ active: currentNodeId === child.id }"
-                      @click="toggleNode(child)"
-                    >
-                      <span class="expand-icon" v-if="child.isLeaf === 0">
-                        <ChevronDown v-if="child.expanded" :size="14" />
-                        <ChevronRight v-else :size="14" />
-                      </span>
-                      <span class="expand-icon placeholder" v-else></span>
-
-                      <CheckCircle2 v-if="child.userProgressStatus === 'completed'" class="status-icon completed" :size="16" />
-                      <Circle v-else class="status-icon unstarted" :size="16" />
-
-                      <span class="node-name">{{ child.name }}</span>
-                    </div>
-                    
-                    <ul v-if="child.expanded && child.children && child.children.length > 0" class="tree-list sub-list">
-                      <li v-for="grandchild in child.children" :key="grandchild.id" class="tree-item">
-                        <div 
-                          class="node-content grand-content" 
-                          :class="{ active: currentNodeId === grandchild.id }"
-                          @click="selectNode(grandchild.id)"
-                        >
-                          <span class="expand-icon placeholder"></span>
-                          <CheckCircle2 v-if="grandchild.userProgressStatus === 'completed'" class="status-icon completed" :size="16" />
-                          <Circle v-else class="status-icon unstarted" :size="16" />
-                          <span class="node-name">{{ grandchild.name }}</span>
-                        </div>
-                      </li>
-                    </ul>
-                    <div v-if="child.loadingChildren" class="loading-sub">
-                      <Loader2 class="spin" :size="14" />
-                    </div>
-                  </li>
-                </ul>
-              </transition>
-              <div v-if="node.loadingChildren" class="loading-sub">
-                <Loader2 class="spin" :size="14" />
-              </div>
-            </li>
-          </template>
+          <TreeItem
+            v-for="node in topNodes"
+            :key="node.id"
+            :node="node"
+            :level="0"
+            :active-id="currentNodeId"
+            @node-click="handleNodeClick"
+            @toggle-expand="toggleExpand"
+          />
         </ul>
       </div>
     </aside>
 
     <!-- 中间正文区 -->
     <main class="main-content">
-      <div v-if="loadingDetail" class="content-skeleton">
+      <div v-if="!nodeDetail && loadingDetail" class="content-skeleton">
         <div class="skeleton-header"></div>
         <div class="skeleton-line"></div>
         <div class="skeleton-line short"></div>
         <div class="skeleton-body"></div>
       </div>
       <div v-else-if="nodeDetail" class="content-area">
+        <div v-if="loadingDetail" class="content-loading-overlay">
+          <Loader2 class="spin" :size="28" />
+        </div>
         <header class="content-header">
           <div class="breadcrumb">
             <BookOpen :size="14" />
@@ -246,10 +385,28 @@ const goBack = () => {
 
         <article class="markdown-article">
           <div class="content-body">
-            <!-- 预留 Markdown 渲染，目前显示原始内容 -->
-            <div class="markdown-placeholder">
-              {{ nodeDetail.content }}
+            <div 
+              class="markdown-content" 
+              v-html="renderedMarkdown"
+            ></div>
+          </div>
+          
+          <!-- 叶子节点底部操作区 -->
+          <div v-if="nodeDetail.isLeaf === 1" class="article-footer">
+            <div v-if="nodeDetail.userProgressStatus === 'completed'" class="completed-status">
+              <CheckCircle2 :size="20" />
+              <span>学习完毕</span>
             </div>
+            <button 
+              v-else 
+              class="complete-btn" 
+              :disabled="updatingStatus"
+              @click="updateStatus"
+            >
+              <Loader2 v-if="updatingStatus" class="spin" :size="18" />
+              <BookOpenCheck v-else :size="18" />
+              <span>我已学完</span>
+            </button>
           </div>
         </article>
       </div>
@@ -284,8 +441,8 @@ const goBack = () => {
         <div v-else class="note-active">
           <div class="editor-wrap">
             <textarea 
-              v-model="nodeNote!.noteContent"
               class="note-textarea" 
+              :value="nodeNote?.noteContent || ''"
               placeholder="在这里输入你的随堂笔记..."
               readonly
             ></textarea>
@@ -360,9 +517,42 @@ const goBack = () => {
   align-items: center;
   gap: 8px;
   color: #1e293b;
+  justify-content: space-between;
 }
 
-.course-title-wrap h3 { font-size: 17px; font-weight: 700; }
+.mode-switch-btns {
+  display: flex;
+  background: #f1f5f9;
+  padding: 3px;
+  border-radius: 6px;
+  gap: 2px;
+}
+
+.mode-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  color: #64748b;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.mode-btn:hover {
+  color: #0f172a;
+}
+
+.mode-btn.active {
+  background: #fff;
+  color: #3b82f6;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.course-title-wrap h3 { font-size: 17px; font-weight: 700; flex: 1; }
 .title-icon { color: #3b82f6; }
 
 .tree-container {
@@ -372,48 +562,6 @@ const goBack = () => {
 }
 
 .tree-list { list-style: none; padding: 0; margin: 0; }
-.sub-list { background: rgba(248, 250, 252, 0.5); }
-
-.node-content {
-  display: flex;
-  align-items: center;
-  padding: 10px 16px;
-  cursor: pointer;
-  transition: all 0.2s;
-  color: #475569;
-  font-size: 14px;
-  border-left: 3px solid transparent;
-}
-
-.node-content:hover { background: #f1f5f9; color: #0f172a; }
-.node-content.active {
-  background: #eff6ff;
-  color: #2563eb;
-  font-weight: 600;
-  border-left-color: #3b82f6;
-}
-
-.sub-content { padding-left: 34px; }
-.grand-content { padding-left: 52px; }
-
-.expand-icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  color: #94a3b8;
-  margin-right: 6px;
-}
-
-.expand-icon.placeholder { visibility: hidden; }
-
-.status-icon { margin-right: 8px; flex-shrink: 0; }
-.status-icon.completed { color: #10b981; }
-.status-icon.unstarted { color: #cbd5e1; }
-
-.node-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-
-.loading-sub { padding: 8px 16px 8px 52px; display: flex; color: #3b82f6; }
 
 /* 中间正文区 */
 .main-content {
@@ -427,6 +575,7 @@ const goBack = () => {
   max-width: 880px;
   margin: 0 auto;
   padding: 60px 40px;
+  position: relative;
 }
 
 .content-header { margin-bottom: 40px; }
@@ -478,18 +627,92 @@ const goBack = () => {
 .status-badge.unstarted { background: #f1f5f9; color: #64748b; }
 
 .content-body {
-  font-size: 17px;
+  font-size: 16px;
   line-height: 1.8;
   color: #334155;
 }
 
-.markdown-placeholder {
-  white-space: pre-wrap;
-  font-family: inherit;
-  background: #f8fafc;
-  padding: 24px;
+/* Markdown 样式增强 */
+.markdown-content {
+  line-height: 1.8;
+  word-wrap: break-word;
+}
+
+.markdown-content :deep(h1) { font-size: 2em; margin-bottom: 16px; padding-bottom: 8px; border-bottom: 1px solid #edf2f7; }
+.markdown-content :deep(h2) { font-size: 1.5em; margin: 24px 0 16px; padding-bottom: 4px; border-bottom: 1px solid #edf2f7; }
+.markdown-content :deep(h3) { font-size: 1.25em; margin: 20px 0 12px; }
+.markdown-content :deep(p) { margin-bottom: 16px; }
+.markdown-content :deep(ul), .markdown-content :deep(ol) { padding-left: 2em; margin-bottom: 16px; }
+.markdown-content :deep(li) { margin-bottom: 4px; }
+.markdown-content :deep(code) { 
+  background: #f1f5f9; /* 浅灰色背景 */
+  padding: 2px 6px; 
+  border-radius: 4px; 
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 0.9em;
+  color: #334155; /* 深灰色文字，清晰可读 */
+}
+.markdown-content :deep(pre) {
+  padding: 16px;
   border-radius: 12px;
-  border: 1px solid #f1f5f9;
+  overflow-x: auto;
+  margin: 20px 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+.markdown-content :deep(pre.hljs) {
+  background: #f6f8fa; /* 经典的灰色背景 */
+  color: #1e293b;    /* 深色文字 */
+  border: 1px solid #e2e8f0; /* 添加一个淡边框，增加质感 */
+}
+.markdown-content :deep(pre code) {
+  padding: 0;
+  background: transparent;
+  font-size: 14px;
+  line-height: 1.5;
+  color: inherit;
+}
+.markdown-content :deep(blockquote) {
+  border-left: 4px solid #e2e8f0;
+  padding-left: 16px;
+  color: #64748b;
+  margin: 16px 0;
+  font-style: italic;
+}
+.markdown-content :deep(img) {
+  max-width: 100%;
+  border-radius: 8px;
+  margin: 16px 0;
+}
+.markdown-content :deep(table) {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 20px 0;
+}
+.markdown-content :deep(th), .markdown-content :deep(td) {
+  border: 1px solid #e2e8f0;
+  padding: 12px;
+  text-align: left;
+}
+.markdown-content :deep(th) {
+  background: #f8fafc;
+}
+
+.content-loading-overlay {
+  position: absolute;
+  top: 24px;
+  right: 24px;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(226, 232, 240, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #3b82f6;
+  box-shadow: 0 10px 18px rgba(15, 23, 42, 0.08);
+  pointer-events: none;
 }
 
 /* 右侧笔记区 */
@@ -582,7 +805,64 @@ const goBack = () => {
 
 .action-btn.disabled { background: #f1f5f9; color: #cbd5e1; cursor: not-allowed; }
 
-/* 骨架屏 */
+.markdown-content :deep(a:hover) {
+  text-decoration: underline;
+}
+
+/* 底部操作区 */
+.article-footer {
+  margin-top: 60px;
+  padding-top: 40px;
+  border-top: 1px solid #f1f5f9;
+  display: flex;
+  justify-content: center;
+}
+
+.complete-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  background: #3b82f6;
+  color: #fff;
+  border: none;
+  padding: 14px 40px;
+  border-radius: 12px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+}
+
+.complete-btn:hover:not(:disabled) {
+  background: #2563eb;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(59, 130, 246, 0.4);
+}
+
+.complete-btn:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.complete-btn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.completed-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #10b981;
+  background: #f0fdf4;
+  padding: 12px 32px;
+  border-radius: 12px;
+  font-weight: 600;
+  font-size: 16px;
+  border: 1px solid #dcfce7;
+}
+
+/* 中间正文区骨架屏 */
 .content-skeleton { padding: 60px 40px; max-width: 800px; margin: 0 auto; width: 100%; }
 .skeleton-header { height: 40px; width: 60%; background: #f1f5f9; border-radius: 8px; margin-bottom: 24px; }
 .skeleton-line { height: 16px; width: 100%; background: #f1f5f9; border-radius: 4px; margin-bottom: 12px; }

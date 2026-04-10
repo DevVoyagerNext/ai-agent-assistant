@@ -27,5 +27,7 @@ func (s *KnowledgeNodeRouter) InitAuthKnowledgeNodeRouter(Router *gin.RouterGrou
 	{
 		// 4. 获取某个知识点的随堂笔记 (如: /v1/nodes/12/note)
 		authNodeRouter.GET("/:nodeId/note", nodeController.GetUserStudyNote)
+		// 5. 更新某个知识点的学习状态 (如: PUT /v1/nodes/12/status)
+		authNodeRouter.PUT("/:nodeId/status", nodeController.UpdateNodeStatus)
 	}
 }

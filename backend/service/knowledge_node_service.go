@@ -171,3 +171,11 @@ func (s *KnowledgeNodeService) GetUserStudyNote(ctx context.Context, nodeID int,
 		UpdatedAt:   note.UpdatedAt.Format("2006-01-02 15:04:05"),
 	}, nil
 }
+
+// UpdateNodeStatus 更新用户对知识点的学习状态
+func (s *KnowledgeNodeService) UpdateNodeStatus(ctx context.Context, userID uint, nodeID int, status string) error {
+	if userID == 0 {
+		return errors.New("用户未登录")
+	}
+	return s.nodeDao.UpsertUserStudyStatus(userID, nodeID, status)
+}

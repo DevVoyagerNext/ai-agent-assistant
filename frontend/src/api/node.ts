@@ -23,3 +23,8 @@ export const getNodeDetail = (nodeId: number) => {
 export const getNodeNote = (nodeId: number) => {
   return request.get<ApiResponse<NodeNote>>(`/nodes/${nodeId}/note`)
 }
+
+// 修改知识点的学习状态
+export const updateNodeStatus = (nodeId: number, status: 'unstarted' | 'learning' | 'completed') => {
+  return request.put<ApiResponse<null>>(`/nodes/${nodeId}/status`, { status })
+}

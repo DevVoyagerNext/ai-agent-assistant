@@ -35,3 +35,8 @@ type UserStudyNoteRes struct {
 	IsImportant int8   `json:"isImportant"`
 	UpdatedAt   string `json:"updatedAt"`
 }
+
+// UpdateNodeStatusReq 修改知识点学习状态请求体
+type UpdateNodeStatusReq struct {
+	Status string `json:"status" binding:"required,oneof=unstarted learning completed"`
+}

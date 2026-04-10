@@ -3,6 +3,7 @@ package dao
 import (
 	"backend/global"
 	"backend/model"
+	"time"
 )
 
 type KnowledgeNodeDao struct{}
@@ -64,4 +65,28 @@ func (dao *KnowledgeNodeDao) GetUserStudyNote(userID uint, nodeID int) (model.Us
 	var note model.UserStudyNote
 	err := global.GVA_DB.Where("user_id = ? AND node_id = ?", userID, nodeID).First(&note).Error
 	return note, err
+}
+
+// UpsertUserStudyStatus 更新或创建用户在某个知识点上的学习状态
+func (dao *KnowledgeNodeDao) UpsertUserStudyStatus(userID uint, nodeID int, status string) error {
+	var studyStatus model.UserStudyStatus
+	err := global.GVA_DB.Where("user_id = ? AND node_id = ?", userID, nodeID).First(&studyStatus).Error
+
+	now := time.Now()
+	if err != nil {
+		// 没查到记录，则创建
+		studyStatus = model.UserStudyStatus{
+			UserID:        int(userID),
+			NodeID:        nodeID,
+			Status:        status,
+			LastStudyTime: &now,
+		}
+		return global.GVA_DB.Create(&studyStatus).Error
+	}
+
+	// 如果查询到了记录，则更新状态和最后学习时间
+	return global.GVA_DB.Model(&studyStatus).Updates(map[string]interface{}{
+		"status":          status,
+		"last_study_time": &now,
+	}).Error
 }
