@@ -77,3 +77,43 @@ func (s *AuthService) GetUserID(c *gin.Context) (uint, error) {
 	}
 	return claims.UserID, nil
 }
+
+// RefreshToken 使用刷新 Token 获取新的短 Token
+func (s *AuthService) RefreshToken(ctx context.Context, refreshToken string) (string, int64, error) {
+	j := utils.NewJWT(
+		global.GVA_CONFIG.JWT.SigningKey,
+		global.GVA_CONFIG.JWT.Issuer,
+		global.GVA_CONFIG.JWT.ExpiresTime,
+		global.GVA_CONFIG.JWT.RefreshExpiresTime,
+	)
+
+	// 1. 解析刷新 Token
+	claims, err := j.ParseToken(refreshToken)
+	if err != nil {
+		return "", 0, err
+	}
+
+	// 2. 校验是否为刷新 Token
+	if !claims.IsRefresh {
+		return "", 0, errors.New("invalid refresh token type")
+	}
+
+	// 3. 校验 Redis 白名单 (确保该刷新 Token 还在有效期内)
+	whitelistKey := fmt.Sprintf("whitelist:%d:%s", claims.UserID, refreshToken)
+	exists, err := global.GVA_REDIS.Exists(ctx, whitelistKey).Result()
+	if err != nil {
+		return "", 0, err
+	}
+	if exists == 0 {
+		return "", 0, errors.New("refresh token not in whitelist or expired")
+	}
+
+	// 4. 仅生成新的短 Token
+	newClaims := j.CreateClaims(claims.UserID, claims.Role, false) // false 表示生成短 Token
+	token, err := j.CreateToken(newClaims)
+	if err != nil {
+		return "", 0, err
+	}
+
+	return token, newClaims.ExpiresAt.Unix(), nil
+}

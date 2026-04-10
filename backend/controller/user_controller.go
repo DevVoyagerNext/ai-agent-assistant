@@ -136,3 +136,24 @@ func (u *UserController) GetUserInfo(c *gin.Context) {
 
 	response.Ok(userInfo, c)
 }
+
+// RefreshToken 刷新 Token 接口
+func (u *UserController) RefreshToken(c *gin.Context) {
+	var req dto.RefreshTokenReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.FailWithCode(errmsg.CodeError, c)
+		return
+	}
+
+	token, expiresAt, err := u.authService.RefreshToken(c.Request.Context(), req.RefreshToken)
+	if err != nil {
+		// 如果是刷新 Token 过期或者无效，返回专门的错误码
+		response.FailWithCode(errmsg.UserTokenExpired, c)
+		return
+	}
+
+	response.Ok(dto.RefreshTokenRes{
+		Token:     token,
+		ExpiresAt: expiresAt,
+	}, c)
+}

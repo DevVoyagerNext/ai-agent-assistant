@@ -9,8 +9,9 @@ import (
 
 // CustomClaims 自定义载荷
 type CustomClaims struct {
-	UserID uint   `json:"userId"`
-	Role   string `json:"role"`
+	UserID    uint   `json:"userId"`
+	Role      string `json:"role"`
+	IsRefresh bool   `json:"isRefresh"` // 标记是否为刷新 Token
 	jwt.RegisteredClaims
 }
 
@@ -41,8 +42,9 @@ func (j *JWT) CreateClaims(userID uint, role string, isRefresh bool) CustomClaim
 	}
 
 	return CustomClaims{
-		UserID: userID,
-		Role:   role,
+		UserID:    userID,
+		Role:      role,
+		IsRefresh: isRefresh,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Duration(expireTime) * time.Second)),
 			Issuer:    j.Issuer,

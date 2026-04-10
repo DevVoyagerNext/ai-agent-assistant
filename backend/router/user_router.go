@@ -16,6 +16,7 @@ func (r *UserRouter) InitUserRouter(Router *gin.RouterGroup) {
 		userRouter.POST("/send-email", userController.SendRegisterEmail)
 		userRouter.POST("/register", userController.Register)
 		userRouter.POST("/login", userController.Login)
+		userRouter.POST("/refresh-token", userController.RefreshToken)
 	}
 }
 

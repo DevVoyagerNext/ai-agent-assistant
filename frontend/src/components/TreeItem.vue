@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { type PropType } from 'vue'
 import { 
-  ChevronRight, ChevronDown, Loader2 
+  ChevronRight, Loader2 
 } from 'lucide-vue-next'
 import type { SubjectNode } from '../types/node'
 
@@ -33,32 +33,42 @@ const handleNodeClick = () => {
   <li class="tree-item">
     <div 
       class="node-content" 
-      :class="{ active: activeId === node.id, 'is-parent': node.isLeaf === 0 }"
+      :class="{ 
+        active: activeId === node.id, 
+        'is-parent': node.isLeaf === 0,
+        'is-expanded': node.expanded 
+      }"
       :style="{ paddingLeft: `${16 + level * 18}px` }"
       @click="handleNodeClick"
     >
       <span v-if="node.isLeaf === 0" class="expand-icon" @click="handleToggleExpand">
-        <ChevronDown v-if="node.expanded" :size="14" />
-        <ChevronRight v-else :size="14" />
+        <ChevronRight :size="14" class="chevron-icon" />
       </span>
+      <span v-else class="expand-icon placeholder"></span>
       
       <span class="node-name">{{ node.name }}</span>
     </div>
 
-    <ul v-if="node.expanded && node.children && node.children.length > 0" class="tree-list sub-list">
-      <TreeItem
-        v-for="child in node.children"
-        :key="child.id"
-        :node="child"
-        :level="level + 1"
-        :active-id="activeId"
-        @node-click="(n) => emit('nodeClick', n)"
-        @toggle-expand="(n) => emit('toggleExpand', n)"
-      />
-    </ul>
-
-    <div v-if="node.loadingChildren" class="loading-sub" :style="{ paddingLeft: `${16 + (level + 1) * 18}px` }">
-      <Loader2 class="spin" :size="14" />
+    <div 
+      class="expand-container" 
+      :class="{ 'is-expanded': node.expanded }"
+    >
+      <div class="expand-inner">
+        <ul v-if="node.children && node.children.length > 0" class="tree-list sub-list">
+          <TreeItem
+            v-for="child in node.children"
+            :key="child.id"
+            :node="child"
+            :level="level + 1"
+            :active-id="activeId"
+            @node-click="(n) => emit('nodeClick', n)"
+            @toggle-expand="(n) => emit('toggleExpand', n)"
+          />
+        </ul>
+        <div v-if="node.loadingChildren" class="loading-sub" :style="{ paddingLeft: `${16 + (level + 1) * 18}px` }">
+          <Loader2 class="spin" :size="14" />
+        </div>
+      </div>
     </div>
   </li>
 </template>
@@ -83,7 +93,6 @@ const handleNodeClick = () => {
 .node-content.active {
   background: #eff6ff;
   color: #2563eb;
-  font-weight: 600;
   border-left-color: #3b82f6;
 }
 
@@ -95,6 +104,34 @@ const handleNodeClick = () => {
   color: #94a3b8;
   margin-right: 6px;
   flex-shrink: 0;
+}
+
+.expand-icon.placeholder {
+  visibility: hidden;
+}
+
+.chevron-icon {
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.node-content.is-expanded .chevron-icon {
+  transform: rotate(90deg);
+}
+
+/* 容器高度过渡逻辑 */
+.expand-container {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: hidden;
+}
+
+.expand-container.is-expanded {
+  grid-template-rows: 1fr;
+}
+
+.expand-inner {
+  min-height: 0;
 }
 
 .node-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

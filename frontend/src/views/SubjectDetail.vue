@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, reactive } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import markdownit from 'markdown-it'
 import hljs from 'highlight.js'
@@ -10,6 +10,7 @@ import {
 } from '../api/node'
 import type { SubjectNode, SubjectNodeDetail, NodeNote } from '../types/node'
 import TreeItem from '../components/TreeItem.vue'
+import Toast from '../components/Toast.vue'
 import { 
   FileText, ArrowLeft, 
   Edit3, BookOpen, 
@@ -116,8 +117,10 @@ const toggleExpand = async (node: TreeNode) => {
 const handleNodeClick = async (node: TreeNode) => {
   await selectNode(node.id)
   if (node.isLeaf === 0) {
-    node.expanded = true
-    await ensureChildrenLoaded(node)
+    // 如果节点当前是收起状态，则需要执行展开逻辑（包含手风琴模式的处理）
+    if (!node.expanded) {
+      await toggleExpand(node)
+    }
   }
 }
 
@@ -180,6 +183,19 @@ const nodeNote = ref<NodeNote | null>(null)
 const loadingDetail = ref(false)
 const updatingStatus = ref(false)
 
+// ----------------- 反馈弹窗相关 -----------------
+const toast = reactive({
+  show: false,
+  message: '',
+  type: 'success' as 'success' | 'error'
+})
+
+const showToast = (message: string, type: 'success' | 'error' = 'success') => {
+  toast.message = message
+  toast.type = type
+  toast.show = true
+}
+
 const renderedMarkdown = computed(() => {
   if (!nodeDetail.value?.content) return ''
   // 渲染前先解码可能存在的乱码实体
@@ -191,6 +207,35 @@ const renderedMarkdown = computed(() => {
 const detailCache = new Map<number, SubjectNodeDetail>()
 const noteCache = new Map<number, NodeNote | null>()
 
+// 内部函数：同步更新所有地方的节点状态
+const syncNodeStatus = (id: number, status: 'unstarted' | 'learning' | 'completed') => {
+  // 1. 更新当前详情状态
+  if (currentNodeId.value === id && nodeDetail.value) {
+    nodeDetail.value.userProgressStatus = status
+  }
+  
+  // 2. 更新树形目录中的节点状态
+  const updateNodeInTree = (nodes: TreeNode[]) => {
+    for (const node of nodes) {
+      if (node.id === id) {
+        node.userProgressStatus = status
+        return true
+      }
+      if (node.children && updateNodeInTree(node.children)) {
+        return true
+      }
+    }
+    return false
+  }
+  updateNodeInTree(topNodes.value)
+  
+  // 3. 更新缓存
+  if (detailCache.has(id)) {
+    const cached = detailCache.get(id)
+    if (cached) cached.userProgressStatus = status
+  }
+}
+
 const selectNode = async (id: number) => {
   currentNodeId.value = id
   
@@ -199,6 +244,11 @@ const selectNode = async (id: number) => {
     console.log(`[Cache Hit] Node ID: ${id}`)
     nodeDetail.value = detailCache.get(id) || null
     nodeNote.value = noteCache.get(id) || null
+    
+    // 缓存命中的情况下，如果状态是未开始，也需要自动触发“学习中”
+    if (nodeDetail.value?.userProgressStatus === 'unstarted' && isLoggedIn.value) {
+      autoStartLearning(id)
+    }
     return
   }
 
@@ -217,6 +267,11 @@ const selectNode = async (id: number) => {
       const detail = resDetail.data.data
       nodeDetail.value = detail
       detailCache.set(id, detail) // 存入缓存
+      
+      // 如果获取到的详情显示状态为“未开始”，且已登录，则自动标记为“学习中”
+      if (detail.userProgressStatus === 'unstarted' && isLoggedIn.value) {
+        autoStartLearning(id)
+      }
     } else {
       nodeDetail.value = null
     }
@@ -242,6 +297,18 @@ const selectNode = async (id: number) => {
   }
 }
 
+// 自动将“未开始”状态更新为“学习中”
+const autoStartLearning = async (id: number) => {
+  try {
+    const res = await updateNodeStatus(id, 'learning')
+    if (res.data?.code === 200) {
+      syncNodeStatus(id, 'learning')
+    }
+  } catch (error) {
+    console.error(`[AutoStartLearning] 自动更新状态为学习中失败 (NodeID: ${id})`, error)
+  }
+}
+
 const updateStatus = async () => {
   if (!currentNodeId.value || updatingStatus.value) return
   
@@ -249,34 +316,14 @@ const updateStatus = async () => {
   try {
     const res = await updateNodeStatus(currentNodeId.value, 'completed')
     if (res.data?.code === 200) {
-      // 1. 更新当前详情状态
-      if (nodeDetail.value) {
-        nodeDetail.value.userProgressStatus = 'completed'
-      }
-      
-      // 2. 更新树形目录中的节点状态
-      const updateNodeInTree = (nodes: TreeNode[]) => {
-        for (const node of nodes) {
-          if (node.id === currentNodeId.value) {
-            node.userProgressStatus = 'completed'
-            return true
-          }
-          if (node.children && updateNodeInTree(node.children)) {
-            return true
-          }
-        }
-        return false
-      }
-      updateNodeInTree(topNodes.value)
-      
-      // 3. 更新缓存
-      if (detailCache.has(currentNodeId.value)) {
-        const cached = detailCache.get(currentNodeId.value)
-        if (cached) cached.userProgressStatus = 'completed'
-      }
+      showToast('恭喜！你已完成该知识点的学习')
+      syncNodeStatus(currentNodeId.value, 'completed')
+    } else {
+      showToast(res.data?.msg || '更新状态失败', 'error')
     }
-  } catch (error) {
+  } catch (error: any) {
     console.error('更新学习状态失败', error)
+    showToast(error.response?.data?.msg || '服务器连接失败', 'error')
   } finally {
     updatingStatus.value = false
   }
@@ -297,6 +344,12 @@ const goBack = () => {
 
 <template>
   <div class="study-layout">
+    <Toast 
+      v-if="toast.show" 
+      :message="toast.message" 
+      :type="toast.type" 
+      @close="toast.show = false" 
+    />
     <!-- 左侧目录树 -->
     <aside class="sidebar">
       <div class="sidebar-header">

@@ -49,3 +49,14 @@ type LoginRes struct {
 	ExpiresAt    int64       `json:"expiresAt"`
 	User         UserInfoRes `json:"user"`
 }
+
+// RefreshTokenReq 刷新 Token 请求
+type RefreshTokenReq struct {
+	RefreshToken string `json:"refreshToken" binding:"required"`
+}
+
+// RefreshTokenRes 刷新 Token 响应
+type RefreshTokenRes struct {
+	Token     string `json:"token"`
+	ExpiresAt int64  `json:"expiresAt"`
+}
