@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"backend/dto"
 	"backend/pkg/errmsg"
 	"backend/pkg/utils/response"
 	"backend/service"
@@ -46,6 +47,30 @@ func (con *SubjectController) GetSubjectsByCategory(c *gin.Context) {
 func (con *SubjectController) GetAllSubjects(c *gin.Context) {
 	userId, _ := con.authService.GetUserID(c)
 	res, code := con.subjectService.GetAllSubjects(c.Request.Context(), userId)
+	if code != errmsg.CodeSuccess {
+		response.FailWithCode(code, c)
+		return
+	}
+	response.Ok(res, c)
+}
+
+// SearchSubjects 通过教材名称模糊搜索教材（不需要登录）
+func (con *SubjectController) SearchSubjects(c *gin.Context) {
+	var req dto.SubjectSearchReq
+	if err := c.ShouldBindQuery(&req); err != nil {
+		response.FailWithCode(errmsg.CodeError, c)
+		return
+	}
+
+	if req.Page == 0 {
+		req.Page = 1
+	}
+	if req.PageSize == 0 {
+		req.PageSize = 20
+	}
+
+	userId, _ := con.authService.GetUserID(c)
+	res, code := con.subjectService.SearchSubjects(c.Request.Context(), req.Keyword, userId, req.Page, req.PageSize)
 	if code != errmsg.CodeSuccess {
 		response.FailWithCode(code, c)
 		return
@@ -117,7 +142,7 @@ func (con *SubjectController) GetUserCompletedSubjects(c *gin.Context) {
 	response.Ok(res, c)
 }
 
-// GetUserLastLearningSubject 获取该用户上次学习的教材及进度（需要登录）
+// GetUserLastLearningSubject 分页获取最近学习的教材（需要登录）
 func (con *SubjectController) GetUserLastLearningSubject(c *gin.Context) {
 	userId, err := con.authService.GetUserID(c)
 	if err != nil {
@@ -125,7 +150,52 @@ func (con *SubjectController) GetUserLastLearningSubject(c *gin.Context) {
 		return
 	}
 
-	res, code := con.subjectService.GetUserLastLearningSubject(c.Request.Context(), userId)
+	var req dto.PaginationReq
+	if err := c.ShouldBindQuery(&req); err != nil {
+		response.FailWithCode(errmsg.CodeError, c)
+		return
+	}
+
+	res, code := con.subjectService.GetUserRecentSubjects(c.Request.Context(), userId, req.Page, req.PageSize)
+	if code != errmsg.CodeSuccess {
+		response.FailWithCode(code, c)
+		return
+	}
+	response.Ok(res, c)
+}
+
+// GetUserCollectFolders 获取该用户的收藏夹（需要登录）
+func (con *SubjectController) GetUserCollectFolders(c *gin.Context) {
+	userId, err := con.authService.GetUserID(c)
+	if err != nil {
+		response.FailWithCode(errmsg.UserNotExist, c)
+		return
+	}
+
+	res, code := con.subjectService.GetUserCollectFolders(c.Request.Context(), userId)
+	if code != errmsg.CodeSuccess {
+		response.FailWithCode(code, c)
+		return
+	}
+	response.Ok(res, c)
+}
+
+// GetUserCollectedSubjectsByFolder 获取该用户收藏夹下的教材（需要登录）
+func (con *SubjectController) GetUserCollectedSubjectsByFolder(c *gin.Context) {
+	userId, err := con.authService.GetUserID(c)
+	if err != nil {
+		response.FailWithCode(errmsg.UserNotExist, c)
+		return
+	}
+
+	folderIdStr := c.Param("folderId")
+	folderId, err := strconv.Atoi(folderIdStr)
+	if err != nil {
+		response.FailWithCode(errmsg.CodeError, c)
+		return
+	}
+
+	res, code := con.subjectService.GetUserCollectedSubjectsByFolder(c.Request.Context(), userId, folderId)
 	if code != errmsg.CodeSuccess {
 		response.FailWithCode(code, c)
 		return

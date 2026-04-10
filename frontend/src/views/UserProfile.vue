@@ -5,7 +5,7 @@ import Toast from '../components/Toast.vue'
 import Skeleton from '../components/Skeleton.vue'
 import { 
   ArrowLeft, LogOut, RefreshCcw, 
-  Activity, BookOpen, Share2, Book, Users, Star, Layers 
+  Activity, BookOpen, Share2, Book, Users, Star, Layers, FolderHeart, CheckCircle 
 } from 'lucide-vue-next'
 import { useUserProfile } from '../composables/useUserProfile'
 import ActivityCalendar from '../components/ActivityCalendar.vue'
@@ -17,11 +17,23 @@ const {
   publicPrivateNotes,
   sharedNotes,
   learnedSubjects,
+  collectFolders,
+  likedSubjects,
+  learningSubjects,
+  completedSubjects,
+  recentSubjects,
+  
   loadingUserInfo,
   loadingActivities,
   loadingPublicPrivateNotes,
   loadingSharedNotes,
   loadingLearnedSubjects,
+  loadingCollectFolders,
+  loadingLikedSubjects,
+  loadingLearningSubjects,
+  loadingCompletedSubjects,
+  loadingRecentSubjects,
+  
   errorUserInfo,
   refreshAll
 } = useUserProfile()
@@ -71,6 +83,20 @@ const formatDate = (dateStr: string) => {
   const d = new Date(dateStr)
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
+
+const getCoverStyle = (id: number) => {
+  const palettes: Array<[string, string]> = [
+    ['#3b82f6', '#8b5cf6'],
+    ['#06b6d4', '#3b82f6'],
+    ['#22c55e', '#14b8a6'],
+    ['#f97316', '#ef4444'],
+    ['#a855f7', '#ec4899']
+  ]
+  const [from, to] = palettes[id % palettes.length]
+  return {
+    background: `linear-gradient(135deg, ${from}, ${to})`
+  }
+}
 </script>
 
 <template>
@@ -85,7 +111,7 @@ const formatDate = (dateStr: string) => {
     <div class="topbar">
       <button class="ghost-btn" @click="router.push('/')">
         <ArrowLeft :size="18" />
-        返回
+        返回大厅
       </button>
 
       <div class="topbar-actions">
@@ -165,10 +191,10 @@ const formatDate = (dateStr: string) => {
         <div class="card">
           <div class="card-header">
             <Layers :size="20" class="icon-success" />
-            <h2>在学/已学教材</h2>
+            <h2>最近学习 (在学/已学)</h2>
           </div>
           
-          <div v-if="loadingLearnedSubjects" class="list-skeleton">
+          <div v-if="loadingRecentSubjects" class="list-skeleton">
             <div v-for="i in 2" :key="i" class="list-item-skeleton">
               <Skeleton width="48px" height="64px" border-radius="6px" />
               <div class="skeleton-col">
@@ -178,25 +204,24 @@ const formatDate = (dateStr: string) => {
             </div>
           </div>
           <div v-else class="subject-list">
-            <div v-for="subject in learnedSubjects" :key="subject.subjectId" class="subject-item">
-              <div class="subject-cover">
-                <img v-if="subject.coverImage" :src="subject.coverImage" :alt="subject.subjectName" />
-                <Book v-else :size="24" color="#94a3b8" />
+            <div v-for="item in recentSubjects" :key="item.subject.id" class="subject-item">
+              <div class="subject-cover" :style="getCoverStyle(item.subject.id)">
+                <Book :size="24" color="#fff" />
               </div>
               <div class="subject-info">
-                <h4>{{ subject.subjectName }}</h4>
+                <h4>{{ item.subject.name }}</h4>
                 <div class="progress-bar-wrap">
                   <div class="progress-bar">
                     <div 
                       class="progress-inner" 
-                      :style="{ width: `${Math.min(100, (subject.learned / subject.total) * 100)}%` }"
+                      :style="{ width: `${item.progressPercent}%` }"
                     ></div>
                   </div>
-                  <span class="progress-text">{{ subject.learned }}/{{ subject.total }}</span>
+                  <span class="progress-text">{{ item.progressPercent }}%</span>
                 </div>
               </div>
             </div>
-            <div v-if="!learnedSubjects.length" class="empty-state">
+            <div v-if="!recentSubjects.length" class="empty-state">
               暂无学习数据
             </div>
           </div>
@@ -204,6 +229,55 @@ const formatDate = (dateStr: string) => {
       </div>
 
       <div class="side-column">
+        <!-- Liked Subjects -->
+        <div class="card">
+          <div class="card-header">
+            <Star :size="20" class="icon-primary" />
+            <h2>点赞的教材</h2>
+          </div>
+          
+          <div v-if="loadingLikedSubjects" class="list-skeleton">
+            <div v-for="i in 2" :key="i" class="list-item-skeleton" style="padding: 12px 0;">
+              <div class="skeleton-col">
+                <Skeleton width="80%" height="16px" />
+              </div>
+            </div>
+          </div>
+          <div v-else class="note-list">
+            <div v-for="subject in likedSubjects" :key="subject.id" class="note-item">
+              <h4>{{ subject.name }}</h4>
+            </div>
+            <div v-if="!likedSubjects.length" class="empty-state">
+              暂无点赞教材
+            </div>
+          </div>
+        </div>
+
+        <!-- Collect Folders -->
+        <div class="card">
+          <div class="card-header">
+            <FolderHeart :size="20" class="icon-danger" />
+            <h2>我的收藏夹</h2>
+          </div>
+          
+          <div v-if="loadingCollectFolders" class="list-skeleton">
+            <div v-for="i in 2" :key="i" class="list-item-skeleton" style="padding: 12px 0;">
+              <div class="skeleton-col">
+                <Skeleton width="80%" height="16px" />
+                <Skeleton width="40%" height="12px" style="margin-top: 8px;" />
+              </div>
+            </div>
+          </div>
+          <div v-else class="note-list">
+            <div v-for="folder in collectFolders" :key="folder.id" class="note-item">
+              <h4>{{ folder.name }}</h4>
+              <span class="date">{{ folder.isPublic ? '公开' : '私密' }}</span>
+            </div>
+            <div v-if="!collectFolders.length" class="empty-state">
+              暂无收藏夹
+            </div>
+          </div>
+        </div>
         <!-- Private Notes -->
         <div class="card">
           <div class="card-header">
@@ -234,7 +308,7 @@ const formatDate = (dateStr: string) => {
         <div class="card">
           <div class="card-header">
             <Share2 :size="20" class="icon-info" />
-            <h2>已分享笔记</h2>
+            <h2>分享笔记</h2>
           </div>
           
           <div v-if="loadingSharedNotes" class="list-skeleton">

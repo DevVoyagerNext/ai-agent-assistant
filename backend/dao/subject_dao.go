@@ -28,6 +28,20 @@ func (d *SubjectDao) GetAllSubjects() ([]model.Subject, error) {
 	return subjects, err
 }
 
+func (d *SubjectDao) SearchSubjectsByName(keyword string, page int, pageSize int) ([]model.Subject, int64, error) {
+	query := global.GVA_DB.Model(&model.Subject{}).Where("name LIKE ?", "%"+keyword+"%")
+
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	offset := (page - 1) * pageSize
+	var subjects []model.Subject
+	err := query.Order("id desc").Offset(offset).Limit(pageSize).Find(&subjects).Error
+	return subjects, total, err
+}
+
 func (d *SubjectDao) GetUserCollectedSubjects(userId uint) ([]model.Subject, error) {
 	var subjects []model.Subject
 	err := global.GVA_DB.
@@ -44,6 +58,42 @@ func (d *SubjectDao) GetUserLikedSubjects(userId uint) ([]model.Subject, error) 
 		Where("user_subject_likes.user_id = ?", userId).
 		Find(&subjects).Error
 	return subjects, err
+}
+
+func (d *SubjectDao) GetUserCollectFolders(userId uint) ([]model.UserCollectFolder, error) {
+	var folders []model.UserCollectFolder
+	err := global.GVA_DB.
+		Where("user_id = ?", userId).
+		Order("created_at desc").
+		Find(&folders).Error
+	return folders, err
+}
+
+func (d *SubjectDao) GetUserCollectedSubjectsByFolder(userId uint, folderId int) ([]model.Subject, error) {
+	var subjects []model.Subject
+	err := global.GVA_DB.
+		Distinct("subjects.*").
+		Joins("JOIN user_collect_items ON user_collect_items.subject_id = subjects.id").
+		Where("user_collect_items.user_id = ? AND user_collect_items.folder_id = ?", userId, folderId).
+		Find(&subjects).Error
+	return subjects, err
+}
+
+func (d *SubjectDao) GetUserRecentSubjectProgress(userId uint, page int, pageSize int) ([]model.UserSubjectProgress, int64, error) {
+	var total int64
+	if err := global.GVA_DB.Model(&model.UserSubjectProgress{}).Where("user_id = ?", userId).Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	offset := (page - 1) * pageSize
+	var progresses []model.UserSubjectProgress
+	err := global.GVA_DB.
+		Where("user_id = ?", userId).
+		Order("last_study_time desc").
+		Offset(offset).
+		Limit(pageSize).
+		Find(&progresses).Error
+	return progresses, total, err
 }
 
 func (d *SubjectDao) GetUserSubjectsByStatus(userId uint, status string) ([]model.UserSubjectProgress, error) {

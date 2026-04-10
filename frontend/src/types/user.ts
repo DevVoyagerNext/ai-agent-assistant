@@ -55,3 +55,29 @@ export interface LearnedSubjectItem {
 export interface LearnedSubjectsRes {
   list: LearnedSubjectItem[]
 }
+
+// ---------------- 新增教材相关类型 ----------------
+
+import type { Subject } from './subject'
+
+export interface CollectFolderRes {
+  id: number
+  name: string
+  description: string
+  isPublic: number
+  createdAt: string
+  updatedAt: string
+}
+
+export interface UserSubjectProgressRes {
+  subject: Subject
+  status: string
+  progressPercent: number
+  lastNodeId: number
+  lastStudyTime: string
+}
+
+export interface RecentSubjectListRes {
+  total: number
+  list: UserSubjectProgressRes[]
+}

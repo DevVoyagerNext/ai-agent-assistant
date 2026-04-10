@@ -4,15 +4,23 @@ import {
   getUserActivitiesCalendar, 
   getPublicPrivateNotes, 
   getSharedNotes, 
-  getLearnedSubjects 
+  getLearnedSubjects,
+  getUserCollectFolders,
+  getUserLikedSubjects,
+  getUserLearningSubjects,
+  getUserCompletedSubjects,
+  getUserRecentSubjects
 } from '../api/user'
 import type { 
   UserInfoRes, 
   ActivityCalendarItem, 
   PublicPrivateNoteItem, 
   SharedNoteItem, 
-  LearnedSubjectItem 
+  LearnedSubjectItem,
+  CollectFolderRes,
+  UserSubjectProgressRes
 } from '../types/user'
+import type { Subject } from '../types/subject'
 
 export const useUserProfile = () => {
   // State
@@ -21,6 +29,13 @@ export const useUserProfile = () => {
   const publicPrivateNotes = ref<PublicPrivateNoteItem[]>([])
   const sharedNotes = ref<SharedNoteItem[]>([])
   const learnedSubjects = ref<LearnedSubjectItem[]>([])
+  
+  // 新增 State
+  const collectFolders = ref<CollectFolderRes[]>([])
+  const likedSubjects = ref<Subject[]>([])
+  const learningSubjects = ref<UserSubjectProgressRes[]>([])
+  const completedSubjects = ref<UserSubjectProgressRes[]>([])
+  const recentSubjects = ref<UserSubjectProgressRes[]>([])
 
   // Loading states
   const loadingUserInfo = ref(true)
@@ -28,6 +43,13 @@ export const useUserProfile = () => {
   const loadingPublicPrivateNotes = ref(true)
   const loadingSharedNotes = ref(true)
   const loadingLearnedSubjects = ref(true)
+  
+  // 新增 Loading states
+  const loadingCollectFolders = ref(true)
+  const loadingLikedSubjects = ref(true)
+  const loadingLearningSubjects = ref(true)
+  const loadingCompletedSubjects = ref(true)
+  const loadingRecentSubjects = ref(true)
 
   // Errors (optional, could be handled globally, but here we keep track to show error states)
   const errorUserInfo = ref('')
@@ -133,12 +155,88 @@ export const useUserProfile = () => {
     }
   }
 
+  // ----------- 新增 Fetchers -----------
+  const fetchCollectFolders = async () => {
+    loadingCollectFolders.value = true
+    try {
+      const res = await getUserCollectFolders()
+      if (res.data?.code === 200 && res.data.data) {
+        collectFolders.value = res.data.data || []
+      }
+    } catch (err) {
+      console.error(err)
+    } finally {
+      loadingCollectFolders.value = false
+    }
+  }
+
+  const fetchLikedSubjects = async () => {
+    loadingLikedSubjects.value = true
+    try {
+      const res = await getUserLikedSubjects()
+      if (res.data?.code === 200 && res.data.data) {
+        likedSubjects.value = res.data.data || []
+      }
+    } catch (err) {
+      console.error(err)
+    } finally {
+      loadingLikedSubjects.value = false
+    }
+  }
+
+  const fetchLearningSubjects = async () => {
+    loadingLearningSubjects.value = true
+    try {
+      const res = await getUserLearningSubjects()
+      if (res.data?.code === 200 && res.data.data) {
+        learningSubjects.value = res.data.data || []
+      }
+    } catch (err) {
+      console.error(err)
+    } finally {
+      loadingLearningSubjects.value = false
+    }
+  }
+
+  const fetchCompletedSubjects = async () => {
+    loadingCompletedSubjects.value = true
+    try {
+      const res = await getUserCompletedSubjects()
+      if (res.data?.code === 200 && res.data.data) {
+        completedSubjects.value = res.data.data || []
+      }
+    } catch (err) {
+      console.error(err)
+    } finally {
+      loadingCompletedSubjects.value = false
+    }
+  }
+
+  const fetchRecentSubjects = async () => {
+    loadingRecentSubjects.value = true
+    try {
+      const res = await getUserRecentSubjects(1, 10)
+      if (res.data?.code === 200 && res.data.data) {
+        recentSubjects.value = res.data.data.list || []
+      }
+    } catch (err) {
+      console.error(err)
+    } finally {
+      loadingRecentSubjects.value = false
+    }
+  }
+
   const refreshAll = () => {
     fetchUserInfo()
     fetchActivities()
     fetchPublicPrivateNotes()
     fetchSharedNotes()
     fetchLearnedSubjects()
+    fetchCollectFolders()
+    fetchLikedSubjects()
+    fetchLearningSubjects()
+    fetchCompletedSubjects()
+    fetchRecentSubjects()
   }
 
   onMounted(() => {
@@ -151,11 +249,23 @@ export const useUserProfile = () => {
     publicPrivateNotes,
     sharedNotes,
     learnedSubjects,
+    collectFolders,
+    likedSubjects,
+    learningSubjects,
+    completedSubjects,
+    recentSubjects,
+
     loadingUserInfo,
     loadingActivities,
     loadingPublicPrivateNotes,
     loadingSharedNotes,
     loadingLearnedSubjects,
+    loadingCollectFolders,
+    loadingLikedSubjects,
+    loadingLearningSubjects,
+    loadingCompletedSubjects,
+    loadingRecentSubjects,
+    
     errorUserInfo,
     refreshAll
   }

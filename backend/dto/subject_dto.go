@@ -34,6 +34,31 @@ type UserSubjectProgressRes struct {
 	LastStudyTime   time.Time  `json:"lastStudyTime"`
 }
 
+type RecentSubjectListRes struct {
+	Total int64                    `json:"total"`
+	List  []UserSubjectProgressRes `json:"list"`
+}
+
+type SubjectSearchReq struct {
+	Keyword  string `form:"keyword" binding:"required,min=1,max=50"`
+	Page     int    `form:"page" binding:"omitempty,min=1"`
+	PageSize int    `form:"pageSize" binding:"omitempty,min=1,max=100"`
+}
+
+type SubjectListRes struct {
+	Total int64        `json:"total"`
+	List  []SubjectRes `json:"list"`
+}
+
+type CollectFolderRes struct {
+	ID          int       `json:"id"`
+	Name        string    `json:"name"`
+	Description string    `json:"description"`
+	IsPublic    int8      `json:"isPublic"`
+	CreatedAt   time.Time `json:"createdAt"`
+	UpdatedAt   time.Time `json:"updatedAt"`
+}
+
 func ConvertSubjectToRes(s *model.Subject) SubjectRes {
 	return SubjectRes{
 		ID:           s.ID,
@@ -52,5 +77,16 @@ func ConvertCategoryToRes(c *model.SubjectCategory) CategoryRes {
 		Slug:      c.Slug,
 		Icon:      c.Icon,
 		SortOrder: c.SortOrder,
+	}
+}
+
+func ConvertCollectFolderToRes(f *model.UserCollectFolder) CollectFolderRes {
+	return CollectFolderRes{
+		ID:          f.ID,
+		Name:        f.Name,
+		Description: f.Description,
+		IsPublic:    f.IsPublic,
+		CreatedAt:   f.CreatedAt,
+		UpdatedAt:   f.UpdatedAt,
 	}
 }
