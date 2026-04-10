@@ -14,7 +14,9 @@ import (
 	"gorm.io/gorm"
 )
 
-type UserService struct{}
+type UserService struct {
+	authService AuthService
+}
 
 // GetUserInfo 获取用户信息 (返回脱敏后的 DTO)
 func (u *UserService) GetUserInfo(ctx context.Context, userID uint) (int, dto.UserInfoRes) {
@@ -110,8 +112,7 @@ func (u *UserService) Login(ctx context.Context, email, password, ip, ua string)
 	}
 
 	// 4. 登录成功，生成 Token
-	jwtService := JwtService{}
-	token, refreshToken, expiresAt, err := jwtService.GetTokenPair(ctx, user.ID, user.Role)
+	token, refreshToken, expiresAt, err := u.authService.GetTokenPair(ctx, user.ID, user.Role)
 	if err != nil {
 		return errmsg.CodeError, "", "", 0, dto.UserInfoRes{}
 	}
@@ -196,8 +197,7 @@ func (u *UserService) Register(ctx context.Context, username, email, password, c
 	}
 
 	// 5. 注册成功，生成 Token (通过抽离出来的 JwtService)
-	jwtService := JwtService{}
-	token, refreshToken, expiresAt, err := jwtService.GetTokenPair(ctx, user.ID, user.Role)
+	token, refreshToken, expiresAt, err := u.authService.GetTokenPair(ctx, user.ID, user.Role)
 	if err != nil {
 		return errmsg.CodeError, "", "", 0, dto.UserInfoRes{}
 	}

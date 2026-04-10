@@ -3,14 +3,45 @@ package service
 import (
 	"backend/dao"
 	"backend/dto"
+	"backend/model"
 	"backend/pkg/errmsg"
 	"context"
 	"errors"
+
 	"gorm.io/gorm"
 )
 
 type SubjectService struct {
 	subjectDao dao.SubjectDao
+}
+
+func (s *SubjectService) enrichSubjectList(userId uint, subjects []model.Subject) ([]dto.SubjectRes, int) {
+	var res []dto.SubjectRes
+	if len(subjects) == 0 {
+		return res, errmsg.CodeSuccess
+	}
+
+	var subjectIds []uint
+	for _, sub := range subjects {
+		subjectIds = append(subjectIds, sub.ID)
+	}
+
+	likedMap, collectedMap, progressMap, err := s.subjectDao.GetUserSubjectInteractions(userId, subjectIds)
+	if err != nil {
+		return nil, errmsg.CodeError
+	}
+
+	for _, sub := range subjects {
+		sr := dto.ConvertSubjectToRes(&sub)
+		sr.IsLiked = likedMap[sub.ID]
+		sr.IsCollected = collectedMap[sub.ID]
+		if p, ok := progressMap[sub.ID]; ok {
+			sr.ProgressPercent = p.ProgressPercent
+			sr.LastNodeID = p.LastNodeID
+		}
+		res = append(res, sr)
+	}
+	return res, errmsg.CodeSuccess
 }
 
 func (s *SubjectService) GetCategories(ctx context.Context) ([]dto.CategoryRes, int) {
@@ -26,30 +57,22 @@ func (s *SubjectService) GetCategories(ctx context.Context) ([]dto.CategoryRes, 
 	return res, errmsg.CodeSuccess
 }
 
-func (s *SubjectService) GetSubjectsByCategoryID(ctx context.Context, categoryId int) ([]dto.SubjectRes, int) {
+func (s *SubjectService) GetSubjectsByCategoryID(ctx context.Context, categoryId int, userId uint) ([]dto.SubjectRes, int) {
 	subjects, err := s.subjectDao.GetSubjectsByCategoryID(categoryId)
 	if err != nil {
 		return nil, errmsg.CodeError
 	}
 
-	var res []dto.SubjectRes
-	for _, sub := range subjects {
-		res = append(res, dto.ConvertSubjectToRes(&sub))
-	}
-	return res, errmsg.CodeSuccess
+	return s.enrichSubjectList(userId, subjects)
 }
 
-func (s *SubjectService) GetAllSubjects(ctx context.Context) ([]dto.SubjectRes, int) {
+func (s *SubjectService) GetAllSubjects(ctx context.Context, userId uint) ([]dto.SubjectRes, int) {
 	subjects, err := s.subjectDao.GetAllSubjects()
 	if err != nil {
 		return nil, errmsg.CodeError
 	}
 
-	var res []dto.SubjectRes
-	for _, sub := range subjects {
-		res = append(res, dto.ConvertSubjectToRes(&sub))
-	}
-	return res, errmsg.CodeSuccess
+	return s.enrichSubjectList(userId, subjects)
 }
 
 func (s *SubjectService) GetUserCollectedSubjects(ctx context.Context, userId uint) ([]dto.SubjectRes, int) {
@@ -58,11 +81,7 @@ func (s *SubjectService) GetUserCollectedSubjects(ctx context.Context, userId ui
 		return nil, errmsg.CodeError
 	}
 
-	var res []dto.SubjectRes
-	for _, sub := range subjects {
-		res = append(res, dto.ConvertSubjectToRes(&sub))
-	}
-	return res, errmsg.CodeSuccess
+	return s.enrichSubjectList(userId, subjects)
 }
 
 func (s *SubjectService) GetUserLikedSubjects(ctx context.Context, userId uint) ([]dto.SubjectRes, int) {
@@ -71,11 +90,7 @@ func (s *SubjectService) GetUserLikedSubjects(ctx context.Context, userId uint) 
 		return nil, errmsg.CodeError
 	}
 
-	var res []dto.SubjectRes
-	for _, sub := range subjects {
-		res = append(res, dto.ConvertSubjectToRes(&sub))
-	}
-	return res, errmsg.CodeSuccess
+	return s.enrichSubjectList(userId, subjects)
 }
 
 func (s *SubjectService) GetUserSubjectsByStatus(ctx context.Context, userId uint, status string) ([]dto.UserSubjectProgressRes, int) {
@@ -98,14 +113,19 @@ func (s *SubjectService) GetUserSubjectsByStatus(ctx context.Context, userId uin
 		return nil, errmsg.CodeError
 	}
 
-	subjectMap := make(map[int]dto.SubjectRes)
-	for _, sub := range subjects {
-		subjectMap[int(sub.ID)] = dto.ConvertSubjectToRes(&sub)
+	enrichedSubjects, code := s.enrichSubjectList(userId, subjects)
+	if code != errmsg.CodeSuccess {
+		return nil, code
+	}
+
+	subjectMap := make(map[uint]dto.SubjectRes)
+	for _, sub := range enrichedSubjects {
+		subjectMap[sub.ID] = sub
 	}
 
 	var res []dto.UserSubjectProgressRes
 	for _, p := range progresses {
-		if sub, ok := subjectMap[p.SubjectID]; ok {
+		if sub, ok := subjectMap[uint(p.SubjectID)]; ok {
 			res = append(res, dto.UserSubjectProgressRes{
 				Subject:         sub,
 				Status:          p.Status,
@@ -135,8 +155,13 @@ func (s *SubjectService) GetUserLastLearningSubject(ctx context.Context, userId 
 		return nil, errmsg.CodeError
 	}
 
+	enrichedSubjects, code := s.enrichSubjectList(userId, []model.Subject{*subject})
+	if code != errmsg.CodeSuccess || len(enrichedSubjects) == 0 {
+		return nil, errmsg.CodeError
+	}
+
 	res := &dto.UserSubjectProgressRes{
-		Subject:         dto.ConvertSubjectToRes(subject),
+		Subject:         enrichedSubjects[0],
 		Status:          progress.Status,
 		ProgressPercent: progress.ProgressPercent,
 		LastNodeID:      progress.LastNodeID,

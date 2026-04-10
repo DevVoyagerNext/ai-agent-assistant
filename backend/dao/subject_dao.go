@@ -78,3 +78,39 @@ func (d *SubjectDao) GetSubjectById(id int) (*model.Subject, error) {
 	err := global.GVA_DB.Where("id = ?", id).First(&subject).Error
 	return &subject, err
 }
+
+func (d *SubjectDao) GetUserSubjectInteractions(userId uint, subjectIds []uint) (map[uint]bool, map[uint]bool, map[uint]model.UserSubjectProgress, error) {
+	likedMap := make(map[uint]bool)
+	collectedMap := make(map[uint]bool)
+	progressMap := make(map[uint]model.UserSubjectProgress)
+
+	if userId == 0 || len(subjectIds) == 0 {
+		return likedMap, collectedMap, progressMap, nil
+	}
+
+	var likes []model.UserSubjectLike
+	if err := global.GVA_DB.Where("user_id = ? AND subject_id IN ?", userId, subjectIds).Find(&likes).Error; err != nil {
+		return nil, nil, nil, err
+	}
+	for _, l := range likes {
+		likedMap[uint(l.SubjectID)] = true
+	}
+
+	var collects []model.UserCollectItem
+	if err := global.GVA_DB.Where("user_id = ? AND subject_id IN ?", userId, subjectIds).Find(&collects).Error; err != nil {
+		return nil, nil, nil, err
+	}
+	for _, c := range collects {
+		collectedMap[uint(c.SubjectID)] = true
+	}
+
+	var progresses []model.UserSubjectProgress
+	if err := global.GVA_DB.Where("user_id = ? AND subject_id IN ?", userId, subjectIds).Find(&progresses).Error; err != nil {
+		return nil, nil, nil, err
+	}
+	for _, p := range progresses {
+		progressMap[uint(p.SubjectID)] = p
+	}
+
+	return likedMap, collectedMap, progressMap, nil
+}

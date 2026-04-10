@@ -11,6 +11,7 @@ import (
 
 type SubjectController struct {
 	subjectService service.SubjectService
+	authService    service.AuthService
 }
 
 // GetCategories 获取教材分类接口（不需要登录）
@@ -32,7 +33,8 @@ func (con *SubjectController) GetSubjectsByCategory(c *gin.Context) {
 		return
 	}
 
-	res, code := con.subjectService.GetSubjectsByCategoryID(c.Request.Context(), categoryId)
+	userId, _ := con.authService.GetUserID(c)
+	res, code := con.subjectService.GetSubjectsByCategoryID(c.Request.Context(), categoryId, userId)
 	if code != errmsg.CodeSuccess {
 		response.FailWithCode(code, c)
 		return
@@ -42,7 +44,8 @@ func (con *SubjectController) GetSubjectsByCategory(c *gin.Context) {
 
 // GetAllSubjects 获取所有的教材（不需要登录）
 func (con *SubjectController) GetAllSubjects(c *gin.Context) {
-	res, code := con.subjectService.GetAllSubjects(c.Request.Context())
+	userId, _ := con.authService.GetUserID(c)
+	res, code := con.subjectService.GetAllSubjects(c.Request.Context(), userId)
 	if code != errmsg.CodeSuccess {
 		response.FailWithCode(code, c)
 		return
@@ -52,13 +55,13 @@ func (con *SubjectController) GetAllSubjects(c *gin.Context) {
 
 // GetUserCollectedSubjects 获取该用户收藏的教材（需要登录）
 func (con *SubjectController) GetUserCollectedSubjects(c *gin.Context) {
-	userId, exists := c.Get("userId")
-	if !exists {
+	userId, err := con.authService.GetUserID(c)
+	if err != nil {
 		response.FailWithCode(errmsg.UserNotExist, c)
 		return
 	}
 
-	res, code := con.subjectService.GetUserCollectedSubjects(c.Request.Context(), userId.(uint))
+	res, code := con.subjectService.GetUserCollectedSubjects(c.Request.Context(), userId)
 	if code != errmsg.CodeSuccess {
 		response.FailWithCode(code, c)
 		return
@@ -68,13 +71,13 @@ func (con *SubjectController) GetUserCollectedSubjects(c *gin.Context) {
 
 // GetUserLikedSubjects 获取该用户点赞的教材（需要登录）
 func (con *SubjectController) GetUserLikedSubjects(c *gin.Context) {
-	userId, exists := c.Get("userId")
-	if !exists {
+	userId, err := con.authService.GetUserID(c)
+	if err != nil {
 		response.FailWithCode(errmsg.UserNotExist, c)
 		return
 	}
 
-	res, code := con.subjectService.GetUserLikedSubjects(c.Request.Context(), userId.(uint))
+	res, code := con.subjectService.GetUserLikedSubjects(c.Request.Context(), userId)
 	if code != errmsg.CodeSuccess {
 		response.FailWithCode(code, c)
 		return
@@ -84,13 +87,13 @@ func (con *SubjectController) GetUserLikedSubjects(c *gin.Context) {
 
 // GetUserLearningSubjects 获取该用户正在学习的教材（需要登录）
 func (con *SubjectController) GetUserLearningSubjects(c *gin.Context) {
-	userId, exists := c.Get("userId")
-	if !exists {
+	userId, err := con.authService.GetUserID(c)
+	if err != nil {
 		response.FailWithCode(errmsg.UserNotExist, c)
 		return
 	}
 
-	res, code := con.subjectService.GetUserSubjectsByStatus(c.Request.Context(), userId.(uint), "learning")
+	res, code := con.subjectService.GetUserSubjectsByStatus(c.Request.Context(), userId, "learning")
 	if code != errmsg.CodeSuccess {
 		response.FailWithCode(code, c)
 		return
@@ -100,13 +103,13 @@ func (con *SubjectController) GetUserLearningSubjects(c *gin.Context) {
 
 // GetUserCompletedSubjects 获取该用户已经学习完成的教材（需要登录）
 func (con *SubjectController) GetUserCompletedSubjects(c *gin.Context) {
-	userId, exists := c.Get("userId")
-	if !exists {
+	userId, err := con.authService.GetUserID(c)
+	if err != nil {
 		response.FailWithCode(errmsg.UserNotExist, c)
 		return
 	}
 
-	res, code := con.subjectService.GetUserSubjectsByStatus(c.Request.Context(), userId.(uint), "completed")
+	res, code := con.subjectService.GetUserSubjectsByStatus(c.Request.Context(), userId, "completed")
 	if code != errmsg.CodeSuccess {
 		response.FailWithCode(code, c)
 		return
@@ -116,13 +119,13 @@ func (con *SubjectController) GetUserCompletedSubjects(c *gin.Context) {
 
 // GetUserLastLearningSubject 获取该用户上次学习的教材及进度（需要登录）
 func (con *SubjectController) GetUserLastLearningSubject(c *gin.Context) {
-	userId, exists := c.Get("userId")
-	if !exists {
+	userId, err := con.authService.GetUserID(c)
+	if err != nil {
 		response.FailWithCode(errmsg.UserNotExist, c)
 		return
 	}
 
-	res, code := con.subjectService.GetUserLastLearningSubject(c.Request.Context(), userId.(uint))
+	res, code := con.subjectService.GetUserLastLearningSubject(c.Request.Context(), userId)
 	if code != errmsg.CodeSuccess {
 		response.FailWithCode(code, c)
 		return

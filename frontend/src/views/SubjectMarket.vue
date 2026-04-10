@@ -2,38 +2,91 @@
 import { ref, computed, onMounted } from 'vue'
 import { Search, Flame, BookOpen, Star, ArrowRight, User, Compass } from 'lucide-vue-next'
 import { useRouter } from 'vue-router'
+import { getSubjectCategories, getAllSubjects, getSubjectsByCategory } from '../api/subject'
+import type { Subject, SubjectCategory } from '../types/subject'
 
 const router = useRouter()
 const isLoggedIn = ref(false)
 
-onMounted(() => {
+const subjects = ref<Subject[]>([])
+const categories = ref<SubjectCategory[]>([])
+const currentCategory = ref<number | 'all'>('all')
+const searchQuery = ref('')
+const loading = ref(false)
+
+const fetchCategories = async () => {
+  try {
+    const res = await getSubjectCategories()
+    if (res.data?.code === 200 && res.data.data) {
+      categories.value = res.data.data
+    }
+  } catch (error) {
+    console.error('获取分类失败', error)
+  }
+}
+
+const fetchSubjects = async () => {
+  loading.value = true
+  try {
+    let res;
+    if (currentCategory.value === 'all') {
+      res = await getAllSubjects()
+    } else {
+      res = await getSubjectsByCategory(currentCategory.value as number)
+    }
+    
+    if (res.data?.code === 200 && res.data.data) {
+      subjects.value = res.data.data
+    } else {
+      subjects.value = []
+    }
+  } catch (error) {
+    console.error('获取教材失败', error)
+    subjects.value = []
+  } finally {
+    loading.value = false
+  }
+}
+
+onMounted(async () => {
   isLoggedIn.value = !!localStorage.getItem('token')
+  await fetchCategories()
+  await fetchSubjects()
 })
 
-// 模拟教材数据
-const subjects = ref([
-  { id: 1, title: 'Python 数据分析基础', category: 'Data Science', isHot: true, rating: 4.8, students: 1250, image: 'https://images.unsplash.com/photo-1526379095098-d400fd0bfce8?w=500&q=80', description: '从零开始掌握 Pandas 和 NumPy，解锁数据分析的大门。' },
-  { id: 2, title: 'Vue 3 高级实战', category: 'Frontend', isHot: true, rating: 4.9, students: 3420, image: 'https://images.unsplash.com/photo-1627398225058-6202422c5e5b?w=500&q=80', description: '深入理解 Composition API、Pinia 以及性能优化策略。' },
-  { id: 3, title: 'AI Agent 开发指南', category: 'AI', isHot: true, rating: 5.0, students: 890, image: 'https://images.unsplash.com/photo-1677442136019-21780ecad995?w=500&q=80', description: '探索 LLM 的无限潜力，构建自主学习与决策的智能体。' },
-  { id: 4, title: 'Rust 系统编程', category: 'Backend', isHot: false, rating: 4.7, students: 560, image: 'https://images.unsplash.com/photo-1605379399642-870262d3d051?w=500&q=80', description: '安全与性能并存，掌握现代系统级编程语言的最佳实践。' },
-  { id: 5, title: '算法与数据结构', category: 'Computer Science', isHot: false, rating: 4.6, students: 4500, image: 'https://images.unsplash.com/photo-1516116216624-53e697fedbea?w=500&q=80', description: '大厂面试必修课，轻松攻克 LeetCode 核心题型。' },
-  { id: 6, title: 'Node.js 全栈架构', category: 'Backend', isHot: false, rating: 4.5, students: 1120, image: 'https://images.unsplash.com/photo-1555066931-4365d14bab8c?w=500&q=80', description: '基于 NestJS 构建企业级可扩展的微服务架构。' },
-])
+const handleCategoryChange = async (catId: number | 'all') => {
+  currentCategory.value = catId
+  await fetchSubjects()
+}
 
-const categories = ['全部', 'AI', 'Frontend', 'Backend', 'Data Science', 'Computer Science']
-const currentCategory = ref('全部')
-const searchQuery = ref('')
+// 获取分类名称辅助函数
+const getCategoryName = (catId: number | 'all') => {
+  if (catId === 'all') return '全部'
+  const cat = categories.value.find(c => c.id === catId)
+  return cat ? cat.name : '未知分类'
+}
 
-// 热门推荐
-const hotSubjects = computed(() => subjects.value.filter(s => s.isHot))
+// 模拟图片 (后端目前只返回了 coverImageId，前端需要将其转换为图片 URL)
+const getCoverImage = (id: number) => {
+  const images = [
+    'https://images.unsplash.com/photo-1526379095098-d400fd0bfce8?w=500&q=80',
+    'https://images.unsplash.com/photo-1627398225058-6202422c5e5b?w=500&q=80',
+    'https://images.unsplash.com/photo-1677442136019-21780ecad995?w=500&q=80',
+    'https://images.unsplash.com/photo-1605379399642-870262d3d051?w=500&q=80',
+    'https://images.unsplash.com/photo-1516116216624-53e697fedbea?w=500&q=80'
+  ]
+  return images[id % images.length]
+}
 
-// 过滤后的全量列表
+// 热门推荐（为了演示，我们先默认展示前三个，实际应由后端返回 isHot 字段）
+const hotSubjects = computed(() => subjects.value.slice(0, 3))
+
+// 过滤后的全量列表 (目前只处理前端的搜索词过滤)
 const filteredSubjects = computed(() => {
+  if (!searchQuery.value) return subjects.value
   return subjects.value.filter(s => {
-    const matchCategory = currentCategory.value === '全部' || s.category === currentCategory.value
-    const matchSearch = s.title.toLowerCase().includes(searchQuery.value.toLowerCase()) || 
-                        s.description.toLowerCase().includes(searchQuery.value.toLowerCase())
-    return matchCategory && matchSearch
+    return s.name.toLowerCase().includes(searchQuery.value.toLowerCase()) || 
+           s.description.toLowerCase().includes(searchQuery.value.toLowerCase())
   })
 })
 
@@ -93,7 +146,7 @@ const handleUserAction = () => {
 
     <main class="main-content">
       <!-- 热门推荐模块 -->
-      <section v-if="!searchQuery && currentCategory === '全部'" class="hot-section">
+      <section v-if="!searchQuery && currentCategory === 'all' && hotSubjects.length > 0" class="hot-section">
         <div class="section-header">
           <h2 class="section-title">
             <Flame class="title-icon hot-icon" :size="24" />
@@ -104,19 +157,19 @@ const handleUserAction = () => {
         
         <div class="subject-grid">
           <div v-for="subject in hotSubjects" :key="subject.id" class="subject-card hot-card" @click="goToStudy(subject.id)">
-            <div class="card-cover" :style="{ backgroundImage: `url(${subject.image})` }">
+            <div class="card-cover" :style="{ backgroundImage: `url(${getCoverImage(subject.coverImageId || subject.id)})` }">
               <div class="hot-badge">热门</div>
               <div class="card-overlay">
                 <button class="start-btn">开始学习 <ArrowRight :size="16" /></button>
               </div>
             </div>
             <div class="card-body">
-              <span class="category-tag">{{ subject.category }}</span>
-              <h3 class="subject-title">{{ subject.title }}</h3>
+              <span class="category-tag">{{ getCategoryName(currentCategory) }}</span>
+              <h3 class="subject-title">{{ subject.name }}</h3>
               <p class="subject-desc">{{ subject.description }}</p>
               <div class="card-footer">
-                <div class="stat"><Star class="star-icon" :size="16" /> {{ subject.rating }}</div>
-                <div class="stat"><BookOpen :size="16" /> {{ subject.students }} 人在学</div>
+                <div class="stat" v-if="subject.isLiked"><Star class="star-icon" :size="16" /> 已点赞</div>
+                <div class="stat"><BookOpen :size="16" /> {{ subject.progressPercent || 0 }}% 进度</div>
               </div>
             </div>
           </div>
@@ -135,31 +188,43 @@ const handleUserAction = () => {
         <!-- 分类筛选器 -->
         <div class="category-filter">
           <button 
-            v-for="cat in categories" 
-            :key="cat"
             class="filter-btn"
-            :class="{ active: currentCategory === cat }"
-            @click="currentCategory = cat"
+            :class="{ active: currentCategory === 'all' }"
+            @click="handleCategoryChange('all')"
           >
-            {{ cat }}
+            全部
+          </button>
+          <button 
+            v-for="cat in categories" 
+            :key="cat.id"
+            class="filter-btn"
+            :class="{ active: currentCategory === cat.id }"
+            @click="handleCategoryChange(cat.id)"
+          >
+            {{ cat.name }}
           </button>
         </div>
 
+        <!-- 加载状态 -->
+        <div v-if="loading" class="empty-state">
+          <h3>加载中...</h3>
+        </div>
+
         <!-- 课程列表 -->
-        <div v-if="filteredSubjects.length > 0" class="subject-grid">
+        <div v-else-if="filteredSubjects.length > 0" class="subject-grid">
           <div v-for="subject in filteredSubjects" :key="subject.id" class="subject-card" @click="goToStudy(subject.id)">
-            <div class="card-cover" :style="{ backgroundImage: `url(${subject.image})` }">
+            <div class="card-cover" :style="{ backgroundImage: `url(${getCoverImage(subject.coverImageId || subject.id)})` }">
               <div class="card-overlay">
                 <button class="start-btn">开始学习 <ArrowRight :size="16" /></button>
               </div>
             </div>
             <div class="card-body">
-              <span class="category-tag">{{ subject.category }}</span>
-              <h3 class="subject-title">{{ subject.title }}</h3>
+              <span class="category-tag">{{ getCategoryName(currentCategory) }}</span>
+              <h3 class="subject-title">{{ subject.name }}</h3>
               <p class="subject-desc">{{ subject.description }}</p>
               <div class="card-footer">
-                <div class="stat"><Star class="star-icon" :size="16" /> {{ subject.rating }}</div>
-                <div class="stat"><BookOpen :size="16" /> {{ subject.students }} 人在学</div>
+                <div class="stat" v-if="subject.isLiked"><Star class="star-icon" :size="16" /> 已点赞</div>
+                <div class="stat"><BookOpen :size="16" /> {{ subject.progressPercent || 0 }}% 进度</div>
               </div>
             </div>
           </div>
@@ -170,7 +235,7 @@ const handleUserAction = () => {
           <div class="empty-icon">🔍</div>
           <h3>未找到相关教材</h3>
           <p>尝试更换关键词或分类筛选</p>
-          <button class="reset-btn" @click="searchQuery = ''; currentCategory = '全部'">重置筛选</button>
+          <button class="reset-btn" @click="searchQuery = ''; handleCategoryChange('all')">重置筛选</button>
         </div>
       </section>
     </main>

@@ -12,6 +12,7 @@ import (
 
 type UserController struct {
 	userService service.UserService
+	authService service.AuthService
 }
 
 // SendRegisterEmail 发送注册验证码接口
@@ -120,14 +121,14 @@ func (u *UserController) Login(c *gin.Context) {
 
 // GetUserInfo 获取用户信息接口
 func (u *UserController) GetUserInfo(c *gin.Context) {
-	// 从 context 中获取 userId (由 JWTAuth 中间件设置)
-	userId, exists := c.Get("userId")
-	if !exists {
+	// 从 context/header 中获取 userId
+	userId, err := u.authService.GetUserID(c)
+	if err != nil {
 		response.FailWithCode(errmsg.UserTokenInvalid, c)
 		return
 	}
 
-	errCode, userInfo := u.userService.GetUserInfo(c.Request.Context(), userId.(uint))
+	errCode, userInfo := u.userService.GetUserInfo(c.Request.Context(), userId)
 	if errCode != errmsg.CodeSuccess {
 		response.FailWithCode(errCode, c)
 		return

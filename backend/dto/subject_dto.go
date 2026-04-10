@@ -14,12 +14,16 @@ type CategoryRes struct {
 }
 
 type SubjectRes struct {
-	ID           uint   `json:"id"`
-	Slug         string `json:"slug"`
-	Name         string `json:"name"`
-	Icon         string `json:"icon"`
-	Description  string `json:"description"`
-	CoverImageID int    `json:"coverImageId"`
+	ID              uint    `json:"id"`
+	Slug            string  `json:"slug"`
+	Name            string  `json:"name"`
+	Icon            string  `json:"icon"`
+	Description     string  `json:"description"`
+	CoverImageID    int     `json:"coverImageId"`
+	IsLiked         bool    `json:"isLiked"`
+	IsCollected     bool    `json:"isCollected"`
+	ProgressPercent float64 `json:"progressPercent"`
+	LastNodeID      int     `json:"lastNodeId"`
 }
 
 type UserSubjectProgressRes struct {
