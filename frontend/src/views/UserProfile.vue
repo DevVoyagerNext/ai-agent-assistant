@@ -120,7 +120,6 @@ const formatDate = (dateStr: string) => {
             <div class="title">
               <div class="name-row">
                 <h1 class="username">{{ userInfo?.username || '—' }}</h1>
-                <span class="badge">已登录</span>
               </div>
               <p class="subtitle">{{ userInfo?.signature || '保持学习，保持好奇' }}</p>
             </div>
@@ -205,11 +204,11 @@ const formatDate = (dateStr: string) => {
       </div>
 
       <div class="side-column">
-        <!-- Public Private Notes -->
+        <!-- Private Notes -->
         <div class="card">
           <div class="card-header">
             <BookOpen :size="20" class="icon-warning" />
-            <h2>公开私人笔记</h2>
+            <h2>私人笔记</h2>
           </div>
           
           <div v-if="loadingPublicPrivateNotes" class="list-skeleton">
@@ -226,7 +225,7 @@ const formatDate = (dateStr: string) => {
               <span class="date">{{ formatDate(note.updatedAt) }}</span>
             </div>
             <div v-if="!publicPrivateNotes.length" class="empty-state">
-              暂无公开笔记
+              暂无私人笔记
             </div>
           </div>
         </div>
@@ -434,15 +433,6 @@ const formatDate = (dateStr: string) => {
   font-size: 24px;
   color: #0f172a;
   letter-spacing: 0.2px;
-}
-
-.badge {
-  font-size: 12px;
-  padding: 4px 10px;
-  border-radius: 999px;
-  background: rgba(34, 197, 94, 0.12);
-  color: #166534;
-  border: 1px solid rgba(34, 197, 94, 0.22);
 }
 
 .subtitle {

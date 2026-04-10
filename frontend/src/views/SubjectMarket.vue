@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { Search, Flame, BookOpen, Star, ArrowRight, User, Compass } from 'lucide-vue-next'
+import { Search, BookOpen, Star, ArrowRight, User, Compass } from 'lucide-vue-next'
 import { useRouter } from 'vue-router'
 import { getSubjectCategories, getAllSubjects, getSubjectsByCategory } from '../api/subject'
 import type { Subject, SubjectCategory } from '../types/subject'
@@ -66,20 +66,19 @@ const getCategoryName = (catId: number | 'all') => {
   return cat ? cat.name : '未知分类'
 }
 
-// 模拟图片 (后端目前只返回了 coverImageId，前端需要将其转换为图片 URL)
-const getCoverImage = (id: number) => {
-  const images = [
-    'https://images.unsplash.com/photo-1526379095098-d400fd0bfce8?w=500&q=80',
-    'https://images.unsplash.com/photo-1627398225058-6202422c5e5b?w=500&q=80',
-    'https://images.unsplash.com/photo-1677442136019-21780ecad995?w=500&q=80',
-    'https://images.unsplash.com/photo-1605379399642-870262d3d051?w=500&q=80',
-    'https://images.unsplash.com/photo-1516116216624-53e697fedbea?w=500&q=80'
+const getCoverStyle = (subject: Subject) => {
+  const palettes: Array<[string, string]> = [
+    ['#3b82f6', '#8b5cf6'],
+    ['#06b6d4', '#3b82f6'],
+    ['#22c55e', '#14b8a6'],
+    ['#f97316', '#ef4444'],
+    ['#a855f7', '#ec4899']
   ]
-  return images[id % images.length]
+  const [from, to] = palettes[subject.id % palettes.length]
+  return {
+    background: `linear-gradient(135deg, ${from}, ${to})`
+  }
 }
-
-// 热门推荐（为了演示，我们先默认展示前三个，实际应由后端返回 isHot 字段）
-const hotSubjects = computed(() => subjects.value.slice(0, 3))
 
 // 过滤后的全量列表 (目前只处理前端的搜索词过滤)
 const filteredSubjects = computed(() => {
@@ -145,37 +144,6 @@ const handleUserAction = () => {
     </header>
 
     <main class="main-content">
-      <!-- 热门推荐模块 -->
-      <section v-if="!searchQuery && currentCategory === 'all' && hotSubjects.length > 0" class="hot-section">
-        <div class="section-header">
-          <h2 class="section-title">
-            <Flame class="title-icon hot-icon" :size="24" />
-            热门推荐
-          </h2>
-          <span class="section-desc">大家都在学的前沿知识</span>
-        </div>
-        
-        <div class="subject-grid">
-          <div v-for="subject in hotSubjects" :key="subject.id" class="subject-card hot-card" @click="goToStudy(subject.id)">
-            <div class="card-cover" :style="{ backgroundImage: `url(${getCoverImage(subject.coverImageId || subject.id)})` }">
-              <div class="hot-badge">热门</div>
-              <div class="card-overlay">
-                <button class="start-btn">开始学习 <ArrowRight :size="16" /></button>
-              </div>
-            </div>
-            <div class="card-body">
-              <span class="category-tag">{{ getCategoryName(currentCategory) }}</span>
-              <h3 class="subject-title">{{ subject.name }}</h3>
-              <p class="subject-desc">{{ subject.description }}</p>
-              <div class="card-footer">
-                <div class="stat" v-if="subject.isLiked"><Star class="star-icon" :size="16" /> 已点赞</div>
-                <div class="stat"><BookOpen :size="16" /> {{ subject.progressPercent || 0 }}% 进度</div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
       <!-- 全量教材大厅 -->
       <section class="all-subjects-section">
         <div class="section-header">
@@ -213,7 +181,7 @@ const handleUserAction = () => {
         <!-- 课程列表 -->
         <div v-else-if="filteredSubjects.length > 0" class="subject-grid">
           <div v-for="subject in filteredSubjects" :key="subject.id" class="subject-card" @click="goToStudy(subject.id)">
-            <div class="card-cover" :style="{ backgroundImage: `url(${getCoverImage(subject.coverImageId || subject.id)})` }">
+            <div class="card-cover" :style="getCoverStyle(subject)">
               <div class="card-overlay">
                 <button class="start-btn">开始学习 <ArrowRight :size="16" /></button>
               </div>
