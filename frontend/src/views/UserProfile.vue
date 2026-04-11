@@ -5,7 +5,7 @@ import Toast from '../components/Toast.vue'
 import Skeleton from '../components/Skeleton.vue'
 import { 
   ArrowLeft, LogOut, RefreshCcw, 
-  Activity, BookOpen, Share2, Book, Users, Star, Layers, FolderHeart 
+  Activity, BookOpen, Share2, Book, Users, Star, Layers, FolderHeart, Bookmark
 } from 'lucide-vue-next'
 import { useUserProfile } from '../composables/useUserProfile'
 import ActivityCalendar from '../components/ActivityCalendar.vue'
@@ -220,7 +220,13 @@ const getCoverStyle = (id: number) => {
                 <Book :size="24" color="#fff" />
               </div>
               <div class="subject-info">
-                <h4>{{ item.subject.name }}</h4>
+                <div class="subject-title-row">
+                  <h4>{{ item.subject.name }}</h4>
+                  <div class="subject-status-icons">
+                    <Star v-if="item.isLiked" :size="14" class="icon-liked" fill="currentColor" />
+                    <Bookmark v-if="item.isCollected" :size="14" class="icon-collected" fill="currentColor" />
+                  </div>
+                </div>
                 <div class="progress-bar-wrap">
                   <div class="progress-bar">
                     <div 
@@ -646,8 +652,21 @@ const getCoverStyle = (id: number) => {
   flex: 1;
 }
 
+.subject-title-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.subject-status-icons {
+  display: flex;
+  gap: 8px;
+  color: #f59e0b;
+}
+
 .subject-info h4 {
-  margin: 0 0 10px 0;
+  margin: 0;
   font-size: 15px;
   color: #1e293b;
 }

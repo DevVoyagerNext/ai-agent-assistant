@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch, onBeforeUnmount } from 'vue'
-import { Search, BookOpen, Star, ArrowRight, User, Compass } from 'lucide-vue-next'
+import { Search, BookOpen, Star, ArrowRight, User, Compass, Bookmark } from 'lucide-vue-next'
 import { useRouter } from 'vue-router'
 import { getSubjectCategories, getAllSubjects, getSubjectsByCategory, searchSubjects } from '../api/subject'
 import type { Subject, SubjectCategory } from '../types/subject'
@@ -357,8 +357,11 @@ const handleUserAction = () => {
                 <h3 class="subject-title">{{ subject.name }}</h3>
                 <p class="subject-desc">{{ subject.description }}</p>
                 <div class="card-footer">
-                  <div class="stat" v-if="subject.isLiked"><Star class="star-icon" :size="16" /> 已点赞</div>
-                  <div class="stat"><BookOpen :size="16" /> {{ subject.progressPercent || 0 }}% 进度</div>
+                  <div class="stats-left">
+                    <div class="stat" v-if="subject.isLiked"><Star class="star-icon" :size="14" /> 点赞</div>
+                    <div class="stat" v-if="subject.isCollected"><Bookmark class="collect-icon" :size="14" /> 收藏</div>
+                  </div>
+                  <div class="stat"><BookOpen :size="14" /> {{ subject.progressPercent || 0 }}% 进度</div>
                 </div>
               </div>
             </div>
@@ -790,6 +793,11 @@ const handleUserAction = () => {
   font-weight: 500;
 }
 
+.stats-left {
+  display: flex;
+  gap: 12px;
+}
+
 .stat {
   display: flex;
   align-items: center;
@@ -797,6 +805,11 @@ const handleUserAction = () => {
 }
 
 .star-icon {
+  color: #f59e0b;
+  fill: #f59e0b;
+}
+
+.collect-icon {
   color: #f59e0b;
   fill: #f59e0b;
 }

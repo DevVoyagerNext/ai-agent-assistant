@@ -14,6 +14,7 @@ func (r *SubjectRouter) InitSubjectRouter(Router *gin.RouterGroup) {
 	subjectRouter := Router.Group("/subjects")
 	{
 		subjectRouter.GET("", subjectController.GetAllSubjects)                     // 获取所有的教材
+		subjectRouter.GET("/:id", subjectController.GetSubjectByID)                 // 获取指定教材详情
 		subjectRouter.GET("/search", subjectController.SearchSubjects)              // 通过教材名称模糊搜索教材
 		subjectRouter.GET("/categories", subjectController.GetCategories)           // 获取教材分类
 		subjectRouter.GET("/category/:id", subjectController.GetSubjectsByCategory) // 通过分类获取教材

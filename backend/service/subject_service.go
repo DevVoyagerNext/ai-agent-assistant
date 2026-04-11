@@ -75,6 +75,23 @@ func (s *SubjectService) GetAllSubjects(ctx context.Context, userId uint) ([]dto
 	return s.enrichSubjectList(userId, subjects)
 }
 
+func (s *SubjectService) GetSubjectByID(ctx context.Context, subjectId int, userId uint) (*dto.SubjectRes, int) {
+	subject, err := s.subjectDao.GetSubjectById(subjectId)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, errmsg.CodeSuccess // 或者返回特定的“未找到”错误码
+		}
+		return nil, errmsg.CodeError
+	}
+
+	enriched, code := s.enrichSubjectList(userId, []model.Subject{*subject})
+	if code != errmsg.CodeSuccess || len(enriched) == 0 {
+		return nil, code
+	}
+
+	return &enriched[0], errmsg.CodeSuccess
+}
+
 func (s *SubjectService) SearchSubjects(ctx context.Context, keyword string, userId uint, page int, pageSize int) (dto.SubjectListRes, int) {
 	subjects, total, err := s.subjectDao.SearchSubjectsByName(keyword, page, pageSize)
 	if err != nil {

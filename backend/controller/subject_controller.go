@@ -163,6 +163,30 @@ func (con *SubjectController) GetAllSubjects(c *gin.Context) {
 	response.Ok(res, c)
 }
 
+// GetSubjectByID 获取教材详情（不需要登录，但会根据登录状态返回点赞收藏等信息）
+func (con *SubjectController) GetSubjectByID(c *gin.Context) {
+	idStr := c.Param("id")
+	id, err := strconv.Atoi(idStr)
+	if err != nil || id <= 0 {
+		response.FailWithCode(errmsg.CodeError, c)
+		return
+	}
+
+	userId, _ := con.authService.GetUserID(c)
+	res, code := con.subjectService.GetSubjectByID(c.Request.Context(), id, userId)
+	if code != errmsg.CodeSuccess {
+		response.FailWithCode(code, c)
+		return
+	}
+
+	if res == nil {
+		response.FailWithMsg(errmsg.CodeError, "教材不存在", c)
+		return
+	}
+
+	response.Ok(res, c)
+}
+
 // SearchSubjects 通过教材名称模糊搜索教材（不需要登录）
 func (con *SubjectController) SearchSubjects(c *gin.Context) {
 	var req dto.SubjectSearchReq
