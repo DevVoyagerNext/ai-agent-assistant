@@ -272,3 +272,44 @@ func (s *SubjectService) ToggleSubjectLike(ctx context.Context, userId uint, sub
 	}
 	return false, errmsg.CodeSuccess // false 表示当前状态为未点赞
 }
+
+func (s *SubjectService) CreateCollectFolder(ctx context.Context, userId uint, req dto.CreateCollectFolderReq) (*dto.CollectFolderRes, int) {
+	folder, err := s.subjectDao.CreateCollectFolder(userId, req.Name, req.Description, *req.IsPublic)
+	if err != nil {
+		return nil, errmsg.CodeError
+	}
+	return &dto.CollectFolderRes{
+		ID:          int(folder.ID),
+		Name:        folder.Name,
+		Description: folder.Description,
+		IsPublic:    folder.IsPublic,
+		CreatedAt:   folder.CreatedAt,
+		UpdatedAt:   folder.UpdatedAt,
+	}, errmsg.CodeSuccess
+}
+
+func (s *SubjectService) AddSubjectToFolder(ctx context.Context, userId uint, folderId int, subjectId int) int {
+	// 1. 检查收藏夹是否存在且属于该用户
+	_, err := s.subjectDao.GetCollectFolderById(userId, folderId)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return errmsg.CodeError // 或者定义专门的收藏夹不存在错误码
+		}
+		return errmsg.CodeError
+	}
+
+	// 2. 检查是否已经收藏过该教材
+	exists, err := s.subjectDao.CheckSubjectInFolder(userId, folderId, subjectId)
+	if err != nil {
+		return errmsg.CodeError
+	}
+	if exists {
+		return errmsg.CodeSuccess // 已经存在，幂等处理
+	}
+
+	// 3. 添加到收藏夹
+	if err := s.subjectDao.AddSubjectToFolder(userId, folderId, subjectId); err != nil {
+		return errmsg.CodeError
+	}
+	return errmsg.CodeSuccess
+}

@@ -59,6 +59,16 @@ type CollectFolderRes struct {
 	UpdatedAt   time.Time `json:"updatedAt"`
 }
 
+type CreateCollectFolderReq struct {
+	Name        string `json:"name" binding:"required,min=1,max=50"`
+	Description string `json:"description" binding:"max=200"`
+	IsPublic    *int8  `json:"isPublic" binding:"required,oneof=0 1"`
+}
+
+type AddSubjectToFolderReq struct {
+	SubjectID int `json:"subjectId" binding:"required,gt=0"`
+}
+
 func ConvertSubjectToRes(s *model.Subject) SubjectRes {
 	return SubjectRes{
 		ID:           s.ID,

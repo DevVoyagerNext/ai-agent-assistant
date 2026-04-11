@@ -9,9 +9,15 @@ import {
   updateNodeStatus, updateNodeDifficulty
 } from '../api/node'
 import { getSubjectDetail } from '../api/subject'
-import { likeSubject } from '../api/user'
+import { 
+  likeSubject, 
+  getUserCollectFolders, 
+  createCollectFolder, 
+  addSubjectToFolder 
+} from '../api/user'
 import type { SubjectNode, SubjectNodeDetail, NodeNote } from '../types/node'
 import type { Subject } from '../types/subject'
+import type { CollectFolderRes } from '../types/user'
 import TreeItem from '../components/TreeItem.vue'
 import Toast from '../components/Toast.vue'
 import {
@@ -24,7 +30,7 @@ import {
   Edit3, BookOpen, 
   Clock, Award, BookOpenCheck, Loader2,
   LayoutList, LayoutPanelLeft, CheckCircle2,
-  Heart
+  Heart, Bookmark, Plus, X, Globe, Lock
 } from 'lucide-vue-next'
 
 const route = useRoute()
@@ -32,18 +38,99 @@ const router = useRouter()
 const subjectId = Number(route.params.id)
 const isLoggedIn = computed(() => !!localStorage.getItem('token'))
 const isLiked = ref(false)
+const isCollected = ref(false)
 const updatingLike = ref(false)
 
-// 获取教材详情（主要为了获取点赞状态）
+// ----------------- 收藏相关 -----------------
+const showCollectModal = ref(false)
+const folders = ref<CollectFolderRes[]>([])
+const loadingFolders = ref(false)
+const showCreateFolder = ref(false)
+const newFolderName = ref('')
+const newFolderDesc = ref('')
+const newFolderIsPublic = ref(0)
+const creatingFolder = ref(false)
+const addingToFolder = ref<number | null>(null)
+
+// 获取教材详情（获取点赞、收藏状态）
 const fetchSubjectDetail = async () => {
   if (!isLoggedIn.value) return
   try {
     const res = await getSubjectDetail(subjectId)
     if (res.data?.code === 200 && res.data.data) {
       isLiked.value = res.data.data.isLiked
+      isCollected.value = res.data.data.isCollected
     }
   } catch (error) {
     console.error('获取教材详情失败', error)
+  }
+}
+
+const handleCollectClick = async () => {
+  if (!isLoggedIn.value) {
+    showToast('请登录后再收藏', 'error')
+    router.push('/login')
+    return
+  }
+  
+  showCollectModal.value = true
+  fetchFolders()
+}
+
+const fetchFolders = async () => {
+  loadingFolders.value = true
+  try {
+    const res = await getUserCollectFolders()
+    if (res.data?.code === 200 && res.data.data) {
+      folders.value = res.data.data
+    }
+  } catch (error) {
+    console.error('获取收藏夹失败', error)
+  } finally {
+    loadingFolders.value = false
+  }
+}
+
+const handleCreateFolder = async () => {
+  if (!newFolderName.value.trim()) {
+    showToast('请输入文件夹名称', 'error')
+    return
+  }
+  
+  creatingFolder.value = true
+  try {
+    const res = await createCollectFolder({
+      name: newFolderName.value,
+      description: newFolderDesc.value,
+      isPublic: newFolderIsPublic.value
+    })
+    if (res.data?.code === 200) {
+      showToast('创建成功')
+      showCreateFolder.value = false
+      newFolderName.value = ''
+      newFolderDesc.value = ''
+      fetchFolders()
+    }
+  } catch (error: any) {
+    showToast(error.response?.data?.msg || '创建失败', 'error')
+  } finally {
+    creatingFolder.value = false
+  }
+}
+
+const handleAddToFolder = async (folderId: number) => {
+  addingToFolder.value = folderId
+  try {
+    const res = await addSubjectToFolder(folderId, subjectId)
+    if (res.data?.code === 200) {
+      showToast('已添加到收藏夹')
+      isCollected.value = true
+      showCollectModal.value = false
+    }
+  } catch (error: any) {
+    showToast(error.response?.data?.msg || '添加失败', 'error')
+  } finally {
+    addingToFolder.value = null
   }
 }
 
@@ -570,6 +657,14 @@ const goBack = () => {
           >
             <Heart :size="16" :fill="isLiked ? 'currentColor' : 'none'" />
           </button>
+          <button 
+            class="mode-toggle-btn collect-btn" 
+            :class="{ collected: isCollected }"
+            :title="isCollected ? '已收藏' : '收藏教材'"
+            @click="handleCollectClick"
+          >
+            <Bookmark :size="16" :fill="isCollected ? 'currentColor' : 'none'" />
+          </button>
         </div>
       </div>
       
@@ -729,6 +824,92 @@ const goBack = () => {
         </div>
       </div>
     </aside>
+
+    <!-- 收藏弹窗 -->
+    <Teleport to="body">
+      <div v-if="showCollectModal" class="modal-overlay" @click.self="showCollectModal = false">
+        <div class="modal-content collect-modal">
+          <header class="modal-header">
+            <h3>添加到收藏夹</h3>
+            <button class="close-btn" @click="showCollectModal = false">
+              <X :size="20" />
+            </button>
+          </header>
+
+          <div class="modal-body">
+            <div v-if="loadingFolders" class="loading-folders">
+              <Loader2 class="spin" :size="24" />
+              <span>正在加载收藏夹...</span>
+            </div>
+            <div v-else class="folder-list">
+              <div 
+                v-for="folder in folders" 
+                :key="folder.id" 
+                class="folder-item"
+                @click="handleAddToFolder(folder.id)"
+              >
+                <div class="folder-info">
+                  <Bookmark :size="18" class="folder-icon" />
+                  <div class="folder-detail">
+                    <span class="folder-name">{{ folder.name }}</span>
+                    <span class="folder-desc">{{ folder.description || '暂无描述' }}</span>
+                  </div>
+                </div>
+                <div class="folder-meta">
+                  <Globe v-if="folder.isPublic" :size="14" title="公开" />
+                  <Lock v-else :size="14" title="私有" />
+                  <Loader2 v-if="addingToFolder === folder.id" class="spin" :size="14" />
+                </div>
+              </div>
+
+              <div v-if="folders.length === 0 && !showCreateFolder" class="empty-folders">
+                <Bookmark :size="48" />
+                <p>你还没有收藏夹，快去创建一个吧</p>
+              </div>
+            </div>
+
+            <!-- 创建文件夹表单 -->
+            <div v-if="showCreateFolder" class="create-folder-form">
+              <div class="form-group">
+                <label>文件夹名称</label>
+                <input v-model="newFolderName" type="text" placeholder="例如：我的考研教材" />
+              </div>
+              <div class="form-group">
+                <label>描述</label>
+                <textarea v-model="newFolderDesc" placeholder="可选：简单介绍一下这个收藏夹"></textarea>
+              </div>
+              <div class="form-group row">
+                <label>是否公开</label>
+                <div class="radio-group">
+                  <label>
+                    <input v-model="newFolderIsPublic" type="radio" :value="0" />
+                    <span>私有</span>
+                  </label>
+                  <label>
+                    <input v-model="newFolderIsPublic" type="radio" :value="1" />
+                    <span>公开</span>
+                  </label>
+                </div>
+              </div>
+              <div class="form-actions">
+                <button class="cancel-btn" @click="showCreateFolder = false">取消</button>
+                <button class="confirm-btn" :disabled="creatingFolder" @click="handleCreateFolder">
+                  <Loader2 v-if="creatingFolder" class="spin" :size="16" />
+                  <span>创建并保存</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <footer v-if="!showCreateFolder" class="modal-footer">
+            <button class="create-btn-trigger" @click="showCreateFolder = true">
+              <Plus :size="16" />
+              <span>新建文件夹</span>
+            </button>
+          </footer>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -797,19 +978,19 @@ const goBack = () => {
   justify-content: center;
   width: 32px;
   height: 32px;
-  background: #f1f5f9;
-  border: 1px solid #e2e8f0;
+  background: #eff6ff;
+  border: 1px solid #dbeafe;
   border-radius: 6px;
-  color: #64748b;
+  color: #3b82f6;
   cursor: pointer;
   transition: all 0.2s;
   flex-shrink: 0;
 }
 
 .mode-toggle-btn:hover {
-  background: #e2e8f0;
-  color: #3b82f6;
-  border-color: #cbd5e1;
+  background: #dbeafe;
+  color: #2563eb;
+  border-color: #bfdbfe;
 }
 
 .mode-toggle-btn.like-btn.liked {
@@ -822,6 +1003,281 @@ const goBack = () => {
   background: #fee2e2;
 }
 
+.mode-toggle-btn.collect-btn.collected {
+  color: #f59e0b;
+  background: #fffbeb;
+  border-color: #fef3c7;
+}
+
+.mode-toggle-btn.collect-btn.collected:hover {
+  background: #fef3c7;
+}
+
+/* 弹窗样式 */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modal-content {
+  background: #fff;
+  border-radius: 16px;
+  width: 100%;
+  max-width: 440px;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  max-height: 80vh;
+}
+
+.modal-header {
+  padding: 20px 24px;
+  border-bottom: 1px solid #f1f5f9;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.modal-header h3 {
+  font-size: 18px;
+  font-weight: 700;
+  color: #1e293b;
+  margin: 0;
+}
+
+.close-btn {
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 6px;
+  transition: all 0.2s;
+}
+
+.close-btn:hover {
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+.modal-body {
+  padding: 24px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.loading-folders, .empty-folders {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 0;
+  color: #94a3b8;
+  gap: 12px;
+}
+
+.folder-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.folder-item {
+  padding: 16px;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.folder-item:hover {
+  border-color: #3b82f6;
+  background: #eff6ff;
+}
+
+.folder-info {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex: 1;
+  min-width: 0;
+}
+
+.folder-icon {
+  color: #f59e0b;
+  flex-shrink: 0;
+}
+
+.folder-detail {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.folder-name {
+  font-weight: 600;
+  color: #1e293b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.folder-desc {
+  font-size: 12px;
+  color: #64748b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.folder-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #94a3b8;
+  margin-left: 12px;
+}
+
+.modal-footer {
+  padding: 16px 24px;
+  border-top: 1px solid #f1f5f9;
+  background: #fcfdfe;
+}
+
+.create-btn-trigger {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px;
+  background: #fff;
+  border: 1px dashed #cbd5e1;
+  border-radius: 10px;
+  color: #64748b;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.create-btn-trigger:hover {
+  border-color: #3b82f6;
+  color: #3b82f6;
+  background: #eff6ff;
+}
+
+.create-folder-form {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.form-group.row {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.form-group label {
+  font-size: 14px;
+  font-weight: 600;
+  color: #475569;
+}
+
+.form-group input, .form-group textarea {
+  padding: 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.form-group input:focus, .form-group textarea:focus {
+  border-color: #3b82f6;
+}
+
+.form-group textarea {
+  height: 80px;
+  resize: none;
+}
+
+.radio-group {
+  display: flex;
+  gap: 16px;
+}
+
+.radio-group label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  font-weight: normal;
+}
+
+.form-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.form-actions button {
+  flex: 1;
+  padding: 12px;
+  border-radius: 10px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.cancel-btn {
+  background: #f1f5f9;
+  border: none;
+  color: #64748b;
+}
+
+.cancel-btn:hover {
+  background: #e2e8f0;
+}
+
+.confirm-btn {
+  background: #3b82f6;
+  border: none;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.confirm-btn:hover:not(:disabled) {
+  background: #2563eb;
+}
+
+.confirm-btn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
 .course-title-wrap h3 {
   font-size: 17px;
   font-weight: 700;
@@ -830,6 +1286,7 @@ const goBack = () => {
   text-overflow: ellipsis;
   min-width: 0;
 }
+
 .title-icon { color: #3b82f6; }
 
 .tree-container {

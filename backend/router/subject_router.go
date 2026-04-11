@@ -33,5 +33,7 @@ func (r *SubjectRouter) InitAuthSubjectRouter(Router *gin.RouterGroup) {
 		userSubjectRouter.GET("/completed", subjectController.GetUserCompletedSubjects)                 // 获取用户已经学习完成的教材
 		userSubjectRouter.GET("/last-learning", subjectController.GetUserLastLearningSubject)           // 分页获取最近学习的教材
 		userSubjectRouter.POST("/:id/like", subjectController.ToggleSubjectLike)                        // 点赞或取消点赞教材
+		userSubjectRouter.POST("/folders", subjectController.CreateCollectFolder)                       // 创建收藏夹
+		userSubjectRouter.POST("/folders/:folderId/subjects", subjectController.AddSubjectToFolder)     // 将教材添加到收藏夹
 	}
 }

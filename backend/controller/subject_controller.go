@@ -50,6 +50,59 @@ func (con *SubjectController) ToggleSubjectLike(c *gin.Context) {
 	response.Ok(gin.H{"isLiked": isLiked}, c)
 }
 
+// CreateCollectFolder 创建用户收藏夹
+func (con *SubjectController) CreateCollectFolder(c *gin.Context) {
+	userId, err := con.authService.GetUserID(c)
+	if err != nil {
+		response.FailWithCode(errmsg.UserTokenNotExist, c)
+		return
+	}
+
+	var req dto.CreateCollectFolderReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.FailWithMsg(errmsg.CodeError, "参数格式错误", c)
+		return
+	}
+
+	folder, code := con.subjectService.CreateCollectFolder(c.Request.Context(), userId, req)
+	if code != errmsg.CodeSuccess {
+		response.FailWithCode(code, c)
+		return
+	}
+
+	response.Ok(folder, c)
+}
+
+// AddSubjectToFolder 将教材添加到指定收藏夹
+func (con *SubjectController) AddSubjectToFolder(c *gin.Context) {
+	userId, err := con.authService.GetUserID(c)
+	if err != nil {
+		response.FailWithCode(errmsg.UserTokenNotExist, c)
+		return
+	}
+
+	folderIdStr := c.Param("folderId")
+	folderId, err := strconv.Atoi(folderIdStr)
+	if err != nil || folderId <= 0 {
+		response.FailWithCode(errmsg.CodeError, c)
+		return
+	}
+
+	var req dto.AddSubjectToFolderReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.FailWithMsg(errmsg.CodeError, "参数格式错误", c)
+		return
+	}
+
+	code := con.subjectService.AddSubjectToFolder(c.Request.Context(), userId, folderId, req.SubjectID)
+	if code != errmsg.CodeSuccess {
+		response.FailWithCode(code, c)
+		return
+	}
+
+	response.Ok(nil, c)
+}
+
 // GetSubjectsByCategory 通过教材分类获取该分类的教材数据（不需要登录）
 func (con *SubjectController) GetSubjectsByCategory(c *gin.Context) {
 	categoryIdStr := c.Param("id")

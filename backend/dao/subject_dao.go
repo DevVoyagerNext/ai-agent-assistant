@@ -182,3 +182,37 @@ func (d *SubjectDao) CreateSubjectLike(userId uint, subjectId int) error {
 func (d *SubjectDao) DeleteSubjectLike(userId uint, subjectId int) error {
 	return global.GVA_DB.Where("user_id = ? AND subject_id = ?", userId, subjectId).Delete(&model.UserSubjectLike{}).Error
 }
+
+func (d *SubjectDao) CreateCollectFolder(userId uint, name, description string, isPublic int8) (model.UserCollectFolder, error) {
+	folder := model.UserCollectFolder{
+		UserID:      int(userId),
+		Name:        name,
+		Description: description,
+		IsPublic:    isPublic,
+	}
+	err := global.GVA_DB.Create(&folder).Error
+	return folder, err
+}
+
+func (d *SubjectDao) GetCollectFolderById(userId uint, folderId int) (*model.UserCollectFolder, error) {
+	var folder model.UserCollectFolder
+	err := global.GVA_DB.Where("id = ? AND user_id = ?", folderId, userId).First(&folder).Error
+	return &folder, err
+}
+
+func (d *SubjectDao) AddSubjectToFolder(userId uint, folderId int, subjectId int) error {
+	item := model.UserCollectItem{
+		UserID:    int(userId),
+		FolderID:  folderId,
+		SubjectID: subjectId,
+	}
+	return global.GVA_DB.Create(&item).Error
+}
+
+func (d *SubjectDao) CheckSubjectInFolder(userId uint, folderId int, subjectId int) (bool, error) {
+	var count int64
+	err := global.GVA_DB.Model(&model.UserCollectItem{}).
+		Where("user_id = ? AND folder_id = ? AND subject_id = ?", userId, folderId, subjectId).
+		Count(&count).Error
+	return count > 0, err
+}
