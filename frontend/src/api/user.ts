@@ -63,6 +63,11 @@ export const getUserRecentSubjects = (page = 1, pageSize = 10) => {
   })
 }
 
+// 获取该用户已经收藏的教材
+export const getUserCollectedSubjects = () => {
+  return request.get<ApiResponse<UserSubjectProgressRes[]>>('/user/subjects/collected')
+}
+
 // 6. 点赞或取消点赞教材
 export const likeSubject = (id: number) => {
   return request.post<ApiResponse<{ isLiked: boolean }>>(`/user/subjects/${id}/like`)
@@ -76,4 +81,9 @@ export const createCollectFolder = (data: { name: string; description: string; i
 // 8. 把教材添加到用户的收藏夹
 export const addSubjectToFolder = (folderId: number, subjectId: number) => {
   return request.post<ApiResponse<null>>(`/user/subjects/folders/${folderId}/subjects`, { subjectId })
+}
+
+// 9. 取消教材收藏 (从收藏夹移除)
+export const removeSubjectFromFolder = (folderId: number, subjectId: number) => {
+  return request.delete<ApiResponse<null>>(`/user/subjects/folders/${folderId}/subjects/${subjectId}`)
 }

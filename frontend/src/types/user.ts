@@ -72,6 +72,8 @@ export interface CollectFolderRes {
 export interface UserSubjectProgressRes {
   subject: Subject
   status: string
+  isLiked: boolean
+  isCollected: boolean
   progressPercent: number
   lastNodeId: number
   lastStudyTime: string

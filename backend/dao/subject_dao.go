@@ -216,3 +216,8 @@ func (d *SubjectDao) CheckSubjectInFolder(userId uint, folderId int, subjectId i
 		Count(&count).Error
 	return count > 0, err
 }
+
+func (d *SubjectDao) DeleteSubjectFromFolder(userId uint, folderId int, subjectId int) error {
+	return global.GVA_DB.Where("user_id = ? AND folder_id = ? AND subject_id = ?", userId, folderId, subjectId).
+		Delete(&model.UserCollectItem{}).Error
+}

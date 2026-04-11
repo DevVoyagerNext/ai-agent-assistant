@@ -25,15 +25,16 @@ func (r *SubjectRouter) InitAuthSubjectRouter(Router *gin.RouterGroup) {
 	subjectController := &controller.SubjectController{}
 	userSubjectRouter := Router.Group("/user/subjects")
 	{
-		userSubjectRouter.GET("/folders", subjectController.GetUserCollectFolders)                      // 获取用户收藏夹
-		userSubjectRouter.GET("/folders/:folderId", subjectController.GetUserCollectedSubjectsByFolder) // 获取用户收藏夹下的教材
-		userSubjectRouter.GET("/collected", subjectController.GetUserCollectedSubjects)                 // 获取用户收藏的教材
-		userSubjectRouter.GET("/liked", subjectController.GetUserLikedSubjects)                         // 获取用户点赞的教材
-		userSubjectRouter.GET("/learning", subjectController.GetUserLearningSubjects)                   // 获取用户正在学习的教材
-		userSubjectRouter.GET("/completed", subjectController.GetUserCompletedSubjects)                 // 获取用户已经学习完成的教材
-		userSubjectRouter.GET("/last-learning", subjectController.GetUserLastLearningSubject)           // 分页获取最近学习的教材
-		userSubjectRouter.POST("/:id/like", subjectController.ToggleSubjectLike)                        // 点赞或取消点赞教材
-		userSubjectRouter.POST("/folders", subjectController.CreateCollectFolder)                       // 创建收藏夹
-		userSubjectRouter.POST("/folders/:folderId/subjects", subjectController.AddSubjectToFolder)     // 将教材添加到收藏夹
+		userSubjectRouter.GET("/folders", subjectController.GetUserCollectFolders)                                    // 获取用户收藏夹
+		userSubjectRouter.GET("/folders/:folderId", subjectController.GetUserCollectedSubjectsByFolder)               // 获取用户收藏夹下的教材
+		userSubjectRouter.GET("/collected", subjectController.GetUserCollectedSubjects)                               // 获取用户收藏的教材
+		userSubjectRouter.GET("/liked", subjectController.GetUserLikedSubjects)                                       // 获取用户点赞的教材
+		userSubjectRouter.GET("/learning", subjectController.GetUserLearningSubjects)                                 // 获取用户正在学习的教材
+		userSubjectRouter.GET("/completed", subjectController.GetUserCompletedSubjects)                               // 获取用户已经学习完成的教材
+		userSubjectRouter.GET("/last-learning", subjectController.GetUserLastLearningSubject)                         // 分页获取最近学习的教材
+		userSubjectRouter.POST("/:id/like", subjectController.ToggleSubjectLike)                                      // 点赞或取消点赞教材
+		userSubjectRouter.POST("/folders", subjectController.CreateCollectFolder)                                     // 创建收藏夹
+		userSubjectRouter.POST("/folders/:folderId/subjects", subjectController.AddSubjectToFolder)                   // 将教材添加到收藏夹
+		userSubjectRouter.DELETE("/folders/:folderId/subjects/:subjectId", subjectController.RemoveSubjectFromFolder) // 从收藏夹移除教材
 	}
 }

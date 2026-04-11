@@ -15,6 +15,7 @@ export interface Subject {
   coverImageId: number;
   isLiked: boolean;
   isCollected: boolean;
+  collectFolderId?: number;
   progressPercent: number;
   lastNodeId: number;
 }

@@ -164,6 +164,8 @@ func (s *SubjectService) GetUserRecentSubjects(ctx context.Context, userId uint,
 			list = append(list, dto.UserSubjectProgressRes{
 				Subject:         sub,
 				Status:          p.Status,
+				IsLiked:         sub.IsLiked,
+				IsCollected:     sub.IsCollected,
 				ProgressPercent: p.ProgressPercent,
 				LastNodeID:      p.LastNodeID,
 				LastStudyTime:   p.LastStudyTime,
@@ -210,6 +212,8 @@ func (s *SubjectService) GetUserSubjectsByStatus(ctx context.Context, userId uin
 			res = append(res, dto.UserSubjectProgressRes{
 				Subject:         sub,
 				Status:          p.Status,
+				IsLiked:         sub.IsLiked,
+				IsCollected:     sub.IsCollected,
 				ProgressPercent: p.ProgressPercent,
 				LastNodeID:      p.LastNodeID,
 				LastStudyTime:   p.LastStudyTime,
@@ -244,6 +248,8 @@ func (s *SubjectService) GetUserLastLearningSubject(ctx context.Context, userId 
 	res := &dto.UserSubjectProgressRes{
 		Subject:         enrichedSubjects[0],
 		Status:          progress.Status,
+		IsLiked:         enrichedSubjects[0].IsLiked,
+		IsCollected:     enrichedSubjects[0].IsCollected,
 		ProgressPercent: progress.ProgressPercent,
 		LastNodeID:      progress.LastNodeID,
 		LastStudyTime:   progress.LastStudyTime,
@@ -309,6 +315,23 @@ func (s *SubjectService) AddSubjectToFolder(ctx context.Context, userId uint, fo
 
 	// 3. 添加到收藏夹
 	if err := s.subjectDao.AddSubjectToFolder(userId, folderId, subjectId); err != nil {
+		return errmsg.CodeError
+	}
+	return errmsg.CodeSuccess
+}
+
+func (s *SubjectService) RemoveSubjectFromFolder(ctx context.Context, userId uint, folderId int, subjectId int) int {
+	// 1. 检查收藏夹是否存在且属于该用户
+	_, err := s.subjectDao.GetCollectFolderById(userId, folderId)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return errmsg.CodeError
+		}
+		return errmsg.CodeError
+	}
+
+	// 2. 删除收藏记录
+	if err := s.subjectDao.DeleteSubjectFromFolder(userId, folderId, subjectId); err != nil {
 		return errmsg.CodeError
 	}
 	return errmsg.CodeSuccess

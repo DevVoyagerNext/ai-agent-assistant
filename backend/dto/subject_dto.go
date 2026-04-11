@@ -29,6 +29,8 @@ type SubjectRes struct {
 type UserSubjectProgressRes struct {
 	Subject         SubjectRes `json:"subject"`
 	Status          string     `json:"status"`
+	IsLiked         bool       `json:"isLiked"`
+	IsCollected     bool       `json:"isCollected"`
 	ProgressPercent float64    `json:"progressPercent"`
 	LastNodeID      int        `json:"lastNodeId"`
 	LastStudyTime   time.Time  `json:"lastStudyTime"`

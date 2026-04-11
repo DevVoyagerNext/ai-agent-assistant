@@ -13,7 +13,8 @@ import {
   likeSubject, 
   getUserCollectFolders, 
   createCollectFolder, 
-  addSubjectToFolder 
+  addSubjectToFolder,
+  removeSubjectFromFolder 
 } from '../api/user'
 import type { SubjectNode, SubjectNodeDetail, NodeNote } from '../types/node'
 import type { Subject } from '../types/subject'
@@ -39,6 +40,7 @@ const subjectId = Number(route.params.id)
 const isLoggedIn = computed(() => !!localStorage.getItem('token'))
 const isLiked = ref(false)
 const isCollected = ref(false)
+const collectFolderId = ref<number | null>(null) // 教材所属的收藏夹ID
 const updatingLike = ref(false)
 
 // ----------------- 收藏相关 -----------------
@@ -60,6 +62,7 @@ const fetchSubjectDetail = async () => {
     if (res.data?.code === 200 && res.data.data) {
       isLiked.value = res.data.data.isLiked
       isCollected.value = res.data.data.isCollected
+      collectFolderId.value = res.data.data.collectFolderId || null
     }
   } catch (error) {
     console.error('获取教材详情失败', error)
@@ -70,6 +73,21 @@ const handleCollectClick = async () => {
   if (!isLoggedIn.value) {
     showToast('请登录后再收藏', 'error')
     router.push('/login')
+    return
+  }
+  
+  // 如果已经收藏，点击则是取消收藏
+  if (isCollected.value && collectFolderId.value) {
+    try {
+      const res = await removeSubjectFromFolder(collectFolderId.value, subjectId)
+      if (res.data?.code === 200) {
+        showToast('已取消收藏')
+        isCollected.value = false
+        collectFolderId.value = null
+      }
+    } catch (error: any) {
+      showToast(error.response?.data?.msg || '取消收藏失败', 'error')
+    }
     return
   }
   
@@ -125,6 +143,7 @@ const handleAddToFolder = async (folderId: number) => {
     if (res.data?.code === 200) {
       showToast('已添加到收藏夹')
       isCollected.value = true
+      collectFolderId.value = folderId
       showCollectModal.value = false
     }
   } catch (error: any) {

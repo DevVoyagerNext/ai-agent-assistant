@@ -103,6 +103,37 @@ func (con *SubjectController) AddSubjectToFolder(c *gin.Context) {
 	response.Ok(nil, c)
 }
 
+// RemoveSubjectFromFolder 从指定收藏夹移除教材
+func (con *SubjectController) RemoveSubjectFromFolder(c *gin.Context) {
+	userId, err := con.authService.GetUserID(c)
+	if err != nil {
+		response.FailWithCode(errmsg.UserTokenNotExist, c)
+		return
+	}
+
+	folderIdStr := c.Param("folderId")
+	folderId, err := strconv.Atoi(folderIdStr)
+	if err != nil || folderId <= 0 {
+		response.FailWithCode(errmsg.CodeError, c)
+		return
+	}
+
+	subjectIdStr := c.Param("subjectId")
+	subjectId, err := strconv.Atoi(subjectIdStr)
+	if err != nil || subjectId <= 0 {
+		response.FailWithCode(errmsg.CodeError, c)
+		return
+	}
+
+	code := con.subjectService.RemoveSubjectFromFolder(c.Request.Context(), userId, folderId, subjectId)
+	if code != errmsg.CodeSuccess {
+		response.FailWithCode(code, c)
+		return
+	}
+
+	response.Ok(nil, c)
+}
+
 // GetSubjectsByCategory 通过教材分类获取该分类的教材数据（不需要登录）
 func (con *SubjectController) GetSubjectsByCategory(c *gin.Context) {
 	categoryIdStr := c.Param("id")
