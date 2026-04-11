@@ -28,3 +28,8 @@ export const getNodeNote = (nodeId: number) => {
 export const updateNodeStatus = (nodeId: number, status: 'unstarted' | 'learning' | 'completed') => {
   return request.put<ApiResponse<null>>(`/nodes/${nodeId}/status`, { status })
 }
+
+// 评价知识点难易程度
+export const updateNodeDifficulty = (nodeId: number, difficulty: 'easy' | 'medium' | 'hard') => {
+  return request.put<ApiResponse<null>>(`/nodes/${nodeId}/difficulty`, { difficulty })
+}

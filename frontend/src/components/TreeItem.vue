@@ -4,6 +4,7 @@ import {
   ChevronRight, Loader2 
 } from 'lucide-vue-next'
 import type { SubjectNode } from '../types/node'
+import { normalizeNodeProgressStatus } from '../utils/nodeProgress'
 
 interface TreeNode extends SubjectNode {
   expanded?: boolean;
@@ -27,6 +28,8 @@ const handleToggleExpand = (e: MouseEvent) => {
 const handleNodeClick = () => {
   emit('nodeClick', props.node)
 }
+
+const getNodeStatusClass = (status: unknown) => normalizeNodeProgressStatus(status)
 </script>
 
 <template>
@@ -46,6 +49,10 @@ const handleNodeClick = () => {
       </span>
       <span v-else class="expand-icon placeholder"></span>
       
+      <div 
+        class="status-indicator" 
+        :class="getNodeStatusClass(node.userProgressStatus)"
+      ></div>
       <span class="node-name">{{ node.name }}</span>
     </div>
 
@@ -81,12 +88,15 @@ const handleNodeClick = () => {
 .node-content {
   display: flex;
   align-items: center;
-  padding: 10px 16px;
+  padding: 10px 16px; /* 调整 padding 使左右平衡 */
   cursor: pointer;
   transition: all 0.2s;
   color: #475569;
   font-size: 14px;
   border-left: 3px solid transparent;
+  width: 100%;
+  box-sizing: border-box;
+  overflow: hidden; /* 确保内容不溢出 */
 }
 
 .node-content:hover { background: #f1f5f9; color: #0f172a; }
@@ -134,7 +144,41 @@ const handleNodeClick = () => {
   min-height: 0;
 }
 
-.node-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.node-name {
+  flex: 1;
+  min-width: 0; /* 关键：允许标题收缩 */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 学习状态圆圈指示器 */
+.status-indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0; /* 关键：圆圈永不收缩 */
+  display: inline-block;
+  vertical-align: middle;
+  position: relative;
+  z-index: 2;
+  margin-right: 8px; /* 圆圈在文字左边，固定右侧间距 */
+}
+
+.status-indicator.unstarted {
+  background-color: #facc15 !important; /* 黄色 */
+  box-shadow: 0 0 6px rgba(250, 204, 21, 0.4);
+}
+
+.status-indicator.learning {
+  background-color: #3b82f6 !important; /* 蓝色 */
+  box-shadow: 0 0 6px rgba(59, 130, 246, 0.4);
+}
+
+.status-indicator.completed {
+  background-color: #22c55e !important; /* 绿色 */
+  box-shadow: 0 0 6px rgba(34, 197, 94, 0.4);
+}
 
 .loading-sub { padding: 8px 16px; display: flex; color: #3b82f6; }
 

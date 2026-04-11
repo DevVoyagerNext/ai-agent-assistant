@@ -3,6 +3,7 @@ package service
 import (
 	"backend/dao"
 	"backend/dto"
+	"backend/global"
 	"backend/model"
 	"context"
 	"errors"
@@ -178,4 +179,52 @@ func (s *KnowledgeNodeService) UpdateNodeStatus(ctx context.Context, userID uint
 		return errors.New("用户未登录")
 	}
 	return s.nodeDao.UpsertUserStudyStatus(userID, nodeID, status)
+}
+
+// MarkNodeDifficulty 标记或更新知识点的难度评价
+func (s *KnowledgeNodeService) MarkNodeDifficulty(ctx context.Context, userID uint, nodeID int, difficulty string) error {
+	if userID == 0 {
+		return errors.New("用户未登录")
+	}
+
+	// 开启事务
+	return global.GVA_DB.Transaction(func(tx *gorm.DB) error {
+		// 1. 查询该用户是否已对该节点标记过难度
+		oldDiff, err := s.nodeDao.GetUserNodeDifficulty(tx, userID, nodeID)
+		isUpdate := true
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				isUpdate = false
+			} else {
+				return err
+			}
+		}
+
+		// 2. 如果已存在且难度评价相同，直接返回（幂等处理）
+		if isUpdate && oldDiff.Difficulty == difficulty {
+			return nil
+		}
+
+		// 3. 更新/创建个人评价记录
+		err = s.nodeDao.UpsertUserNodeDifficulty(tx, userID, nodeID, difficulty)
+		if err != nil {
+			return err
+		}
+
+		// 4. 更新聚合统计表 (node_metrics)
+		if isUpdate {
+			// 如果是更新，旧的评价数 -1，新的评价数 +1
+			err = s.nodeDao.UpdateNodeMetric(tx, nodeID, oldDiff.Difficulty, -1)
+			if err != nil {
+				return err
+			}
+		}
+		// 新的评价数 +1
+		err = s.nodeDao.UpdateNodeMetric(tx, nodeID, difficulty, 1)
+		if err != nil {
+			return err
+		}
+
+		return nil
+	})
 }

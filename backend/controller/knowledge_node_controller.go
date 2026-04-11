@@ -128,3 +128,33 @@ func (con *KnowledgeNodeController) UpdateNodeStatus(c *gin.Context) {
 
 	response.Ok(nil, c)
 }
+
+// MarkNodeDifficulty 标记知识点难度
+func (con *KnowledgeNodeController) MarkNodeDifficulty(c *gin.Context) {
+	nodeIdStr := c.Param("nodeId")
+	nodeId, err := strconv.Atoi(nodeIdStr)
+	if err != nil || nodeId <= 0 {
+		response.FailWithMsg(errmsg.CodeError, "知识点ID格式错误", c)
+		return
+	}
+
+	var req dto.MarkNodeDifficultyReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.FailWithMsg(errmsg.CodeError, "参数错误: "+err.Error(), c)
+		return
+	}
+
+	userId, err := con.authService.GetUserID(c)
+	if err != nil  {
+		response.FailWithCode(errmsg.UserTokenNotExist, c) // 必须登录
+		return
+	}
+
+	err = con.nodeService.MarkNodeDifficulty(c.Request.Context(), userId, nodeId, req.Difficulty)
+	if err != nil {
+		response.FailWithMsg(errmsg.CodeError, "标记难度失败", c)
+		return
+	}
+
+	response.Ok(nil, c)
+}

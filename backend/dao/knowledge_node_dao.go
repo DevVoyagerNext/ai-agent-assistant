@@ -3,7 +3,10 @@ package dao
 import (
 	"backend/global"
 	"backend/model"
+	"errors"
 	"time"
+
+	"gorm.io/gorm"
 )
 
 type KnowledgeNodeDao struct{}
@@ -50,7 +53,7 @@ func (dao *KnowledgeNodeDao) GetNodeMetricsByNodeIDs(nodeIDs []uint) ([]model.No
 	return metrics, err
 }
 
-// GetUserStudyStatusByNodeIDs 批量获取用户在这些节点上的学习进度
+// GetUserStudyStatusByNodeIDs 批量获取用户在 these 节点上的学习进度
 func (dao *KnowledgeNodeDao) GetUserStudyStatusByNodeIDs(userID uint, nodeIDs []uint) ([]model.UserStudyStatus, error) {
 	var statuses []model.UserStudyStatus
 	if len(nodeIDs) == 0 || userID == 0 {
@@ -89,4 +92,58 @@ func (dao *KnowledgeNodeDao) UpsertUserStudyStatus(userID uint, nodeID int, stat
 		"status":          status,
 		"last_study_time": &now,
 	}).Error
+}
+
+// GetUserNodeDifficulty 获取用户对知识点的难度评价
+func (dao *KnowledgeNodeDao) GetUserNodeDifficulty(tx *gorm.DB, userID uint, nodeID int) (model.UserNodeDifficulty, error) {
+	var diff model.UserNodeDifficulty
+	err := tx.Where("user_id = ? AND node_id = ?", userID, nodeID).First(&diff).Error
+	return diff, err
+}
+
+// UpsertUserNodeDifficulty 更新或创建用户对知识点的难度评价
+func (dao *KnowledgeNodeDao) UpsertUserNodeDifficulty(tx *gorm.DB, userID uint, nodeID int, difficulty string) error {
+	var diff model.UserNodeDifficulty
+	err := tx.Where("user_id = ? AND node_id = ?", userID, nodeID).First(&diff).Error
+
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			// 创建
+			diff = model.UserNodeDifficulty{
+				UserID:     int(userID),
+				NodeID:     nodeID,
+				Difficulty: difficulty,
+			}
+			return tx.Create(&diff).Error
+		}
+		return err
+	}
+
+	// 更新
+	return tx.Model(&diff).Update("difficulty", difficulty).Error
+}
+
+// UpdateNodeMetric 原子更新节点的难度聚合指标
+func (dao *KnowledgeNodeDao) UpdateNodeMetric(tx *gorm.DB, nodeID int, metricType string, delta int) error {
+	var metric model.NodeMetric
+	err := tx.Where("node_id = ? AND metric_type = ?", nodeID, metricType).First(&metric).Error
+
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			// 创建
+			if delta < 0 {
+				delta = 0
+			}
+			metric = model.NodeMetric{
+				NodeID:      nodeID,
+				MetricType:  metricType,
+				MetricValue: delta,
+			}
+			return tx.Create(&metric).Error
+		}
+		return err
+	}
+
+	// 更新
+	return tx.Model(&metric).Update("metric_value", gorm.Expr("metric_value + ?", delta)).Error
 }

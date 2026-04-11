@@ -6,11 +6,16 @@ import hljs from 'highlight.js'
 import 'highlight.js/styles/github.css' // 切换回浅色主题，适合灰色背景
 import { 
   getTopNodes, getChildNodes, getNodeDetail, getNodeNote,
-  updateNodeStatus
+  updateNodeStatus, updateNodeDifficulty
 } from '../api/node'
 import type { SubjectNode, SubjectNodeDetail, NodeNote } from '../types/node'
 import TreeItem from '../components/TreeItem.vue'
 import Toast from '../components/Toast.vue'
+import {
+  getNodeProgressStatusLabel,
+  normalizeNodeProgressStatus,
+  type NodeProgressStatus
+} from '../utils/nodeProgress'
 import { 
   FileText, ArrowLeft, 
   Edit3, BookOpen, 
@@ -39,7 +44,12 @@ const fetchTopNodes = async () => {
   try {
     const res = await getTopNodes(subjectId)
     if (res.data?.code === 200 && res.data.data) {
-      topNodes.value = res.data.data.map(node => ({ ...node, expanded: false, children: [] }))
+      topNodes.value = res.data.data.map(node => ({ 
+        ...node, 
+        expanded: false, 
+        children: [],
+        userProgressStatus: normalizeNodeProgressStatus(node.userProgressStatus)
+      }))
       if (topNodes.value.length > 0) {
         await selectNode(topNodes.value[0].id)
       }
@@ -59,7 +69,12 @@ const ensureChildrenLoaded = async (node: TreeNode) => {
   try {
     const res = await getChildNodes(node.id)
     if (res.data?.code === 200 && res.data.data) {
-      node.children = res.data.data.map(child => ({ ...child, expanded: false, children: [] }))
+      node.children = res.data.data.map(child => ({ 
+        ...child, 
+        expanded: false, 
+        children: [],
+        userProgressStatus: normalizeNodeProgressStatus(child.userProgressStatus)
+      }))
     } else {
       node.children = []
     }
@@ -130,7 +145,7 @@ const md = markdownit({
   html: true,
   linkify: true,
   typographer: true,
-  highlight: (str: string, lang: string, attrs: string) => {
+  highlight: (str: string, lang: string, _attrs: string) => {
     if (lang && hljs.getLanguage(lang)) {
       try {
         return hljs.highlight(str, { language: lang, ignoreIllegals: true }).value;
@@ -141,11 +156,7 @@ const md = markdownit({
 })
 
 // 统一包装代码块，应用自定义样式
-const defaultFence = md.renderer.rules.fence || function(tokens, idx, options, env, slf) {
-  return slf.renderToken(tokens, idx, options);
-};
-
-md.renderer.rules.fence = (tokens, idx, options, env, slf) => {
+md.renderer.rules.fence = (tokens, idx, options, _env, _slf) => {
   const token = tokens[idx];
   const info = token.info ? token.info.trim() : '';
   const langName = info.split(/\s+/g)[0];
@@ -182,6 +193,7 @@ const nodeDetail = ref<SubjectNodeDetail | null>(null)
 const nodeNote = ref<NodeNote | null>(null)
 const loadingDetail = ref(false)
 const updatingStatus = ref(false)
+const updatingDifficulty = ref(false)
 
 // ----------------- 反馈弹窗相关 -----------------
 const toast = reactive({
@@ -203,12 +215,19 @@ const renderedMarkdown = computed(() => {
   return md.render(decodedContent)
 })
 
+const currentNodeStatus = computed<NodeProgressStatus>(() => (
+  normalizeNodeProgressStatus(nodeDetail.value?.userProgressStatus)
+))
+
+const currentNodeStatusLabel = computed(() => getNodeProgressStatusLabel(currentNodeStatus.value))
+
 // 缓存对象：以 nodeId 为 key
 const detailCache = new Map<number, SubjectNodeDetail>()
 const noteCache = new Map<number, NodeNote | null>()
 
 // 内部函数：同步更新所有地方的节点状态
-const syncNodeStatus = (id: number, status: 'unstarted' | 'learning' | 'completed') => {
+const syncNodeStatus = (id: number, status: NodeProgressStatus) => {
+  console.log(`[SyncNodeStatus] NodeID: ${id}, NewStatus: ${status}`)
   // 1. 更新当前详情状态
   if (currentNodeId.value === id && nodeDetail.value) {
     nodeDetail.value.userProgressStatus = status
@@ -218,6 +237,7 @@ const syncNodeStatus = (id: number, status: 'unstarted' | 'learning' | 'complete
   const updateNodeInTree = (nodes: TreeNode[]) => {
     for (const node of nodes) {
       if (node.id === id) {
+        console.log(`[SyncNodeStatus] Found in tree, updating status.`, node.name)
         node.userProgressStatus = status
         return true
       }
@@ -227,12 +247,17 @@ const syncNodeStatus = (id: number, status: 'unstarted' | 'learning' | 'complete
     }
     return false
   }
-  updateNodeInTree(topNodes.value)
+  const found = updateNodeInTree(topNodes.value)
+  if (!found) {
+    console.warn(`[SyncNodeStatus] NodeID: ${id} not found in current tree structure.`)
+  }
   
   // 3. 更新缓存
   if (detailCache.has(id)) {
     const cached = detailCache.get(id)
-    if (cached) cached.userProgressStatus = status
+    if (cached) {
+      cached.userProgressStatus = status
+    }
   }
 }
 
@@ -265,6 +290,23 @@ const selectNode = async (id: number) => {
     console.log('[GetNodeDetail]', { nodeId: id, response: resDetail.data })
     if (resDetail.data?.code === 200 && resDetail.data.data) {
       const detail = resDetail.data.data
+
+      // 优先继承目录树中已存在的状态，避免接口返回异常值导致状态颜色丢失。
+      let existingStatus: NodeProgressStatus = 'unstarted'
+      const findStatusInTree = (nodes: TreeNode[]) => {
+        for (const node of nodes) {
+          if (node.id === id) {
+            existingStatus = normalizeNodeProgressStatus(node.userProgressStatus)
+            return true
+          }
+          if (node.children && findStatusInTree(node.children)) return true
+        }
+        return false
+      }
+      findStatusInTree(topNodes.value)
+
+      detail.userProgressStatus = normalizeNodeProgressStatus(detail.userProgressStatus, existingStatus)
+      
       nodeDetail.value = detail
       detailCache.set(id, detail) // 存入缓存
       
@@ -329,6 +371,38 @@ const updateStatus = async () => {
   }
 }
 
+const handleDifficultyClick = async (difficulty: 'easy' | 'medium' | 'hard') => {
+  if (!isLoggedIn.value) {
+    showToast('请登录后再评价难度', 'error')
+    router.push('/login')
+    return
+  }
+  
+  if (!currentNodeId.value || updatingDifficulty.value) return
+  
+  updatingDifficulty.value = true
+  try {
+    const res = await updateNodeDifficulty(currentNodeId.value, difficulty)
+    if (res.data?.code === 200) {
+      showToast('评价成功！感谢你的反馈')
+      
+      // 局部更新当前显示的难度计数（虽然完整数据可能需要重新获取，但先给用户即时反馈）
+      if (nodeDetail.value) {
+        if (difficulty === 'easy') nodeDetail.value.easyCount++
+        if (difficulty === 'medium') nodeDetail.value.mediumCount++
+        if (difficulty === 'hard') nodeDetail.value.hardCount++
+      }
+    } else {
+      showToast(res.data?.msg || '评价失败', 'error')
+    }
+  } catch (error: any) {
+    console.error('评价难度失败', error)
+    showToast(error.response?.data?.msg || '评价失败', 'error')
+  } finally {
+    updatingDifficulty.value = false
+  }
+}
+
 onMounted(() => {
   if (!subjectId) {
     router.replace('/')
@@ -336,6 +410,51 @@ onMounted(() => {
   }
   fetchTopNodes()
 })
+
+// ----------------- 布局拖拽相关 -----------------
+const sidebarWidth = ref(320)
+const noteSidebarWidth = ref(360)
+const isResizingLeft = ref(false)
+const isResizingRight = ref(false)
+
+const startResizingLeft = (e: MouseEvent) => {
+  isResizingLeft.value = true
+  document.addEventListener('mousemove', handleMouseMove)
+  document.addEventListener('mouseup', stopResizing)
+  document.body.style.cursor = 'col-resize'
+  document.body.style.userSelect = 'none'
+}
+
+const startResizingRight = (e: MouseEvent) => {
+  isResizingRight.value = true
+  document.addEventListener('mousemove', handleMouseMove)
+  document.addEventListener('mouseup', stopResizing)
+  document.body.style.cursor = 'col-resize'
+  document.body.style.userSelect = 'none'
+}
+
+const handleMouseMove = (e: MouseEvent) => {
+  if (isResizingLeft.value) {
+    const newWidth = e.clientX
+    if (newWidth > 200 && newWidth < 600) {
+      sidebarWidth.value = newWidth
+    }
+  } else if (isResizingRight.value) {
+    const newWidth = window.innerWidth - e.clientX
+    if (newWidth > 250 && newWidth < 600) {
+      noteSidebarWidth.value = newWidth
+    }
+  }
+}
+
+const stopResizing = () => {
+  isResizingLeft.value = false
+  isResizingRight.value = false
+  document.removeEventListener('mousemove', handleMouseMove)
+  document.removeEventListener('mouseup', stopResizing)
+  document.body.style.cursor = ''
+  document.body.style.userSelect = ''
+}
 
 const goBack = () => {
   router.push('/')
@@ -351,7 +470,7 @@ const goBack = () => {
       @close="toast.show = false" 
     />
     <!-- 左侧目录树 -->
-    <aside class="sidebar">
+    <aside class="sidebar" :style="{ width: sidebarWidth + 'px' }">
       <div class="sidebar-header">
         <button class="back-btn" @click="goBack">
           <ArrowLeft :size="18" />
@@ -404,6 +523,13 @@ const goBack = () => {
       </div>
     </aside>
 
+    <!-- 左侧拉伸条 -->
+    <div 
+      class="resizer left-resizer" 
+      :class="{ active: isResizingLeft }"
+      @mousedown="startResizingLeft"
+    ></div>
+
     <!-- 中间正文区 -->
     <main class="main-content">
       <div v-if="!nodeDetail && loadingDetail" class="content-skeleton">
@@ -424,14 +550,26 @@ const goBack = () => {
           <h1>{{ nodeDetail.name }}</h1>
           <div class="meta-info">
             <div class="difficulty-tags">
-              <span class="diff-tag easy">易 {{ nodeDetail.easyCount }}</span>
-              <span class="diff-tag medium">中 {{ nodeDetail.mediumCount }}</span>
-              <span class="diff-tag hard">难 {{ nodeDetail.hardCount }}</span>
+              <span 
+                class="diff-tag easy" 
+                title="点击评价：太简单了" 
+                @click="handleDifficultyClick('easy')"
+              >易 {{ nodeDetail.easyCount }}</span>
+              <span 
+                class="diff-tag medium" 
+                title="点击评价：正合适" 
+                @click="handleDifficultyClick('medium')"
+              >中 {{ nodeDetail.mediumCount }}</span>
+              <span 
+                class="diff-tag hard" 
+                title="点击评价：太难了" 
+                @click="handleDifficultyClick('hard')"
+              >难 {{ nodeDetail.hardCount }}</span>
             </div>
-            <div class="status-badge" :class="nodeDetail.userProgressStatus">
-              <Award v-if="nodeDetail.userProgressStatus === 'completed'" :size="14" />
+            <div class="status-badge" :class="currentNodeStatus">
+              <Award v-if="currentNodeStatus === 'completed'" :size="14" />
               <Clock v-else :size="14" />
-              <span>{{ nodeDetail.userProgressStatus === 'completed' ? '已掌握' : nodeDetail.userProgressStatus === 'learning' ? '学习中' : '未开始' }}</span>
+              <span>{{ currentNodeStatusLabel }}</span>
             </div>
           </div>
         </header>
@@ -446,7 +584,7 @@ const goBack = () => {
           
           <!-- 叶子节点底部操作区 -->
           <div v-if="nodeDetail.isLeaf === 1" class="article-footer">
-            <div v-if="nodeDetail.userProgressStatus === 'completed'" class="completed-status">
+            <div v-if="currentNodeStatus === 'completed'" class="completed-status">
               <CheckCircle2 :size="20" />
               <span>学习完毕</span>
             </div>
@@ -472,8 +610,15 @@ const goBack = () => {
       </div>
     </main>
 
+    <!-- 右侧拉伸条 -->
+    <div 
+      class="resizer right-resizer" 
+      :class="{ active: isResizingRight }"
+      @mousedown="startResizingRight"
+    ></div>
+
     <!-- 右侧随堂笔记区 -->
-    <aside class="note-sidebar">
+    <aside class="note-sidebar" :style="{ width: noteSidebarWidth + 'px' }">
       <div class="note-header">
         <div class="note-title">
           <Edit3 :size="18" />
@@ -534,12 +679,13 @@ const goBack = () => {
 
 /* 左侧目录树 */
 .sidebar {
-  width: 320px;
   background: #fcfdfe;
   border-right: 1px solid #edf2f7;
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
+  min-width: 200px;
+  max-width: 600px;
 }
 
 .sidebar-header {
@@ -605,7 +751,15 @@ const goBack = () => {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
-.course-title-wrap h3 { font-size: 17px; font-weight: 700; flex: 1; }
+.course-title-wrap h3 {
+  font-size: 17px;
+  font-weight: 700;
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
 .title-icon { color: #3b82f6; }
 
 .tree-container {
@@ -659,6 +813,19 @@ const goBack = () => {
   padding: 2px 10px;
   border-radius: 4px;
   font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  user-select: none;
+}
+
+.diff-tag:hover {
+  transform: translateY(-1px);
+  filter: brightness(0.95);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.diff-tag:active {
+  transform: translateY(0);
 }
 
 .diff-tag.easy { background: #d1fae5; color: #065f46; }
@@ -770,11 +937,13 @@ const goBack = () => {
 
 /* 右侧笔记区 */
 .note-sidebar {
-  width: 360px;
   background: #fff;
   border-left: 1px solid #edf2f7;
   display: flex;
   flex-direction: column;
+  flex-shrink: 0;
+  min-width: 250px;
+  max-width: 600px;
 }
 
 .note-header {
@@ -925,4 +1094,38 @@ const goBack = () => {
 .empty-view h2 { margin-top: 20px; font-size: 22px; font-weight: 700; color: #1e293b; }
 .empty-view p { color: #94a3b8; margin-top: 8px; max-width: 280px; }
 .empty-illustration { color: #e2e8f0; }
+
+/* 拖拽条样式 */
+.resizer {
+  width: 4px;
+  background: transparent;
+  cursor: col-resize;
+  transition: background 0.2s, width 0.2s;
+  z-index: 10;
+  flex-shrink: 0;
+  position: relative;
+}
+
+.resizer:hover, .resizer.active {
+  background: #3b82f6;
+  width: 4px;
+}
+
+/* 增加热区，方便抓取 */
+.resizer::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -4px;
+  right: -4px;
+}
+
+.left-resizer {
+  margin-right: -4px;
+}
+
+.right-resizer {
+  margin-left: -4px;
+}
 </style>

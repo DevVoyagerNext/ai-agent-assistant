@@ -40,3 +40,8 @@ type UserStudyNoteRes struct {
 type UpdateNodeStatusReq struct {
 	Status string `json:"status" binding:"required,oneof=unstarted learning completed"`
 }
+
+// MarkNodeDifficultyReq 标记知识点难度请求体
+type MarkNodeDifficultyReq struct {
+	Difficulty string `json:"difficulty" binding:"required,oneof=easy medium hard"`
+}
