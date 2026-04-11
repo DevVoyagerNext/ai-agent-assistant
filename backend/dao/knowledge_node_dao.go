@@ -94,6 +94,26 @@ func (dao *KnowledgeNodeDao) UpsertUserStudyStatus(userID uint, nodeID int, stat
 	}).Error
 }
 
+// CountTotalLeafNodes 统计某个教材下的总叶子节点数
+func (dao *KnowledgeNodeDao) CountTotalLeafNodes(ctx context.Context, subjectID int) (int64, error) {
+	var count int64
+	err := global.GVA_DB.WithContext(ctx).Model(&model.KnowledgeNode{}).
+		Where("subject_id = ? AND is_leaf = ?", subjectID, 1).
+		Count(&count).Error
+	return count, err
+}
+
+// CountLearnedLeafNodes 统计用户在某个教材下已学完的叶子节点数
+func (dao *KnowledgeNodeDao) CountLearnedLeafNodes(ctx context.Context, userID uint, subjectID int) (int64, error) {
+	var count int64
+	err := global.GVA_DB.WithContext(ctx).Model(&model.UserStudyStatus{}).
+		Joins("JOIN knowledge_nodes ON knowledge_nodes.id = user_study_status.node_id").
+		Where("user_study_status.user_id = ? AND user_study_status.status = ? AND knowledge_nodes.subject_id = ? AND knowledge_nodes.is_leaf = ?",
+			userID, "completed", subjectID, 1).
+		Count(&count).Error
+	return count, err
+}
+
 // GetUserNodeDifficulty 获取用户对知识点的难度评价
 func (dao *KnowledgeNodeDao) GetUserNodeDifficulty(tx *gorm.DB, userID uint, nodeID int) (model.UserNodeDifficulty, error) {
 	var diff model.UserNodeDifficulty

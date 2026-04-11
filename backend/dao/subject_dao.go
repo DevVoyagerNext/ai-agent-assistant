@@ -102,32 +102,35 @@ func (d *SubjectDao) GetUserRecentSubjectProgress(ctx context.Context, userId ui
 
 func (d *SubjectDao) GetUserSubjectsByStatus(ctx context.Context, userId uint, status string) ([]model.UserSubjectProgress, error) {
 	var progresses []model.UserSubjectProgress
-	err := global.GVA_DB.WithContext(ctx).
-		Where("user_id = ? AND status = ?", userId, status).
-		Order("last_study_time desc").
-		Find(&progresses).Error
+	query := global.GVA_DB.WithContext(ctx).Where("user_id = ?", userId)
+	if status == "completed" {
+		query = query.Where("progress_percent = ?", 100)
+	} else {
+		query = query.Where("progress_percent < ?", 100)
+	}
+	err := query.Order("last_study_time desc").Find(&progresses).Error
 	return progresses, err
 }
 
-func (d *SubjectDao) UpsertUserSubjectProgress(ctx context.Context, userId uint, subjectId int, nodeId int) error {
+func (d *SubjectDao) UpsertUserSubjectProgress(ctx context.Context, userId uint, subjectId int, nodeId int, progressPercent float64) error {
 	var progress model.UserSubjectProgress
 	err := global.GVA_DB.WithContext(ctx).Where("user_id = ? AND subject_id = ?", userId, subjectId).First(&progress).Error
 
 	if err == nil {
 		// 更新
 		return global.GVA_DB.WithContext(ctx).Model(&progress).Updates(map[string]interface{}{
-			"last_node_id":    nodeId,
-			"last_study_time": time.Now(),
-			"status":          "learning",
+			"last_node_id":     nodeId,
+			"last_study_time":  time.Now(),
+			"progress_percent": progressPercent,
 		}).Error
 	} else if err == gorm.ErrRecordNotFound {
 		// 创建
 		progress = model.UserSubjectProgress{
-			UserID:        int(userId),
-			SubjectID:     subjectId,
-			LastNodeID:    nodeId,
-			LastStudyTime: time.Now(),
-			Status:        "learning",
+			UserID:          int(userId),
+			SubjectID:       subjectId,
+			LastNodeID:      nodeId,
+			LastStudyTime:   time.Now(),
+			ProgressPercent: progressPercent,
 		}
 		return global.GVA_DB.WithContext(ctx).Create(&progress).Error
 	}
@@ -137,7 +140,7 @@ func (d *SubjectDao) UpsertUserSubjectProgress(ctx context.Context, userId uint,
 func (d *SubjectDao) GetUserLastLearningSubject(ctx context.Context, userId uint) (*model.UserSubjectProgress, error) {
 	var progress model.UserSubjectProgress
 	err := global.GVA_DB.WithContext(ctx).
-		Where("user_id = ? AND status = ?", userId, "learning").
+		Where("user_id = ? AND progress_percent < ?", userId, 100).
 		Order("last_study_time desc").
 		First(&progress).Error
 	return &progress, err

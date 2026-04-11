@@ -32,7 +32,31 @@ func HandleSubjectProgress(ctx context.Context, payloadStr string) error {
 		return nil // 忽略非法负载
 	}
 
-	// 使用 DAO 更新进度
+	// 1. 统计教材叶子节点总数
+	var nodeDao dao.KnowledgeNodeDao
+	totalLeafNodes, err := nodeDao.CountTotalLeafNodes(ctx, p.SubjectID)
+	if err != nil {
+		global.GVA_LOG.Error("统计教材总叶子节点数失败", zap.Error(err), zap.Int("subjectId", p.SubjectID))
+		return err
+	}
+
+	// 2. 统计用户已学完的叶子节点数
+	learnedLeafNodes, err := nodeDao.CountLearnedLeafNodes(ctx, p.UserID, p.SubjectID)
+	if err != nil {
+		global.GVA_LOG.Error("统计用户已学完叶子节点数失败", zap.Error(err), zap.Uint("userId", p.UserID), zap.Int("subjectId", p.SubjectID))
+		return err
+	}
+
+	// 3. 计算进度百分比
+	var progressPercent float64
+	if totalLeafNodes > 0 {
+		progressPercent = float64(learnedLeafNodes) / float64(totalLeafNodes) * 100
+		if progressPercent > 100 {
+			progressPercent = 100
+		}
+	}
+
+	// 4. 使用 DAO 更新进度
 	var subjectDao dao.SubjectDao
-	return subjectDao.UpsertUserSubjectProgress(ctx, p.UserID, p.SubjectID, p.NodeID)
+	return subjectDao.UpsertUserSubjectProgress(ctx, p.UserID, p.SubjectID, p.NodeID, progressPercent)
 }

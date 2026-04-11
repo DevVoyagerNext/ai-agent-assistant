@@ -178,9 +178,13 @@ func (s *SubjectService) GetUserRecentSubjects(ctx context.Context, userId uint,
 	var list []dto.UserSubjectProgressRes
 	for _, p := range progresses {
 		if sub, ok := subjectMap[uint(p.SubjectID)]; ok {
+			status := "learning"
+			if p.ProgressPercent == 100 {
+				status = "completed"
+			}
 			list = append(list, dto.UserSubjectProgressRes{
 				Subject:         sub,
-				Status:          p.Status,
+				Status:          status,
 				IsLiked:         sub.IsLiked,
 				IsCollected:     sub.IsCollected,
 				ProgressPercent: p.ProgressPercent,
@@ -226,9 +230,13 @@ func (s *SubjectService) GetUserSubjectsByStatus(ctx context.Context, userId uin
 	var res []dto.UserSubjectProgressRes
 	for _, p := range progresses {
 		if sub, ok := subjectMap[uint(p.SubjectID)]; ok {
+			derivedStatus := "learning"
+			if p.ProgressPercent == 100 {
+				derivedStatus = "completed"
+			}
 			res = append(res, dto.UserSubjectProgressRes{
 				Subject:         sub,
-				Status:          p.Status,
+				Status:          derivedStatus,
 				IsLiked:         sub.IsLiked,
 				IsCollected:     sub.IsCollected,
 				ProgressPercent: p.ProgressPercent,
@@ -262,9 +270,14 @@ func (s *SubjectService) GetUserLastLearningSubject(ctx context.Context, userId 
 		return nil, errmsg.CodeError
 	}
 
+	status := "learning"
+	if progress.ProgressPercent == 100 {
+		status = "completed"
+	}
+
 	res := &dto.UserSubjectProgressRes{
 		Subject:         enrichedSubjects[0],
-		Status:          progress.Status,
+		Status:          status,
 		IsLiked:         enrichedSubjects[0].IsLiked,
 		IsCollected:     enrichedSubjects[0].IsCollected,
 		ProgressPercent: progress.ProgressPercent,
