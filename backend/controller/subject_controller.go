@@ -103,29 +103,22 @@ func (con *SubjectController) AddSubjectToFolder(c *gin.Context) {
 	response.Ok(nil, c)
 }
 
-// RemoveSubjectFromFolder 从指定收藏夹移除教材
-func (con *SubjectController) RemoveSubjectFromFolder(c *gin.Context) {
+// UncollectSubject 取消教材收藏（从所有收藏夹移除）
+func (con *SubjectController) UncollectSubject(c *gin.Context) {
 	userId, err := con.authService.GetUserID(c)
 	if err != nil {
 		response.FailWithCode(errmsg.UserTokenNotExist, c)
 		return
 	}
 
-	folderIdStr := c.Param("folderId")
-	folderId, err := strconv.Atoi(folderIdStr)
-	if err != nil || folderId <= 0 {
-		response.FailWithCode(errmsg.CodeError, c)
-		return
-	}
-
-	subjectIdStr := c.Param("subjectId")
+	subjectIdStr := c.Param("id")
 	subjectId, err := strconv.Atoi(subjectIdStr)
 	if err != nil || subjectId <= 0 {
 		response.FailWithCode(errmsg.CodeError, c)
 		return
 	}
 
-	code := con.subjectService.RemoveSubjectFromFolder(c.Request.Context(), userId, folderId, subjectId)
+	code := con.subjectService.UncollectSubject(c.Request.Context(), userId, subjectId)
 	if code != errmsg.CodeSuccess {
 		response.FailWithCode(code, c)
 		return

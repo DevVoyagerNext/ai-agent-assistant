@@ -83,7 +83,7 @@ export const addSubjectToFolder = (folderId: number, subjectId: number) => {
   return request.post<ApiResponse<null>>(`/user/subjects/folders/${folderId}/subjects`, { subjectId })
 }
 
-// 9. 取消教材收藏 (从收藏夹移除)
-export const removeSubjectFromFolder = (folderId: number, subjectId: number) => {
-  return request.delete<ApiResponse<null>>(`/user/subjects/folders/${folderId}/subjects/${subjectId}`)
+// 9. 取消教材收藏 (从所有收藏夹移除)
+export const uncollectSubject = (id: number) => {
+  return request.delete<ApiResponse<null>>(`/user/subjects/${id}/collect`)
 }

@@ -2,8 +2,10 @@ package middleware
 
 import (
 	"backend/global"
+	"bytes"
 	"crypto/rand"
 	"encoding/hex"
+	"io"
 	"net/http"
 	"runtime/debug"
 	"strings"
@@ -14,6 +16,22 @@ import (
 )
 
 const requestIDKey = "requestId"
+
+// bodyLogWriter 用于劫持响应体内容
+type bodyLogWriter struct {
+	gin.ResponseWriter
+	body *bytes.Buffer
+}
+
+func (w bodyLogWriter) Write(b []byte) (int, error) {
+	w.body.Write(b)
+	return w.ResponseWriter.Write(b)
+}
+
+func (w bodyLogWriter) WriteString(s string) (int, error) {
+	w.body.WriteString(s)
+	return w.ResponseWriter.WriteString(s)
+}
 
 func RequestID() gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -38,6 +56,18 @@ func RequestID() gin.HandlerFunc {
 func ZapLogger() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		start := time.Now()
+
+		// 1. 记录并还原请求体
+		var requestBody []byte
+		if c.Request.Body != nil {
+			requestBody, _ = io.ReadAll(c.Request.Body)
+			c.Request.Body = io.NopCloser(bytes.NewBuffer(requestBody))
+		}
+
+		// 2. 劫持响应体
+		blw := &bodyLogWriter{body: bytes.NewBufferString(""), ResponseWriter: c.Writer}
+		c.Writer = blw
+
 		c.Next()
 
 		logger := global.GVA_LOG
@@ -62,6 +92,8 @@ func ZapLogger() gin.HandlerFunc {
 			zap.String("request_id", requestIDStr),
 			zap.Duration("latency", time.Since(start)),
 			zap.Int("bytes", c.Writer.Size()),
+			zap.String("request_body", string(requestBody)),
+			zap.String("response_body", blw.body.String()),
 		}
 
 		if errorMsg != "" {

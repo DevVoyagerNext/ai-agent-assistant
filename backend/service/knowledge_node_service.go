@@ -5,9 +5,11 @@ import (
 	"backend/dto"
 	"backend/global"
 	"backend/model"
+	"backend/pkg/mq/tasks"
 	"context"
 	"errors"
 
+	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
@@ -140,10 +142,23 @@ func (s *KnowledgeNodeService) GetNodeDetail(ctx context.Context, nodeID int, us
 	}
 
 	// 4. 返回完整结构
-	return &dto.KnowledgeNodeDetailRes{
+	res := &dto.KnowledgeNodeDetailRes{
 		KnowledgeNodeItemRes: baseInfo,
 		Content:              contentStr,
-	}, nil
+	}
+
+	// 5. 异步保存教材学习进度 (如果用户已登录)
+	if userID > 0 {
+		if err := global.GVA_MQ.Publish(ctx, "subject_progress", tasks.SubjectProgressPayload{
+			UserID:    userID,
+			SubjectID: node.SubjectID,
+			NodeID:    nodeID,
+		}); err != nil {
+			global.GVA_LOG.Error("发布教材进度更新消息失败", zap.Error(err))
+		}
+	}
+
+	return res, nil
 }
 
 // GetUserStudyNote 获取用户对某个知识点的随堂笔记

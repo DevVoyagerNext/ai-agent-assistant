@@ -2,6 +2,7 @@ package global
 
 import (
 	"backend/config"
+	"backend/pkg/mq"
 
 	"github.com/redis/go-redis/v9"
 	"github.com/spf13/viper"
@@ -15,4 +16,5 @@ var (
 	GVA_VP     *viper.Viper
 	GVA_REDIS  *redis.Client
 	GVA_LOG    *zap.Logger
+	GVA_MQ     *mq.RedisMQ
 )

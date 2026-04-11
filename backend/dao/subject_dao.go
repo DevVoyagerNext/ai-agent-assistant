@@ -3,33 +3,37 @@ package dao
 import (
 	"backend/global"
 	"backend/model"
+	"context"
+	"time"
+
+	"gorm.io/gorm"
 )
 
 type SubjectDao struct{}
 
-func (d *SubjectDao) GetCategories() ([]model.SubjectCategory, error) {
+func (d *SubjectDao) GetCategories(ctx context.Context) ([]model.SubjectCategory, error) {
 	var categories []model.SubjectCategory
-	err := global.GVA_DB.Where("is_active = ?", 1).Order("sort_order asc").Find(&categories).Error
+	err := global.GVA_DB.WithContext(ctx).Where("is_active = ?", 1).Order("sort_order asc").Find(&categories).Error
 	return categories, err
 }
 
-func (d *SubjectDao) GetSubjectsByCategoryID(categoryId int) ([]model.Subject, error) {
+func (d *SubjectDao) GetSubjectsByCategoryID(ctx context.Context, categoryId int) ([]model.Subject, error) {
 	var subjects []model.Subject
-	err := global.GVA_DB.
+	err := global.GVA_DB.WithContext(ctx).
 		Joins("JOIN subject_category_rel ON subject_category_rel.subject_id = subjects.id").
 		Where("subject_category_rel.category_id = ?", categoryId).
 		Find(&subjects).Error
 	return subjects, err
 }
 
-func (d *SubjectDao) GetAllSubjects() ([]model.Subject, error) {
+func (d *SubjectDao) GetAllSubjects(ctx context.Context) ([]model.Subject, error) {
 	var subjects []model.Subject
-	err := global.GVA_DB.Find(&subjects).Error
+	err := global.GVA_DB.WithContext(ctx).Find(&subjects).Error
 	return subjects, err
 }
 
-func (d *SubjectDao) SearchSubjectsByName(keyword string, page int, pageSize int) ([]model.Subject, int64, error) {
-	query := global.GVA_DB.Model(&model.Subject{}).Where("name LIKE ?", "%"+keyword+"%")
+func (d *SubjectDao) SearchSubjectsByName(ctx context.Context, keyword string, page int, pageSize int) ([]model.Subject, int64, error) {
+	query := global.GVA_DB.WithContext(ctx).Model(&model.Subject{}).Where("name LIKE ?", "%"+keyword+"%")
 
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
@@ -42,36 +46,36 @@ func (d *SubjectDao) SearchSubjectsByName(keyword string, page int, pageSize int
 	return subjects, total, err
 }
 
-func (d *SubjectDao) GetUserCollectedSubjects(userId uint) ([]model.Subject, error) {
+func (d *SubjectDao) GetUserCollectedSubjects(ctx context.Context, userId uint) ([]model.Subject, error) {
 	var subjects []model.Subject
-	err := global.GVA_DB.
+	err := global.GVA_DB.WithContext(ctx).
 		Joins("JOIN user_collect_items ON user_collect_items.subject_id = subjects.id").
 		Where("user_collect_items.user_id = ?", userId).
 		Find(&subjects).Error
 	return subjects, err
 }
 
-func (d *SubjectDao) GetUserLikedSubjects(userId uint) ([]model.Subject, error) {
+func (d *SubjectDao) GetUserLikedSubjects(ctx context.Context, userId uint) ([]model.Subject, error) {
 	var subjects []model.Subject
-	err := global.GVA_DB.
+	err := global.GVA_DB.WithContext(ctx).
 		Joins("JOIN user_subject_likes ON user_subject_likes.subject_id = subjects.id").
 		Where("user_subject_likes.user_id = ?", userId).
 		Find(&subjects).Error
 	return subjects, err
 }
 
-func (d *SubjectDao) GetUserCollectFolders(userId uint) ([]model.UserCollectFolder, error) {
+func (d *SubjectDao) GetUserCollectFolders(ctx context.Context, userId uint) ([]model.UserCollectFolder, error) {
 	var folders []model.UserCollectFolder
-	err := global.GVA_DB.
+	err := global.GVA_DB.WithContext(ctx).
 		Where("user_id = ?", userId).
 		Order("created_at desc").
 		Find(&folders).Error
 	return folders, err
 }
 
-func (d *SubjectDao) GetUserCollectedSubjectsByFolder(userId uint, folderId int) ([]model.Subject, error) {
+func (d *SubjectDao) GetUserCollectedSubjectsByFolder(ctx context.Context, userId uint, folderId int) ([]model.Subject, error) {
 	var subjects []model.Subject
-	err := global.GVA_DB.
+	err := global.GVA_DB.WithContext(ctx).
 		Distinct("subjects.*").
 		Joins("JOIN user_collect_items ON user_collect_items.subject_id = subjects.id").
 		Where("user_collect_items.user_id = ? AND user_collect_items.folder_id = ?", userId, folderId).
@@ -79,15 +83,15 @@ func (d *SubjectDao) GetUserCollectedSubjectsByFolder(userId uint, folderId int)
 	return subjects, err
 }
 
-func (d *SubjectDao) GetUserRecentSubjectProgress(userId uint, page int, pageSize int) ([]model.UserSubjectProgress, int64, error) {
+func (d *SubjectDao) GetUserRecentSubjectProgress(ctx context.Context, userId uint, page int, pageSize int) ([]model.UserSubjectProgress, int64, error) {
 	var total int64
-	if err := global.GVA_DB.Model(&model.UserSubjectProgress{}).Where("user_id = ?", userId).Count(&total).Error; err != nil {
+	if err := global.GVA_DB.WithContext(ctx).Model(&model.UserSubjectProgress{}).Where("user_id = ?", userId).Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
 
 	offset := (page - 1) * pageSize
 	var progresses []model.UserSubjectProgress
-	err := global.GVA_DB.
+	err := global.GVA_DB.WithContext(ctx).
 		Where("user_id = ?", userId).
 		Order("last_study_time desc").
 		Offset(offset).
@@ -96,40 +100,65 @@ func (d *SubjectDao) GetUserRecentSubjectProgress(userId uint, page int, pageSiz
 	return progresses, total, err
 }
 
-func (d *SubjectDao) GetUserSubjectsByStatus(userId uint, status string) ([]model.UserSubjectProgress, error) {
+func (d *SubjectDao) GetUserSubjectsByStatus(ctx context.Context, userId uint, status string) ([]model.UserSubjectProgress, error) {
 	var progresses []model.UserSubjectProgress
-	err := global.GVA_DB.
+	err := global.GVA_DB.WithContext(ctx).
 		Where("user_id = ? AND status = ?", userId, status).
 		Order("last_study_time desc").
 		Find(&progresses).Error
 	return progresses, err
 }
 
-func (d *SubjectDao) GetUserLastLearningSubject(userId uint) (*model.UserSubjectProgress, error) {
+func (d *SubjectDao) UpsertUserSubjectProgress(ctx context.Context, userId uint, subjectId int, nodeId int) error {
 	var progress model.UserSubjectProgress
-	err := global.GVA_DB.
+	err := global.GVA_DB.WithContext(ctx).Where("user_id = ? AND subject_id = ?", userId, subjectId).First(&progress).Error
+
+	if err == nil {
+		// 更新
+		return global.GVA_DB.WithContext(ctx).Model(&progress).Updates(map[string]interface{}{
+			"last_node_id":    nodeId,
+			"last_study_time": time.Now(),
+			"status":          "learning",
+		}).Error
+	} else if err == gorm.ErrRecordNotFound {
+		// 创建
+		progress = model.UserSubjectProgress{
+			UserID:        int(userId),
+			SubjectID:     subjectId,
+			LastNodeID:    nodeId,
+			LastStudyTime: time.Now(),
+			Status:        "learning",
+		}
+		return global.GVA_DB.WithContext(ctx).Create(&progress).Error
+	}
+	return err
+}
+
+func (d *SubjectDao) GetUserLastLearningSubject(ctx context.Context, userId uint) (*model.UserSubjectProgress, error) {
+	var progress model.UserSubjectProgress
+	err := global.GVA_DB.WithContext(ctx).
 		Where("user_id = ? AND status = ?", userId, "learning").
 		Order("last_study_time desc").
 		First(&progress).Error
 	return &progress, err
 }
 
-func (d *SubjectDao) GetSubjectsByIds(ids []int) ([]model.Subject, error) {
+func (d *SubjectDao) GetSubjectsByIds(ctx context.Context, ids []int) ([]model.Subject, error) {
 	var subjects []model.Subject
 	if len(ids) == 0 {
 		return subjects, nil
 	}
-	err := global.GVA_DB.Where("id IN ?", ids).Find(&subjects).Error
+	err := global.GVA_DB.WithContext(ctx).Where("id IN ?", ids).Find(&subjects).Error
 	return subjects, err
 }
 
-func (d *SubjectDao) GetSubjectById(id int) (*model.Subject, error) {
+func (d *SubjectDao) GetSubjectById(ctx context.Context, id int) (*model.Subject, error) {
 	var subject model.Subject
-	err := global.GVA_DB.Where("id = ?", id).First(&subject).Error
+	err := global.GVA_DB.WithContext(ctx).Where("id = ?", id).First(&subject).Error
 	return &subject, err
 }
 
-func (d *SubjectDao) GetUserSubjectInteractions(userId uint, subjectIds []uint) (map[uint]bool, map[uint]bool, map[uint]model.UserSubjectProgress, error) {
+func (d *SubjectDao) GetUserSubjectInteractions(ctx context.Context, userId uint, subjectIds []uint) (map[uint]bool, map[uint]bool, map[uint]model.UserSubjectProgress, error) {
 	likedMap := make(map[uint]bool)
 	collectedMap := make(map[uint]bool)
 	progressMap := make(map[uint]model.UserSubjectProgress)
@@ -139,7 +168,7 @@ func (d *SubjectDao) GetUserSubjectInteractions(userId uint, subjectIds []uint) 
 	}
 
 	var likes []model.UserSubjectLike
-	if err := global.GVA_DB.Where("user_id = ? AND subject_id IN ?", userId, subjectIds).Find(&likes).Error; err != nil {
+	if err := global.GVA_DB.WithContext(ctx).Where("user_id = ? AND subject_id IN ?", userId, subjectIds).Find(&likes).Error; err != nil {
 		return nil, nil, nil, err
 	}
 	for _, l := range likes {
@@ -147,7 +176,7 @@ func (d *SubjectDao) GetUserSubjectInteractions(userId uint, subjectIds []uint) 
 	}
 
 	var collects []model.UserCollectItem
-	if err := global.GVA_DB.Where("user_id = ? AND subject_id IN ?", userId, subjectIds).Find(&collects).Error; err != nil {
+	if err := global.GVA_DB.WithContext(ctx).Where("user_id = ? AND subject_id IN ?", userId, subjectIds).Find(&collects).Error; err != nil {
 		return nil, nil, nil, err
 	}
 	for _, c := range collects {
@@ -155,7 +184,7 @@ func (d *SubjectDao) GetUserSubjectInteractions(userId uint, subjectIds []uint) 
 	}
 
 	var progresses []model.UserSubjectProgress
-	if err := global.GVA_DB.Where("user_id = ? AND subject_id IN ?", userId, subjectIds).Find(&progresses).Error; err != nil {
+	if err := global.GVA_DB.WithContext(ctx).Where("user_id = ? AND subject_id IN ?", userId, subjectIds).Find(&progresses).Error; err != nil {
 		return nil, nil, nil, err
 	}
 	for _, p := range progresses {
@@ -165,59 +194,59 @@ func (d *SubjectDao) GetUserSubjectInteractions(userId uint, subjectIds []uint) 
 	return likedMap, collectedMap, progressMap, nil
 }
 
-func (d *SubjectDao) GetSubjectLike(userId uint, subjectId int) (*model.UserSubjectLike, error) {
+func (d *SubjectDao) GetSubjectLike(ctx context.Context, userId uint, subjectId int) (*model.UserSubjectLike, error) {
 	var like model.UserSubjectLike
-	err := global.GVA_DB.Where("user_id = ? AND subject_id = ?", userId, subjectId).First(&like).Error
+	err := global.GVA_DB.WithContext(ctx).Where("user_id = ? AND subject_id = ?", userId, subjectId).First(&like).Error
 	return &like, err
 }
 
-func (d *SubjectDao) CreateSubjectLike(userId uint, subjectId int) error {
+func (d *SubjectDao) CreateSubjectLike(ctx context.Context, userId uint, subjectId int) error {
 	like := model.UserSubjectLike{
 		UserID:    int(userId),
 		SubjectID: subjectId,
 	}
-	return global.GVA_DB.Create(&like).Error
+	return global.GVA_DB.WithContext(ctx).Create(&like).Error
 }
 
-func (d *SubjectDao) DeleteSubjectLike(userId uint, subjectId int) error {
-	return global.GVA_DB.Where("user_id = ? AND subject_id = ?", userId, subjectId).Delete(&model.UserSubjectLike{}).Error
+func (d *SubjectDao) DeleteSubjectLike(ctx context.Context, userId uint, subjectId int) error {
+	return global.GVA_DB.WithContext(ctx).Where("user_id = ? AND subject_id = ?", userId, subjectId).Delete(&model.UserSubjectLike{}).Error
 }
 
-func (d *SubjectDao) CreateCollectFolder(userId uint, name, description string, isPublic int8) (model.UserCollectFolder, error) {
+func (d *SubjectDao) CreateCollectFolder(ctx context.Context, userId uint, name, description string, isPublic int8) (model.UserCollectFolder, error) {
 	folder := model.UserCollectFolder{
 		UserID:      int(userId),
 		Name:        name,
 		Description: description,
 		IsPublic:    isPublic,
 	}
-	err := global.GVA_DB.Create(&folder).Error
+	err := global.GVA_DB.WithContext(ctx).Create(&folder).Error
 	return folder, err
 }
 
-func (d *SubjectDao) GetCollectFolderById(userId uint, folderId int) (*model.UserCollectFolder, error) {
+func (d *SubjectDao) GetCollectFolderById(ctx context.Context, userId uint, folderId int) (*model.UserCollectFolder, error) {
 	var folder model.UserCollectFolder
-	err := global.GVA_DB.Where("id = ? AND user_id = ?", folderId, userId).First(&folder).Error
+	err := global.GVA_DB.WithContext(ctx).Where("id = ? AND user_id = ?", folderId, userId).First(&folder).Error
 	return &folder, err
 }
 
-func (d *SubjectDao) AddSubjectToFolder(userId uint, folderId int, subjectId int) error {
+func (d *SubjectDao) AddSubjectToFolder(ctx context.Context, userId uint, folderId int, subjectId int) error {
 	item := model.UserCollectItem{
 		UserID:    int(userId),
 		FolderID:  folderId,
 		SubjectID: subjectId,
 	}
-	return global.GVA_DB.Create(&item).Error
+	return global.GVA_DB.WithContext(ctx).Create(&item).Error
 }
 
-func (d *SubjectDao) CheckSubjectInFolder(userId uint, folderId int, subjectId int) (bool, error) {
+func (d *SubjectDao) CheckSubjectInFolder(ctx context.Context, userId uint, folderId int, subjectId int) (bool, error) {
 	var count int64
-	err := global.GVA_DB.Model(&model.UserCollectItem{}).
+	err := global.GVA_DB.WithContext(ctx).Model(&model.UserCollectItem{}).
 		Where("user_id = ? AND folder_id = ? AND subject_id = ?", userId, folderId, subjectId).
 		Count(&count).Error
 	return count > 0, err
 }
 
-func (d *SubjectDao) DeleteSubjectFromFolder(userId uint, folderId int, subjectId int) error {
-	return global.GVA_DB.Where("user_id = ? AND folder_id = ? AND subject_id = ?", userId, folderId, subjectId).
+func (d *SubjectDao) UncollectSubject(ctx context.Context, userId uint, subjectId int) error {
+	return global.GVA_DB.WithContext(ctx).Where("user_id = ? AND subject_id = ?", userId, subjectId).
 		Delete(&model.UserCollectItem{}).Error
 }

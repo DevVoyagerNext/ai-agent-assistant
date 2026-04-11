@@ -14,7 +14,7 @@ import {
   getUserCollectFolders, 
   createCollectFolder, 
   addSubjectToFolder,
-  removeSubjectFromFolder 
+  uncollectSubject 
 } from '../api/user'
 import type { SubjectNode, SubjectNodeDetail, NodeNote } from '../types/node'
 import type { Subject } from '../types/subject'
@@ -76,10 +76,10 @@ const handleCollectClick = async () => {
     return
   }
   
-  // 如果已经收藏，点击则是取消收藏
-  if (isCollected.value && collectFolderId.value) {
+  // 如果已经收藏，点击则是取消收藏（从所有收藏夹移除）
+  if (isCollected.value) {
     try {
-      const res = await removeSubjectFromFolder(collectFolderId.value, subjectId)
+      const res = await uncollectSubject(subjectId)
       if (res.data?.code === 200) {
         showToast('已取消收藏')
         isCollected.value = false
@@ -753,24 +753,6 @@ const goBack = () => {
                 @click="handleDifficultyClick('hard')"
               >难 {{ nodeDetail.hardCount }}</span>
             </div>
-            <div class="subject-global-status">
-              <div class="status-icon-group">
-                <Heart 
-                  :size="18" 
-                  :class="{ 'is-active': isLiked }" 
-                  :fill="isLiked ? 'currentColor' : 'none'"
-                  @click="handleLikeClick"
-                  :title="isLiked ? '取消点赞' : '点赞教材'"
-                />
-                <Bookmark 
-                  :size="18" 
-                  :class="{ 'is-active': isCollected }" 
-                  :fill="isCollected ? 'currentColor' : 'none'"
-                  @click="handleCollectClick"
-                  :title="isCollected ? '已收藏' : '收藏教材'"
-                />
-              </div>
-            </div>
             <div class="status-badge" :class="currentNodeStatus">
               <Award v-if="currentNodeStatus === 'completed'" :size="14" />
               <Clock v-else :size="14" />
@@ -1369,38 +1351,6 @@ const goBack = () => {
 }
 
 .meta-info { display: flex; align-items: center; justify-content: space-between; }
-
-.subject-global-status {
-  display: flex;
-  align-items: center;
-  padding: 0 16px;
-  border-left: 1px solid #e2e8f0;
-  border-right: 1px solid #e2e8f0;
-  margin: 0 16px;
-}
-
-.status-icon-group {
-  display: flex;
-  gap: 16px;
-  color: #94a3b8;
-}
-
-.status-icon-group svg {
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.status-icon-group svg:hover {
-  transform: scale(1.1);
-}
-
-.status-icon-group svg.is-active {
-  color: #f59e0b;
-}
-
-.status-icon-group svg.is-active.lucide-heart {
-  color: #ef4444;
-}
 
 .difficulty-tags { display: flex; gap: 8px; }
 
