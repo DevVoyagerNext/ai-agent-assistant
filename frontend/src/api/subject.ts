@@ -22,3 +22,8 @@ export const searchSubjects = (keyword: string, page = 1, pageSize = 20) => {
     params: { keyword, page, pageSize }
   })
 }
+
+// 获取教材详情
+export const getSubjectDetail = (id: number) => {
+  return request.get<ApiResponse<Subject>>(`/subjects/${id}`)
+}

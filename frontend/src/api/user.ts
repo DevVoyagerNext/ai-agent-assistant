@@ -62,3 +62,8 @@ export const getUserRecentSubjects = (page = 1, pageSize = 10) => {
     params: { page, pageSize }
   })
 }
+
+// 6. 点赞或取消点赞教材
+export const likeSubject = (id: number) => {
+  return request.post<ApiResponse<{ isLiked: boolean }>>(`/user/subjects/${id}/like`)
+}

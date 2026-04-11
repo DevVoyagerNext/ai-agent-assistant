@@ -8,7 +8,10 @@ import {
   getTopNodes, getChildNodes, getNodeDetail, getNodeNote,
   updateNodeStatus, updateNodeDifficulty
 } from '../api/node'
+import { getSubjectDetail } from '../api/subject'
+import { likeSubject } from '../api/user'
 import type { SubjectNode, SubjectNodeDetail, NodeNote } from '../types/node'
+import type { Subject } from '../types/subject'
 import TreeItem from '../components/TreeItem.vue'
 import Toast from '../components/Toast.vue'
 import {
@@ -20,13 +23,53 @@ import {
   FileText, ArrowLeft, 
   Edit3, BookOpen, 
   Clock, Award, BookOpenCheck, Loader2,
-  LayoutList, LayoutPanelLeft, CheckCircle2
+  LayoutList, LayoutPanelLeft, CheckCircle2,
+  Heart
 } from 'lucide-vue-next'
 
 const route = useRoute()
 const router = useRouter()
 const subjectId = Number(route.params.id)
 const isLoggedIn = computed(() => !!localStorage.getItem('token'))
+const isLiked = ref(false)
+const updatingLike = ref(false)
+
+// 获取教材详情（主要为了获取点赞状态）
+const fetchSubjectDetail = async () => {
+  if (!isLoggedIn.value) return
+  try {
+    const res = await getSubjectDetail(subjectId)
+    if (res.data?.code === 200 && res.data.data) {
+      isLiked.value = res.data.data.isLiked
+    }
+  } catch (error) {
+    console.error('获取教材详情失败', error)
+  }
+}
+
+const handleLikeClick = async () => {
+  if (!isLoggedIn.value) {
+    showToast('请登录后再点赞', 'error')
+    router.push('/login')
+    return
+  }
+
+  if (updatingLike.value) return
+  
+  updatingLike.value = true
+  try {
+    const res = await likeSubject(subjectId)
+    if (res.data?.code === 200 && res.data.data) {
+      isLiked.value = res.data.data.isLiked
+      showToast(isLiked.value ? '已点赞' : '已取消点赞')
+    }
+  } catch (error: any) {
+    console.error('点赞失败', error)
+    showToast(error.response?.data?.msg || '操作失败', 'error')
+  } finally {
+    updatingLike.value = false
+  }
+}
 
 // ----------------- 目录树相关 -----------------
 interface TreeNode extends SubjectNode {
@@ -38,6 +81,11 @@ interface TreeNode extends SubjectNode {
 const topNodes = ref<TreeNode[]>([])
 const loadingTree = ref(false)
 const expandMode = ref<'normal' | 'accordion'>('normal') // 模式一：normal, 模式二：accordion
+
+const toggleExpandMode = () => {
+  expandMode.value = expandMode.value === 'normal' ? 'accordion' : 'normal'
+  showToast(`已切换为${expandMode.value === 'normal' ? '自由' : '手风琴'}模式`)
+}
 
 const fetchTopNodes = async () => {
   loadingTree.value = true
@@ -371,6 +419,33 @@ const updateStatus = async () => {
   }
 }
 
+// 刷新当前节点的难度统计数据
+const refreshNodeCounts = async (id: number) => {
+  try {
+    const res = await getNodeDetail(id)
+    if (res.data?.code === 200 && res.data.data) {
+      const detail = res.data.data
+      
+      // 更新当前显示的详情中的计数值
+      if (nodeDetail.value && nodeDetail.value.id === id) {
+        nodeDetail.value.easyCount = detail.easyCount
+        nodeDetail.value.mediumCount = detail.mediumCount
+        nodeDetail.value.hardCount = detail.hardCount
+      }
+      
+      // 同时更新缓存中的数据
+      const cached = detailCache.get(id)
+      if (cached) {
+        cached.easyCount = detail.easyCount
+        cached.mediumCount = detail.mediumCount
+        cached.hardCount = detail.hardCount
+      }
+    }
+  } catch (error) {
+    console.error('刷新难度计数失败', error)
+  }
+}
+
 const handleDifficultyClick = async (difficulty: 'easy' | 'medium' | 'hard') => {
   if (!isLoggedIn.value) {
     showToast('请登录后再评价难度', 'error')
@@ -385,20 +460,19 @@ const handleDifficultyClick = async (difficulty: 'easy' | 'medium' | 'hard') => 
     const res = await updateNodeDifficulty(currentNodeId.value, difficulty)
     if (res.data?.code === 200) {
       showToast('评价成功！感谢你的反馈')
-      
-      // 局部更新当前显示的难度计数（虽然完整数据可能需要重新获取，但先给用户即时反馈）
-      if (nodeDetail.value) {
-        if (difficulty === 'easy') nodeDetail.value.easyCount++
-        if (difficulty === 'medium') nodeDetail.value.mediumCount++
-        if (difficulty === 'hard') nodeDetail.value.hardCount++
-      }
     } else {
       showToast(res.data?.msg || '评价失败', 'error')
     }
   } catch (error: any) {
+    // 处理异常，特别是“已经评价过”的业务提示
+    const msg = error.response?.data?.msg || '评价失败'
+    showToast(msg, 'error')
     console.error('评价难度失败', error)
-    showToast(error.response?.data?.msg || '评价失败', 'error')
   } finally {
+    // 无论评价成功还是报错（可能是已评价过），都从后端拉取最新计数来刷新数据
+    if (currentNodeId.value) {
+      await refreshNodeCounts(currentNodeId.value)
+    }
     updatingDifficulty.value = false
   }
 }
@@ -408,6 +482,7 @@ onMounted(() => {
     router.replace('/')
     return
   }
+  fetchSubjectDetail()
   fetchTopNodes()
 })
 
@@ -479,24 +554,22 @@ const goBack = () => {
         <div class="course-title-wrap">
           <BookOpenCheck class="title-icon" :size="20" />
           <h3>教材目录</h3>
-          <div class="mode-switch-btns">
-            <button 
-              class="mode-btn" 
-              :class="{ active: expandMode === 'normal' }"
-              title="自由模式：可展开多个节点"
-              @click="expandMode = 'normal'"
-            >
-              <LayoutList :size="16" />
-            </button>
-            <button 
-              class="mode-btn" 
-              :class="{ active: expandMode === 'accordion' }"
-              title="手风琴模式：展开时自动收起同级"
-              @click="expandMode = 'accordion'"
-            >
-              <LayoutPanelLeft :size="16" />
-            </button>
-          </div>
+          <button 
+             class="mode-toggle-btn" 
+             :title="expandMode === 'normal' ? '当前模式：自由模式 (点击切换为手风琴)' : '当前模式：手风琴模式 (点击切换为自由)'"
+             @click="toggleExpandMode"
+           >
+             <LayoutList v-if="expandMode === 'normal'" :size="16" />
+             <LayoutPanelLeft v-else :size="16" />
+           </button>
+          <button 
+            class="mode-toggle-btn like-btn" 
+            :class="{ liked: isLiked }"
+            :title="isLiked ? '取消点赞' : '点赞教材'"
+            @click="handleLikeClick"
+          >
+            <Heart :size="16" :fill="isLiked ? 'currentColor' : 'none'" />
+          </button>
         </div>
       </div>
       
@@ -714,47 +787,44 @@ const goBack = () => {
 .course-title-wrap {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 12px;
   color: #1e293b;
-  justify-content: space-between;
 }
 
-.mode-switch-btns {
-  display: flex;
-  background: #f1f5f9;
-  padding: 3px;
-  border-radius: 6px;
-  gap: 2px;
-}
-
-.mode-btn {
+.mode-toggle-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
-  border: none;
-  background: transparent;
+  width: 32px;
+  height: 32px;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
   color: #64748b;
-  border-radius: 4px;
   cursor: pointer;
   transition: all 0.2s;
+  flex-shrink: 0;
 }
 
-.mode-btn:hover {
-  color: #0f172a;
-}
-
-.mode-btn.active {
-  background: #fff;
+.mode-toggle-btn:hover {
+  background: #e2e8f0;
   color: #3b82f6;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  border-color: #cbd5e1;
+}
+
+.mode-toggle-btn.like-btn.liked {
+  color: #ef4444;
+  background: #fef2f2;
+  border-color: #fecaca;
+}
+
+.mode-toggle-btn.like-btn.liked:hover {
+  background: #fee2e2;
 }
 
 .course-title-wrap h3 {
   font-size: 17px;
   font-weight: 700;
-  flex: 1;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
