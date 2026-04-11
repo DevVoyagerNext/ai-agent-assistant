@@ -251,3 +251,24 @@ func (s *SubjectService) GetUserLastLearningSubject(ctx context.Context, userId 
 
 	return res, errmsg.CodeSuccess
 }
+
+func (s *SubjectService) ToggleSubjectLike(ctx context.Context, userId uint, subjectId int) (bool, int) {
+	// 1. 检查是否已经点赞
+	_, err := s.subjectDao.GetSubjectLike(userId, subjectId)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			// 2. 未点赞，执行点赞
+			if err := s.subjectDao.CreateSubjectLike(userId, subjectId); err != nil {
+				return false, errmsg.CodeError
+			}
+			return true, errmsg.CodeSuccess // true 表示当前状态为已点赞
+		}
+		return false, errmsg.CodeError
+	}
+
+	// 3. 已点赞，取消点赞
+	if err := s.subjectDao.DeleteSubjectLike(userId, subjectId); err != nil {
+		return false, errmsg.CodeError
+	}
+	return false, errmsg.CodeSuccess // false 表示当前状态为未点赞
+}

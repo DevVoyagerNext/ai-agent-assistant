@@ -32,5 +32,6 @@ func (r *SubjectRouter) InitAuthSubjectRouter(Router *gin.RouterGroup) {
 		userSubjectRouter.GET("/learning", subjectController.GetUserLearningSubjects)                   // 获取用户正在学习的教材
 		userSubjectRouter.GET("/completed", subjectController.GetUserCompletedSubjects)                 // 获取用户已经学习完成的教材
 		userSubjectRouter.GET("/last-learning", subjectController.GetUserLastLearningSubject)           // 分页获取最近学习的教材
+		userSubjectRouter.POST("/:id/like", subjectController.ToggleSubjectLike)                        // 点赞或取消点赞教材
 	}
 }

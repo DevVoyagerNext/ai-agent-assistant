@@ -25,6 +25,31 @@ func (con *SubjectController) GetCategories(c *gin.Context) {
 	response.Ok(res, c)
 }
 
+// ToggleSubjectLike 点赞或取消点赞教材（需要登录）
+func (con *SubjectController) ToggleSubjectLike(c *gin.Context) {
+	userId, err := con.authService.GetUserID(c)
+	if err != nil {
+		response.FailWithCode(errmsg.UserTokenNotExist, c)
+		return
+	}
+
+	subjectIdStr := c.Param("id")
+	subjectId, err := strconv.Atoi(subjectIdStr)
+	if err != nil || subjectId <= 0 {
+		response.FailWithCode(errmsg.CodeError, c)
+		return
+	}
+
+	isLiked, code := con.subjectService.ToggleSubjectLike(c.Request.Context(), userId, subjectId)
+	if code != errmsg.CodeSuccess {
+		response.FailWithCode(code, c)
+		return
+	}
+
+	// 返回当前的点赞状态
+	response.Ok(gin.H{"isLiked": isLiked}, c)
+}
+
 // GetSubjectsByCategory 通过教材分类获取该分类的教材数据（不需要登录）
 func (con *SubjectController) GetSubjectsByCategory(c *gin.Context) {
 	categoryIdStr := c.Param("id")

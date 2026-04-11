@@ -164,3 +164,21 @@ func (d *SubjectDao) GetUserSubjectInteractions(userId uint, subjectIds []uint) 
 
 	return likedMap, collectedMap, progressMap, nil
 }
+
+func (d *SubjectDao) GetSubjectLike(userId uint, subjectId int) (*model.UserSubjectLike, error) {
+	var like model.UserSubjectLike
+	err := global.GVA_DB.Where("user_id = ? AND subject_id = ?", userId, subjectId).First(&like).Error
+	return &like, err
+}
+
+func (d *SubjectDao) CreateSubjectLike(userId uint, subjectId int) error {
+	like := model.UserSubjectLike{
+		UserID:    int(userId),
+		SubjectID: subjectId,
+	}
+	return global.GVA_DB.Create(&like).Error
+}
+
+func (d *SubjectDao) DeleteSubjectLike(userId uint, subjectId int) error {
+	return global.GVA_DB.Where("user_id = ? AND subject_id = ?", userId, subjectId).Delete(&model.UserSubjectLike{}).Error
+}
