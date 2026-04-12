@@ -193,7 +193,25 @@ func (s *KnowledgeNodeService) UpdateNodeStatus(ctx context.Context, userID uint
 	if userID == 0 {
 		return errors.New("用户未登录")
 	}
-	return s.nodeDao.UpsertUserStudyStatus(userID, nodeID, status)
+	err := s.nodeDao.UpsertUserStudyStatus(userID, nodeID, status)
+	if err != nil {
+		return err
+	}
+
+	// 如果状态是已完成，异步发送活跃度更新消息
+	if status == "completed" {
+		if err := global.GVA_MQ.Publish(ctx, "user_activity", tasks.UserActivityPayload{
+			UserID:     userID,
+			ActionType: "study_note",
+			TargetType: "knowledge_nodes",
+			TargetID:   nodeID,
+			Score:      2,
+		}); err != nil {
+			global.GVA_LOG.Error("发布用户活跃度更新消息失败", zap.Error(err))
+		}
+	}
+
+	return nil
 }
 
 // MarkNodeDifficulty 标记或更新知识点的难度评价

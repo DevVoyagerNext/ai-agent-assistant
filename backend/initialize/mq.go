@@ -14,6 +14,7 @@ func MQ() {
 
 	// 2. 注册任务处理器 (此处根据业务按需注册)
 	global.GVA_MQ.Register("subject_progress", tasks.HandleSubjectProgress)
+	global.GVA_MQ.Register("user_activity", tasks.HandleUserActivity)
 
 	// 3. 启动消费者协程
 	ctx := context.Background()

@@ -4,7 +4,48 @@ import (
 	"backend/global"
 	"backend/model"
 	"context"
+	"errors"
+	"time"
+
+	"gorm.io/gorm"
 )
+
+// CreateUserActivityLog 记录用户行为流水
+func CreateUserActivityLog(ctx context.Context, log *model.UserActivityLog) error {
+	return global.GVA_DB.WithContext(ctx).Create(log).Error
+}
+
+// UpsertUserDailyActionStat 更新或创建用户每日分类行为统计
+func UpsertUserDailyActionStat(ctx context.Context, userID int, actionType, targetType string, score int) error {
+	today := time.Now().Truncate(24 * time.Hour)
+
+	var stat model.UserDailyActionStat
+	err := global.GVA_DB.WithContext(ctx).
+		Where("user_id = ? AND activity_date = ? AND action_type = ? AND target_type = ?", userID, today, actionType, targetType).
+		First(&stat).Error
+
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			// 创建新记录
+			stat = model.UserDailyActionStat{
+				UserID:       userID,
+				ActivityDate: today,
+				ActionType:   actionType,
+				TargetType:   targetType,
+				ActionCount:  1,
+				ActionScore:  score,
+			}
+			return global.GVA_DB.WithContext(ctx).Create(&stat).Error
+		}
+		return err
+	}
+
+	// 更新记录
+	return global.GVA_DB.WithContext(ctx).Model(&stat).Updates(map[string]interface{}{
+		"action_count": gorm.Expr("action_count + ?", 1),
+		"action_score": gorm.Expr("action_score + ?", score),
+	}).Error
+}
 
 // GetUserFollowersCount 获取用户粉丝数 (被关注数)
 func GetUserFollowersCount(ctx context.Context, userID uint) (int64, error) {
