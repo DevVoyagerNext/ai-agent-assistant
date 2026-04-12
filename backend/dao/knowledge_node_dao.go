@@ -5,8 +5,9 @@ import (
 	"backend/model"
 	"context"
 	"errors"
-	"gorm.io/gorm"
 	"time"
+
+	"gorm.io/gorm"
 )
 
 type KnowledgeNodeDao struct{}
@@ -68,6 +69,32 @@ func (dao *KnowledgeNodeDao) GetUserStudyNote(userID uint, nodeID int) (model.Us
 	var note model.UserStudyNote
 	err := global.GVA_DB.Where("user_id = ? AND node_id = ?", userID, nodeID).First(&note).Error
 	return note, err
+}
+
+// UpsertUserStudyNote 创建或更新用户随堂笔记
+func (dao *KnowledgeNodeDao) UpsertUserStudyNote(userID uint, nodeID int, noteContent string, isImportant int8) error {
+	var note model.UserStudyNote
+	err := global.GVA_DB.Where("user_id = ? AND node_id = ?", userID, nodeID).First(&note).Error
+
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			// 没查到记录，则创建
+			note = model.UserStudyNote{
+				UserID:      int(userID),
+				NodeID:      nodeID,
+				NoteContent: noteContent,
+				IsImportant: isImportant,
+			}
+			return global.GVA_DB.Create(&note).Error
+		}
+		return err
+	}
+
+	// 如果查询到了记录，则更新内容和标记
+	return global.GVA_DB.Model(&note).Updates(map[string]interface{}{
+		"note_content": noteContent,
+		"is_important": isImportant,
+	}).Error
 }
 
 // UpsertUserStudyStatus 更新或创建用户在某个知识点上的学习状态

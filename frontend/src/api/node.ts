@@ -24,6 +24,11 @@ export const getNodeNote = (nodeId: number) => {
   return request.get<ApiResponse<NodeNote>>(`/nodes/${nodeId}/note`)
 }
 
+// 保存/创建随堂笔记
+export const saveNodeNote = (nodeId: number, data: { noteContent: string; isImportant: number }) => {
+  return request.post<ApiResponse<null>>(`/nodes/${nodeId}/note`, data)
+}
+
 // 修改知识点的学习状态
 export const updateNodeStatus = (nodeId: number, status: 'unstarted' | 'learning' | 'completed') => {
   return request.put<ApiResponse<null>>(`/nodes/${nodeId}/status`, { status })

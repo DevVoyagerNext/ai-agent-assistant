@@ -188,6 +188,24 @@ func (s *KnowledgeNodeService) GetUserStudyNote(ctx context.Context, nodeID int,
 	}, nil
 }
 
+// UpsertUserStudyNote 创建或更新用户随堂笔记
+func (s *KnowledgeNodeService) UpsertUserStudyNote(ctx context.Context, userID uint, nodeID int, req dto.UpsertUserStudyNoteReq) error {
+	if userID == 0 {
+		return errors.New("用户未登录")
+	}
+
+	// 检查知识点是否存在
+	_, err := s.nodeDao.GetNodeByID(nodeID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return errors.New("知识点不存在")
+		}
+		return err
+	}
+
+	return s.nodeDao.UpsertUserStudyNote(userID, nodeID, req.NoteContent, req.IsImportant)
+}
+
 // UpdateNodeStatus 更新用户对知识点的学习状态
 func (s *KnowledgeNodeService) UpdateNodeStatus(ctx context.Context, userID uint, nodeID int, status string) error {
 	if userID == 0 {

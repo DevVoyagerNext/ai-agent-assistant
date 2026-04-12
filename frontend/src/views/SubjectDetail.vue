@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { ref, onMounted, computed, reactive } from 'vue'
+import { ref, onMounted, computed, reactive, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import markdownit from 'markdown-it'
 import hljs from 'highlight.js'
 import 'highlight.js/styles/github.css' // 切换回浅色主题，适合灰色背景
 import { 
   getTopNodes, getChildNodes, getNodeDetail, getNodeNote,
-  updateNodeStatus, updateNodeDifficulty
+  updateNodeStatus, updateNodeDifficulty, saveNodeNote
 } from '../api/node'
 import { getSubjectDetail } from '../api/subject'
 import { 
@@ -345,9 +345,14 @@ const decodeEntities = (text: string) => {
 const currentNodeId = ref<number | null>(null)
 const nodeDetail = ref<SubjectNodeDetail | null>(null)
 const nodeNote = ref<NodeNote | null>(null)
+const noteEditContent = ref('') // 编辑中的笔记内容
+const lastSavedContent = ref('') // 上次保存的内容，用于减少无谓请求
+const isNoteImportant = ref(1) // 默认标记为重要
 const loadingDetail = ref(false)
 const updatingStatus = ref(false)
 const updatingDifficulty = ref(false)
+const savingNote = ref(false)
+const saveStatusText = ref('') // 'saving', 'saved', 'error'
 
 // ----------------- 反馈弹窗相关 -----------------
 const toast = reactive({
@@ -423,6 +428,10 @@ const selectNode = async (id: number) => {
     console.log(`[Cache Hit] Node ID: ${id}`)
     nodeDetail.value = detailCache.get(id) || null
     nodeNote.value = noteCache.get(id) || null
+    noteEditContent.value = nodeNote.value?.noteContent || ''
+    lastSavedContent.value = noteEditContent.value // 同步上次保存内容
+    saveStatusText.value = '' // 重置状态
+    isNoteImportant.value = nodeNote.value?.isImportant ?? 1
     
     // 缓存命中的情况下，如果状态是未开始，也需要自动触发“学习中”
     if (nodeDetail.value?.userProgressStatus === 'unstarted' && isLoggedIn.value) {
@@ -478,13 +487,24 @@ const selectNode = async (id: number) => {
       if (resNote.data?.code === 200 && resNote.data.data) {
         const note = resNote.data.data
         nodeNote.value = note
+        noteEditContent.value = note.noteContent || ''
+        lastSavedContent.value = noteEditContent.value // 同步上次保存内容
+        saveStatusText.value = '' // 重置状态
+        isNoteImportant.value = note.isImportant ?? 1
         noteCache.set(id, note) // 存入缓存
       } else {
         nodeNote.value = null
+        noteEditContent.value = ''
+        lastSavedContent.value = ''
+        saveStatusText.value = ''
+        isNoteImportant.value = 1
         noteCache.set(id, null) // 即使没有笔记也缓存 null，避免重复请求
       }
     } else {
       nodeNote.value = null
+      noteEditContent.value = ''
+      lastSavedContent.value = ''
+      saveStatusText.value = ''
     }
   } catch (error) {
     console.error('获取详情或笔记失败', error)
@@ -636,6 +656,69 @@ const stopResizing = () => {
   document.body.style.cursor = ''
   document.body.style.userSelect = ''
 }
+
+const handleSaveNote = async () => {
+  if (!currentNodeId.value || savingNote.value) return
+  // 如果内容没变，不发送请求
+  if (noteEditContent.value === lastSavedContent.value) return
+  
+  savingNote.value = true
+  saveStatusText.value = 'saving'
+  try {
+    const res = await saveNodeNote(currentNodeId.value, {
+      noteContent: noteEditContent.value,
+      isImportant: isNoteImportant.value
+    })
+    if (res.data?.code === 200) {
+      lastSavedContent.value = noteEditContent.value
+      saveStatusText.value = 'saved'
+      
+      // 更新当前显示的时间
+      const now = new Date().toLocaleString('zh-CN', { hour12: false }).replace(/\//g, '-')
+      if (nodeNote.value) {
+        nodeNote.value.noteContent = noteEditContent.value
+        nodeNote.value.updatedAt = now
+      } else {
+        nodeNote.value = {
+          id: 0,
+          nodeId: currentNodeId.value,
+          noteContent: noteEditContent.value,
+          isImportant: isNoteImportant.value,
+          updatedAt: now
+        }
+      }
+      noteCache.set(currentNodeId.value, nodeNote.value)
+      
+      // 3秒后清除“已同步”字样
+      setTimeout(() => {
+        if (saveStatusText.value === 'saved') saveStatusText.value = ''
+      }, 3000)
+    }
+  } catch (error: any) {
+    console.error('保存笔记失败', error)
+    saveStatusText.value = 'error'
+  } finally {
+    savingNote.value = false
+  }
+}
+
+// 自动保存监听逻辑
+let debounceTimer: any = null
+watch([noteEditContent, isNoteImportant], ([newContent, newImportant]) => {
+  if (!currentNodeId.value) return
+  
+  // 仅当内容或重要程度发生实际变化时才触发防抖保存
+  const isContentChanged = newContent !== lastSavedContent.value
+  const isImportantChanged = nodeNote.value ? newImportant !== nodeNote.value.isImportant : false
+  
+  if (!isContentChanged && !isImportantChanged) return
+  
+  if (debounceTimer) clearTimeout(debounceTimer)
+  
+  debounceTimer = setTimeout(() => {
+    handleSaveNote()
+  }, 1000) // 1秒防抖
+})
 
 const goBack = () => {
   router.push('/')
@@ -827,9 +910,8 @@ const goBack = () => {
           <div class="editor-wrap">
             <textarea 
               class="note-textarea" 
-              :value="nodeNote?.noteContent || ''"
+              v-model="noteEditContent"
               placeholder="在这里输入你的随堂笔记..."
-              readonly
             ></textarea>
           </div>
           <div class="editor-footer">
@@ -838,7 +920,17 @@ const goBack = () => {
               <span v-if="nodeNote?.updatedAt">上次同步: {{ nodeNote.updatedAt }}</span>
               <span v-else>尚未记录笔记</span>
             </div>
-            <button class="action-btn disabled">保存 (只读)</button>
+            <div class="autosave-indicator">
+              <span v-if="saveStatusText === 'saving'" class="status-saving">
+                <Loader2 class="spin" :size="12" /> 正在同步...
+              </span>
+              <span v-else-if="saveStatusText === 'saved'" class="status-saved">
+                已同步到云端
+              </span>
+              <span v-else-if="saveStatusText === 'error'" class="status-error">
+                同步失败，请检查网络
+              </span>
+            </div>
           </div>
         </div>
       </div>
@@ -1553,25 +1645,44 @@ const goBack = () => {
   outline: none;
 }
 
-.editor-footer { display: flex; flex-direction: column; gap: 12px; }
+.editor-footer {
+  padding: 12px 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #fcfdfe;
+  border-top: 1px solid #f1f5f9;
+}
 
 .save-status {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 12px;
   color: #94a3b8;
+  font-size: 12px;
 }
 
-.action-btn {
-  width: 100%;
-  padding: 10px;
-  border-radius: 8px;
-  font-weight: 600;
-  border: none;
+.autosave-indicator {
+  font-size: 12px;
+  font-weight: 500;
 }
 
-.action-btn.disabled { background: #f1f5f9; color: #cbd5e1; cursor: not-allowed; }
+.status-saving {
+  color: #3b82f6;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.status-saved {
+  color: #10b981;
+}
+
+.status-error {
+  color: #ef4444;
+}
+
+
 
 .markdown-content :deep(a:hover) {
   text-decoration: underline;

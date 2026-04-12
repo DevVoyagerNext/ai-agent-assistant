@@ -99,6 +99,36 @@ func (con *KnowledgeNodeController) GetUserStudyNote(c *gin.Context) {
 	response.Ok(note, c)
 }
 
+// UpsertUserStudyNote 创建或修改随堂笔记
+func (con *KnowledgeNodeController) UpsertUserStudyNote(c *gin.Context) {
+	nodeIdStr := c.Param("nodeId")
+	nodeId, err := strconv.Atoi(nodeIdStr)
+	if err != nil || nodeId <= 0 {
+		response.FailWithMsg(errmsg.CodeError, "知识点ID格式错误", c)
+		return
+	}
+
+	var req dto.UpsertUserStudyNoteReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.FailWithMsg(errmsg.CodeError, "参数错误: "+err.Error(), c)
+		return
+	}
+
+	userId, err := con.authService.GetUserID(c)
+	if err != nil || userId == 0 {
+		response.FailWithCode(errmsg.UserTokenNotExist, c) // 必须登录
+		return
+	}
+
+	err = con.nodeService.UpsertUserStudyNote(c.Request.Context(), userId, nodeId, req)
+	if err != nil {
+		response.FailWithMsg(errmsg.CodeError, err.Error(), c)
+		return
+	}
+
+	response.Ok(nil, c)
+}
+
 // UpdateNodeStatus 更新知识点学习状态
 func (con *KnowledgeNodeController) UpdateNodeStatus(c *gin.Context) {
 	nodeIdStr := c.Param("nodeId")
@@ -145,7 +175,7 @@ func (con *KnowledgeNodeController) MarkNodeDifficulty(c *gin.Context) {
 	}
 
 	userId, err := con.authService.GetUserID(c)
-	if err != nil  {
+	if err != nil {
 		response.FailWithCode(errmsg.UserTokenNotExist, c) // 必须登录
 		return
 	}

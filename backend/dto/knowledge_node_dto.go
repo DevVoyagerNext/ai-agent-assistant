@@ -36,6 +36,12 @@ type UserStudyNoteRes struct {
 	UpdatedAt   string `json:"updatedAt"`
 }
 
+// UpsertUserStudyNoteReq 创建或修改随堂笔记请求体
+type UpsertUserStudyNoteReq struct {
+	NoteContent string `json:"noteContent" binding:"required"`
+	IsImportant int8   `json:"isImportant"`
+}
+
 // UpdateNodeStatusReq 修改知识点学习状态请求体
 type UpdateNodeStatusReq struct {
 	Status string `json:"status" binding:"required,oneof=unstarted learning completed"`

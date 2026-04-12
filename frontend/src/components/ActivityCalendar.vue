@@ -45,12 +45,20 @@ const byDate = computed<Map<string, number>>(() => {
   return map
 })
 
+const endOfWeekSaturday = (d: Date) => {
+  const copy = new Date(d)
+  const day = copy.getDay()
+  copy.setDate(copy.getDate() + (6 - day))
+  copy.setHours(23, 59, 59, 999)
+  return copy
+}
+
 const startDate = computed(() => {
-  const last = new Date(endDate.value)
+  // 始终以当前 endDate 所在周的周六作为网格终点
+  const last = endOfWeekSaturday(endDate.value)
   const days = WEEKS.value * 7 - 1
-  const alignedLast = new Date(last)
-  alignedLast.setHours(0, 0, 0, 0)
-  const firstCandidate = shiftDays(alignedLast, -days)
+  const firstCandidate = shiftDays(last, -days)
+  // 网格起点始终是 53 周前的周日
   return startOfWeekSunday(firstCandidate)
 })
 
@@ -158,7 +166,7 @@ watch(() => props.items, () => {
             :key="`${wi}-${di}`"
             class="cell"
             :class="`lv-${levelFor(cell.count)}`"
-            :title="`${cell.date}: ${cell.count} 次活跃`"
+            :title="`${cell.date}: ${cell.count} 次活跃${cell.date === toYMD(today) ? ' (今天)' : ''}`"
           />
         </div>
       </div>
