@@ -16,7 +16,8 @@ import {
   addSubjectToFolder,
   uncollectSubject,
   getPrivateNoteDetail,
-  createPrivateNote
+  createPrivateNote,
+  deletePrivateNote
 } from '../api/user'
 import type { SubjectNode, SubjectNodeDetail, NodeNote } from '../types/node'
 import type { 
@@ -39,7 +40,7 @@ import {
   LayoutList, LayoutPanelLeft, CheckCircle2,
   Heart, Bookmark, Plus, X, Globe, Lock,
   StickyNote, ChevronRight,
-  Folder, FolderPlus, FilePlus, ChevronLeft
+  Folder, FolderPlus, FilePlus, ChevronLeft, Trash2
 } from 'lucide-vue-next'
 
 const route = useRoute()
@@ -375,7 +376,7 @@ const fetchPrivateContent = async (noteId: number) => {
   if (!isLoggedIn.value) return
   loadingPrivateNotes.value = true
   try {
-    const res = await getPrivateNoteDetail(noteId)
+    const res = await getPrivateNoteDetail(noteId, 2)
     if (res.data?.code === 200) {
       if (!res.data.data) {
         privateNotes.value = []
@@ -384,10 +385,11 @@ const fetchPrivateContent = async (noteId: number) => {
       }
       const data = res.data.data
       if (data.type === 'folder') {
-        privateNotes.value = data.children
+        privateNotes.value = Array.isArray(data.children) ? data.children : []
         currentPrivateNote.value = null
       } else {
-        currentPrivateNote.value = data.content
+        privateNotes.value = []
+        currentPrivateNote.value = data.content ?? null
       }
     }
   } catch (error: any) {
@@ -445,12 +447,14 @@ const showCreatePrivateModal = ref(false)
 const createPrivateType = ref<'folder' | 'markdown'>('markdown')
 const createPrivateTitle = ref('')
 const createPrivateContent = ref('')
+const createPrivateIsPublic = ref(false)
 const creatingPrivate = ref(false)
 
 const openCreatePrivate = (type: 'folder' | 'markdown') => {
   createPrivateType.value = type
   createPrivateTitle.value = ''
   createPrivateContent.value = ''
+  createPrivateIsPublic.value = false
   showCreatePrivateModal.value = true
 }
 
@@ -466,7 +470,8 @@ const handleCreatePrivate = async () => {
       parentId: currentFolderId.value,
       type: createPrivateType.value,
       title: createPrivateTitle.value,
-      content: createPrivateType.value === 'markdown' ? createPrivateContent.value : undefined
+      content: createPrivateType.value === 'markdown' ? createPrivateContent.value : undefined,
+      isPublic: createPrivateIsPublic.value ? 1 : 0
     })
     
     if (res.data?.code === 200) {
@@ -478,6 +483,35 @@ const handleCreatePrivate = async () => {
     showToast(error.response?.data?.msg || '创建失败', 'error')
   } finally {
     creatingPrivate.value = false
+  }
+}
+
+const showDeletePrivateModal = ref(false)
+const deletingPrivate = ref(false)
+const pendingDeleteItem = ref<PrivateNoteBase | null>(null)
+
+const openDeletePrivate = (item: PrivateNoteBase) => {
+  pendingDeleteItem.value = item
+  showDeletePrivateModal.value = true
+}
+
+const handleDeletePrivate = async () => {
+  if (!pendingDeleteItem.value || deletingPrivate.value) return
+  deletingPrivate.value = true
+  try {
+    const res = await deletePrivateNote(pendingDeleteItem.value.id)
+    if (res.data?.code === 200) {
+      showToast('已移入回收站')
+      showDeletePrivateModal.value = false
+      pendingDeleteItem.value = null
+      fetchPrivateContent(currentFolderId.value)
+      return
+    }
+    showToast(res.data?.msg || '删除失败', 'error')
+  } catch (error: any) {
+    showToast(error?.response?.data?.msg || '删除失败', 'error')
+  } finally {
+    deletingPrivate.value = false
   }
 }
 
@@ -1137,7 +1171,6 @@ const goBack = () => {
         <!-- 私人笔记内容 -->
         <template v-else>
           <div class="private-note-container">
-            <!-- 导航栏 -->
             <div class="private-nav-bar">
               <button 
                 v-if="privateNavStack.length > 1 || currentPrivateNote" 
@@ -1150,7 +1183,7 @@ const goBack = () => {
               <div v-else class="nav-placeholder"></div>
               
               <div class="nav-current-title">
-                {{ currentPrivateNote ? '笔记正文' : (privateNavStack[privateNavStack.length - 1]?.title || '根目录') }}
+                {{ currentPrivateNote ? (currentPrivateNote?.title || '笔记') : (privateNavStack[privateNavStack.length - 1]?.title || '根目录') }}
               </div>
 
               <div class="nav-actions">
@@ -1173,42 +1206,44 @@ const goBack = () => {
               </div>
             </div>
 
-            <div v-if="loadingPrivateNotes" class="note-loading">
-              <Loader2 class="spin" :size="24" />
-              <span>正在获取内容...</span>
-            </div>
-
-            <!-- 笔记正文视图 -->
-            <div v-else-if="currentPrivateNote" class="private-content-view">
-              <div class="view-header">
-                <h3>{{ currentPrivateNote.title }}</h3>
+            <div class="private-body" :class="{ 'is-loading': loadingPrivateNotes }">
+              <div v-if="loadingPrivateNotes" class="private-loading-overlay">
+                <Loader2 class="spin" :size="24" />
+                <span>正在获取内容...</span>
               </div>
-              <div class="view-body markdown-content" v-html="md.render(currentPrivateNote.content || '')"></div>
-            </div>
 
-            <!-- 列表视图 -->
-            <div v-else class="private-list-view">
-              <div v-if="privateNotes.length === 0" class="note-empty">
-                <StickyNote :size="32" class="empty-icon" />
-                <p>当前文件夹暂无笔记</p>
-                <button class="create-btn" @click="openCreatePrivate('markdown')">立即创建</button>
+              <div v-if="currentPrivateNote" class="private-content-view">
+                <div class="view-body markdown-content" v-html="md.render(currentPrivateNote.content || '')"></div>
               </div>
-              <div v-else class="private-note-list">
-                <div 
-                  v-for="item in privateNotes" 
-                  :key="item.id" 
-                  class="private-note-item"
-                  @click="handlePrivateItemClick(item)"
-                >
-                  <div class="item-icon">
-                    <Folder v-if="item.type === 'folder'" :size="18" class="folder-icon-color" />
-                    <FileText v-else :size="18" class="file-icon-color" />
+
+              <div v-else class="private-list-view">
+                <div v-if="privateNotes.length === 0" class="note-empty">
+                  <StickyNote :size="32" class="empty-icon" />
+                  <p>当前文件夹暂无笔记</p>
+                  <button class="create-btn" @click="openCreatePrivate('markdown')">立即创建</button>
+                </div>
+                <div v-else class="private-note-list">
+                  <div 
+                    v-for="item in privateNotes" 
+                    :key="item.id" 
+                    class="private-note-item"
+                    @click="handlePrivateItemClick(item)"
+                  >
+                    <div class="item-icon">
+                      <Folder v-if="item.type === 'folder'" :size="18" class="folder-icon-color" />
+                      <FileText v-else :size="18" class="file-icon-color" />
+                    </div>
+                    <div class="note-info">
+                      <span class="note-title">{{ item.title }}</span>
+                      <span class="note-date">{{ new Date(item.updatedAt).toLocaleDateString() }}</span>
+                    </div>
+                    <div class="private-item-actions">
+                      <button class="item-delete-btn" title="删除" @click.stop="openDeletePrivate(item)">
+                        <Trash2 :size="16" />
+                      </button>
+                      <ChevronRight :size="14" class="arrow-icon" />
+                    </div>
                   </div>
-                  <div class="note-info">
-                    <span class="note-title">{{ item.title }}</span>
-                    <span class="note-date">{{ new Date(item.updatedAt).toLocaleDateString() }}</span>
-                  </div>
-                  <ChevronRight :size="14" class="arrow-icon" />
                 </div>
               </div>
             </div>
@@ -1224,11 +1259,6 @@ const goBack = () => {
 
     <!-- 收藏弹窗 -->
     <Teleport to="body">
-      <!-- 原有的收藏弹窗保持不变... -->
-      <div v-if="showCollectModal" class="modal-overlay" @click.self="showCollectModal = false">
-        <!-- ... -->
-      </div>
-
       <!-- 新建私人笔记/文件夹弹窗 -->
       <div v-if="showCreatePrivateModal" class="modal-overlay" @click.self="showCreatePrivateModal = false">
         <div class="modal-content small-modal">
@@ -1254,6 +1284,13 @@ const goBack = () => {
                 maxlength="255"
               />
             </div>
+            <div class="form-group row" style="margin-top: 16px;">
+              <label>公开</label>
+              <label class="public-checkbox">
+                <input v-model="createPrivateIsPublic" type="checkbox" />
+                <span>{{ createPrivateIsPublic ? '公开' : '不公开' }}</span>
+              </label>
+            </div>
             <div v-if="createPrivateType === 'markdown'" class="form-group" style="margin-top: 16px;">
               <label>内容</label>
               <textarea 
@@ -1273,6 +1310,31 @@ const goBack = () => {
               >
                 <Loader2 v-if="creatingPrivate" class="spin" :size="16" />
                 <span v-else>确认创建</span>
+              </button>
+            </div>
+          </footer>
+        </div>
+      </div>
+
+      <div v-if="showDeletePrivateModal" class="modal-overlay" @click.self="showDeletePrivateModal = false">
+        <div class="modal-content small-modal">
+          <header class="modal-header">
+            <h3>删除确认</h3>
+            <button class="close-btn" @click="showDeletePrivateModal = false">
+              <X :size="20" />
+            </button>
+          </header>
+          <div class="modal-body">
+            <div class="delete-tip">
+              确认删除「{{ pendingDeleteItem?.title }}」吗？删除后将移入回收站。
+            </div>
+          </div>
+          <footer class="modal-footer">
+            <div class="form-actions">
+              <button class="cancel-btn" @click="showDeletePrivateModal = false">取消</button>
+              <button class="danger-btn" :disabled="deletingPrivate" @click="handleDeletePrivate">
+                <Loader2 v-if="deletingPrivate" class="spin" :size="16" />
+                <span v-else>确认删除</span>
               </button>
             </div>
           </footer>
@@ -1674,6 +1736,23 @@ const goBack = () => {
   resize: none;
 }
 
+.public-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+  font-weight: normal;
+  color: #475569;
+}
+
+.form-group input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border-radius: 4px;
+}
+
 .radio-group {
   display: flex;
   gap: 16px;
@@ -1976,6 +2055,34 @@ const goBack = () => {
   background: #fff;
 }
 
+.private-body {
+  position: relative;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.private-body.is-loading .private-content-view,
+.private-body.is-loading .private-list-view {
+  opacity: 0.6;
+}
+
+.private-loading-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: rgba(255, 255, 255, 0.65);
+  backdrop-filter: blur(2px);
+  color: #64748b;
+  font-size: 13px;
+}
+
 /* 导航栏 */
 .private-nav-bar {
   display: flex;
@@ -2064,6 +2171,55 @@ const goBack = () => {
   align-items: center;
 }
 
+.note-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.note-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #334155;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.note-date {
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.private-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.item-delete-btn {
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  transition: all 0.2s;
+}
+
+.item-delete-btn:hover {
+  background: #fee2e2;
+  color: #ef4444;
+}
+
+.arrow-icon {
+  color: #cbd5e1;
+}
+
 .folder-icon-color { color: #f59e0b; }
 .file-icon-color { color: #3b82f6; }
 
@@ -2073,18 +2229,6 @@ const goBack = () => {
   overflow-y: auto;
   padding: 20px;
   background: #fff;
-}
-
-.view-header {
-  margin-bottom: 20px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid #f1f5f9;
-}
-
-.view-header h3 {
-  margin: 0;
-  font-size: 18px;
-  color: #1e293b;
 }
 
 .private-footer-tip {
@@ -2122,6 +2266,16 @@ const goBack = () => {
   color: #3b82f6;
 }
 
+.delete-tip {
+  padding: 12px 14px;
+  background: #f8fafc;
+  border: 1px solid #f1f5f9;
+  border-radius: 10px;
+  color: #475569;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
 .cancel-btn {
   padding: 10px 20px;
   border: 1px solid #e2e8f0;
@@ -2130,6 +2284,21 @@ const goBack = () => {
   font-weight: 600;
   color: #64748b;
   cursor: pointer;
+}
+
+.danger-btn {
+  padding: 10px 20px;
+  border: none;
+  background: #ef4444;
+  color: #fff;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.danger-btn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
 }
 
 .confirm-btn {

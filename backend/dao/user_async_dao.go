@@ -32,7 +32,7 @@ func GetPublicPrivateNotes(ctx context.Context, userID uint, offset, limit int) 
 	var total int64
 
 	db := global.GVA_DB.WithContext(ctx).Model(&model.UserPrivateNote{}).
-		Where("user_id = ? AND is_public = 1 AND type = 'markdown'", userID)
+		Where("user_id = ? AND is_public = 1 AND type = 'markdown' AND is_deleted = 0", userID)
 
 	err := db.Count(&total).Error
 	if err != nil {

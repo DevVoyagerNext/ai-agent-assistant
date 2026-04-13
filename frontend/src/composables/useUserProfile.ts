@@ -2,7 +2,7 @@ import { ref, onMounted } from 'vue'
 import { 
   getUserInfo, 
   getUserActivitiesCalendar, 
-  getPublicPrivateNotes, 
+  getPrivateNoteDetail, 
   getSharedNotes, 
   getLearnedSubjects,
   getUserCollectFolders,
@@ -117,12 +117,27 @@ export const useUserProfile = () => {
   const fetchPublicPrivateNotes = async () => {
     loadingPublicPrivateNotes.value = true
     try {
-      const res = await getPublicPrivateNotes(1, 10)
-      if (res.data?.code === 200 && res.data.data) {
-        publicPrivateNotes.value = res.data.data.list || []
+      const res = await getPrivateNoteDetail(0, 2)
+      if (res.data?.code === 200) {
+        const data = res.data.data
+        if (data && data.type === 'folder') {
+          const children = Array.isArray(data.children) ? data.children : []
+          publicPrivateNotes.value = children.map(item => ({
+            id: item.id,
+            title: item.title,
+            updatedAt: item.updatedAt,
+            type: item.type
+          }))
+        } else {
+          publicPrivateNotes.value = []
+        }
       }
-    } catch (err) {
-      console.error(err)
+    } catch (err: any) {
+      const status = err?.response?.status
+      const code = err?.response?.data?.code
+      if (status === 404 || code === 404) {
+        publicPrivateNotes.value = []
+      }
     } finally {
       loadingPublicPrivateNotes.value = false
     }

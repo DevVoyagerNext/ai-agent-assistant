@@ -59,6 +59,7 @@ export interface CreatePrivateNoteReq {
   type: 'folder' | 'markdown'
   title: string
   content?: string
+  isPublic: 0 | 1
 }
 
 export interface PublicPrivateNotesRes {

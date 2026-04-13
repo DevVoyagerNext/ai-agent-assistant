@@ -31,13 +31,19 @@ export const getPublicPrivateNotes = (page = 1, pageSize = 10) => {
 // ---------------- 私人笔记分层管理 API ----------------
 
 // 1. 获取私人笔记内容或子文件夹列表 (noteId 为 0 获取根目录)
-export const getPrivateNoteDetail = (noteId: number) => {
-  return request.get<ApiResponse<PrivateNoteResponse>>(`/user/notes/private/${noteId}`)
+export const getPrivateNoteDetail = (noteId: number, scope: 0 | 1 | 2 = 0) => {
+  return request.get<ApiResponse<PrivateNoteResponse>>(`/user/notes/private/${noteId}`, {
+    params: { scope }
+  })
 }
 
 // 2. 创建私人文件夹或笔记
 export const createPrivateNote = (data: CreatePrivateNoteReq) => {
   return request.post<ApiResponse<null>>('/user/notes/private', data)
+}
+
+export const deletePrivateNote = (noteId: number) => {
+  return request.delete<ApiResponse<null>>(`/user/notes/private/${noteId}`)
 }
 
 // ----------------------------------------------------

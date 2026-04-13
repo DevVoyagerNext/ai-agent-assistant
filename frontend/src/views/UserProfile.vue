@@ -5,7 +5,8 @@ import Toast from '../components/Toast.vue'
 import Skeleton from '../components/Skeleton.vue'
 import { 
   ArrowLeft, LogOut, RefreshCcw, 
-  Activity, BookOpen, Share2, Book, Users, Star, Layers, FolderHeart, Bookmark
+  Activity, BookOpen, Share2, Book, Users, Star, Layers, FolderHeart, Bookmark,
+  Folder, FileText
 } from 'lucide-vue-next'
 import { useUserProfile } from '../composables/useUserProfile'
 import ActivityCalendar from '../components/ActivityCalendar.vue'
@@ -89,6 +90,13 @@ const formatDate = (dateStr: string) => {
   const d = new Date(dateStr)
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
+
+const privateNotesPreview = computed(() => {
+  if (!publicPrivateNotes.value?.length) return []
+  return publicPrivateNotes.value.slice(0, 5)
+})
+
+const privateNotesHasMore = computed(() => (publicPrivateNotes.value?.length || 0) > 5)
 
 const getCoverStyle = (id: number) => {
   const palettes: Array<[string, string]> = [
@@ -306,9 +314,17 @@ const getCoverStyle = (id: number) => {
             </div>
           </div>
           <div v-else class="note-list">
-            <div v-for="note in publicPrivateNotes" :key="note.id" class="note-item">
-              <h4>{{ note.title }}</h4>
+            <div v-for="note in privateNotesPreview" :key="note.id" class="note-item">
+              <div class="note-title-line">
+                <Folder v-if="note.type === 'folder'" :size="16" class="note-type-icon folder" />
+                <FileText v-else :size="16" class="note-type-icon file" />
+                <h4>{{ note.title }}</h4>
+              </div>
               <span class="date">{{ formatDate(note.updatedAt) }}</span>
+            </div>
+            <div v-if="privateNotesHasMore" class="note-item note-ellipsis">
+              <h4>...</h4>
+              <span class="date">...</span>
             </div>
             <div v-if="!publicPrivateNotes.length" class="empty-state">
               暂无私人笔记
@@ -719,6 +735,34 @@ const getCoverStyle = (id: number) => {
   line-height: 1.4;
 }
 
+.note-title-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  min-width: 0;
+}
+
+.note-title-line h4 {
+  margin: 0;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.note-type-icon {
+  flex-shrink: 0;
+}
+
+.note-type-icon.folder {
+  color: #f59e0b;
+}
+
+.note-type-icon.file {
+  color: #3b82f6;
+}
+
 .note-item .date {
   font-size: 12px;
   color: #94a3b8;
@@ -728,6 +772,15 @@ const getCoverStyle = (id: number) => {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+.note-item.note-ellipsis {
+  text-align: center;
+  opacity: 0.75;
+}
+
+.note-item.note-ellipsis:hover {
+  background: rgba(255, 255, 255, 0.5);
 }
 
 .note-header {
