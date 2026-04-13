@@ -20,6 +20,7 @@ func InitRouter() *gin.Engine {
 	userRouter := &UserRouter{}
 	subjectRouter := &SubjectRouter{}
 	knowledgeNodeRouter := &KnowledgeNodeRouter{}
+	privateNoteRouter := &UserPrivateNoteRouter{}
 
 	// v1 路由组
 	v1 := r.Group("/v1")
@@ -33,6 +34,7 @@ func InitRouter() *gin.Engine {
 	userRouter.InitAuthUserRouter(authV1)
 	subjectRouter.InitAuthSubjectRouter(authV1)
 	knowledgeNodeRouter.InitAuthKnowledgeNodeRouter(authV1)
+	privateNoteRouter.InitAuthUserPrivateNoteRouter(authV1)
 
 	return r
 }

@@ -14,11 +14,16 @@ import {
   getUserCollectFolders, 
   createCollectFolder, 
   addSubjectToFolder,
-  uncollectSubject 
+  uncollectSubject,
+  getPrivateNoteDetail,
+  createPrivateNote
 } from '../api/user'
 import type { SubjectNode, SubjectNodeDetail, NodeNote } from '../types/node'
-import type { Subject } from '../types/subject'
-import type { CollectFolderRes } from '../types/user'
+import type { 
+  CollectFolderRes, 
+  PrivateNoteBase,
+  PrivateMarkdownDetail 
+} from '../types/user'
 import TreeItem from '../components/TreeItem.vue'
 import Toast from '../components/Toast.vue'
 import {
@@ -32,7 +37,9 @@ import {
   Edit3, BookOpen, 
   Clock, Award, BookOpenCheck, Loader2,
   LayoutList, LayoutPanelLeft, CheckCircle2,
-  Heart, Bookmark, Plus, X, Globe, Lock
+  Heart, Bookmark, Plus, X, Globe, Lock,
+  StickyNote, ChevronRight,
+  Folder, FolderPlus, FilePlus, ChevronLeft
 } from 'lucide-vue-next'
 
 const route = useRoute()
@@ -356,6 +363,124 @@ const savingNote = ref(false)
 const saveStatusText = ref<'saving' | 'saved' | 'error-empty' | 'error-too-long' | 'error-xss' | 'error-net' | ''>('')
 let debounceTimer: ReturnType<typeof setTimeout> | null = null
 
+// ----------------- 私人笔记相关 -----------------
+const noteType = ref<'class' | 'private'>('class')
+const privateNotes = ref<PrivateNoteBase[]>([])
+const currentPrivateNote = ref<PrivateMarkdownDetail | null>(null)
+const privateNavStack = ref<{ id: number; title: string }[]>([{ id: 0, title: '根目录' }])
+const loadingPrivateNotes = ref(false)
+const currentFolderId = computed(() => privateNavStack.value[privateNavStack.value.length - 1].id)
+
+const fetchPrivateContent = async (noteId: number) => {
+  if (!isLoggedIn.value) return
+  loadingPrivateNotes.value = true
+  try {
+    const res = await getPrivateNoteDetail(noteId)
+    if (res.data?.code === 200) {
+      if (!res.data.data) {
+        privateNotes.value = []
+        currentPrivateNote.value = null
+        return
+      }
+      const data = res.data.data
+      if (data.type === 'folder') {
+        privateNotes.value = data.children
+        currentPrivateNote.value = null
+      } else {
+        currentPrivateNote.value = data.content
+      }
+    }
+  } catch (error: any) {
+    const status = error?.response?.status
+    const code = error?.response?.data?.code
+    if (noteId === 0 && (status === 404 || code === 404)) {
+      privateNotes.value = []
+      currentPrivateNote.value = null
+      return
+    }
+    console.error('获取私人笔记失败', error)
+    showToast(error?.response?.data?.msg || '获取私人笔记失败', 'error')
+  } finally {
+    loadingPrivateNotes.value = false
+  }
+}
+
+const handlePrivateItemClick = (item: PrivateNoteBase) => {
+  if (item.type === 'folder') {
+    privateNavStack.value.push({ id: item.id, title: item.title })
+    fetchPrivateContent(item.id)
+  } else {
+    fetchPrivateContent(item.id)
+  }
+}
+
+const goBackPrivate = () => {
+  if (privateNavStack.value.length > 1) {
+    // 如果当前正在查看笔记正文，点击返回应停留在当前文件夹
+    if (currentPrivateNote.value) {
+      currentPrivateNote.value = null
+      fetchPrivateContent(currentFolderId.value)
+    } else {
+      privateNavStack.value.pop()
+      fetchPrivateContent(currentFolderId.value)
+    }
+  } else if (currentPrivateNote.value) {
+    currentPrivateNote.value = null
+    fetchPrivateContent(0)
+  }
+}
+
+const toggleNoteType = (type: 'class' | 'private') => {
+  noteType.value = type
+  if (type === 'private') {
+    // 每次点击私人笔记 Tab，都默认回到根目录并重置导航
+    privateNavStack.value = [{ id: 0, title: '根目录' }]
+    currentPrivateNote.value = null
+    fetchPrivateContent(0)
+  }
+}
+
+// ----------------- 新建私人笔记/文件夹 -----------------
+const showCreatePrivateModal = ref(false)
+const createPrivateType = ref<'folder' | 'markdown'>('markdown')
+const createPrivateTitle = ref('')
+const createPrivateContent = ref('')
+const creatingPrivate = ref(false)
+
+const openCreatePrivate = (type: 'folder' | 'markdown') => {
+  createPrivateType.value = type
+  createPrivateTitle.value = ''
+  createPrivateContent.value = ''
+  showCreatePrivateModal.value = true
+}
+
+const handleCreatePrivate = async () => {
+  if (!createPrivateTitle.value.trim()) {
+    showToast('标题不能为空', 'error')
+    return
+  }
+  
+  creatingPrivate.value = true
+  try {
+    const res = await createPrivateNote({
+      parentId: currentFolderId.value,
+      type: createPrivateType.value,
+      title: createPrivateTitle.value,
+      content: createPrivateType.value === 'markdown' ? createPrivateContent.value : undefined
+    })
+    
+    if (res.data?.code === 200) {
+      showToast('创建成功')
+      showCreatePrivateModal.value = false
+      fetchPrivateContent(currentFolderId.value)
+    }
+  } catch (error: any) {
+    showToast(error.response?.data?.msg || '创建失败', 'error')
+  } finally {
+    creatingPrivate.value = false
+  }
+}
+
 // ----------------- 反馈弹窗相关 -----------------
 const toast = reactive({
   show: false,
@@ -624,7 +749,7 @@ const noteSidebarWidth = ref(360)
 const isResizingLeft = ref(false)
 const isResizingRight = ref(false)
 
-const startResizingLeft = (e: MouseEvent) => {
+const startResizingLeft = () => {
   isResizingLeft.value = true
   document.addEventListener('mousemove', handleMouseMove)
   document.addEventListener('mouseup', stopResizing)
@@ -632,7 +757,7 @@ const startResizingLeft = (e: MouseEvent) => {
   document.body.style.userSelect = 'none'
 }
 
-const startResizingRight = (e: MouseEvent) => {
+const startResizingRight = () => {
   isResizingRight.value = true
   document.addEventListener('mousemove', handleMouseMove)
   document.addEventListener('mouseup', stopResizing)
@@ -937,64 +1062,224 @@ const goBack = () => {
     <!-- 右侧随堂笔记区 -->
     <aside class="note-sidebar" :style="{ width: noteSidebarWidth + 'px' }">
       <div class="note-header">
-        <div class="note-title">
-          <Edit3 :size="18" />
-          <h3>随堂笔记</h3>
+        <div class="note-tabs">
+          <button 
+            class="tab-btn" 
+            :class="{ active: noteType === 'class' }"
+            @click="toggleNoteType('class')"
+          >
+            <Edit3 :size="16" />
+            <span>随堂笔记</span>
+          </button>
+          <button 
+            class="tab-btn" 
+            :class="{ active: noteType === 'private' }"
+            @click="toggleNoteType('private')"
+          >
+            <StickyNote :size="16" />
+            <span>私人笔记</span>
+          </button>
         </div>
       </div>
       
       <div class="note-main">
         <div v-if="!isLoggedIn" class="note-login-guide">
           <div class="guide-icon">🔒</div>
-          <p>随堂笔记已锁定</p>
+          <p>{{ noteType === 'class' ? '随堂笔记' : '私人笔记' }}已锁定</p>
           <p class="sub-p">登录后即可随时记录学习感悟</p>
           <button class="primary-btn" @click="router.push('/login')">去登录</button>
         </div>
-        <div v-else-if="!currentNodeId" class="note-empty">
-          <p>选中一个知识点来记录笔记吧</p>
-        </div>
-        <div v-else class="note-active">
-          <div class="editor-wrap">
-            <textarea 
-              class="note-textarea" 
-              v-model="noteEditContent"
-              placeholder="在这里输入你的随堂笔记..."
-              :maxlength="NOTE_MAX_LENGTH"
-            ></textarea>
+
+        <!-- 随堂笔记内容 -->
+        <template v-else-if="noteType === 'class'">
+          <div v-if="!currentNodeId" class="note-empty">
+            <p>选中一个知识点来记录笔记吧</p>
           </div>
-          <div class="editor-footer">
-            <div class="save-status">
-              <Clock :size="12" />
-              <span v-if="nodeNote?.updatedAt">上次同步: {{ nodeNote.updatedAt }}</span>
-              <span v-else>尚未记录笔记</span>
+          <div v-else class="note-active">
+            <div class="editor-wrap">
+              <textarea 
+                class="note-textarea" 
+                v-model="noteEditContent"
+                placeholder="在这里输入你的随堂笔记..."
+                :maxlength="NOTE_MAX_LENGTH"
+              ></textarea>
             </div>
-            <div class="autosave-indicator">
-              <span v-if="saveStatusText === 'saving'" class="status-saving">
-                <Loader2 class="spin" :size="12" /> 正在同步...
-              </span>
-              <span v-else-if="saveStatusText === 'saved'" class="status-saved">
-                已同步到云端
-              </span>
-              <span v-else-if="saveStatusText === 'error-empty'" class="status-error">
-                内容不能为空
-              </span>
-              <span v-else-if="saveStatusText === 'error-too-long'" class="status-error">
-                最多 {{ NOTE_MAX_LENGTH }} 字符
-              </span>
-              <span v-else-if="saveStatusText === 'error-xss'" class="status-error">
-                包含非法字符
-              </span>
-              <span v-else-if="saveStatusText === 'error-net'" class="status-error">
-                同步失败，请检查网络
-              </span>
+            <div class="editor-footer">
+              <div class="save-status">
+                <Clock :size="12" />
+                <span v-if="nodeNote?.updatedAt">上次同步: {{ nodeNote.updatedAt }}</span>
+                <span v-else>尚未记录笔记</span>
+              </div>
+              <div class="autosave-indicator">
+                <span v-if="saveStatusText === 'saving'" class="status-saving">
+                  <Loader2 class="spin" :size="12" /> 正在同步...
+                </span>
+                <span v-else-if="saveStatusText === 'saved'" class="status-saved">
+                  已同步到云端
+                </span>
+                <span v-else-if="saveStatusText === 'error-empty'" class="status-error">
+                  内容不能为空
+                </span>
+                <span v-else-if="saveStatusText === 'error-too-long'" class="status-error">
+                  最多 {{ NOTE_MAX_LENGTH }} 字符
+                </span>
+                <span v-else-if="saveStatusText === 'error-xss'" class="status-error">
+                  包含非法字符
+                </span>
+                <span v-else-if="saveStatusText === 'error-net'" class="status-error">
+                  同步失败，请检查网络
+                </span>
+              </div>
             </div>
           </div>
-        </div>
+        </template>
+
+        <!-- 私人笔记内容 -->
+        <template v-else>
+          <div class="private-note-container">
+            <!-- 导航栏 -->
+            <div class="private-nav-bar">
+              <button 
+                v-if="privateNavStack.length > 1 || currentPrivateNote" 
+                class="nav-back-btn"
+                @click="goBackPrivate"
+              >
+                <ChevronLeft :size="16" />
+                <span>返回</span>
+              </button>
+              <div v-else class="nav-placeholder"></div>
+              
+              <div class="nav-current-title">
+                {{ currentPrivateNote ? '笔记正文' : (privateNavStack[privateNavStack.length - 1]?.title || '根目录') }}
+              </div>
+
+              <div class="nav-actions">
+                <button 
+                  v-if="!currentPrivateNote"
+                  class="icon-action-btn" 
+                  title="新建文件夹"
+                  @click="openCreatePrivate('folder')"
+                >
+                  <FolderPlus :size="16" />
+                </button>
+                <button 
+                  v-if="!currentPrivateNote"
+                  class="icon-action-btn" 
+                  title="新建笔记"
+                  @click="openCreatePrivate('markdown')"
+                >
+                  <FilePlus :size="16" />
+                </button>
+              </div>
+            </div>
+
+            <div v-if="loadingPrivateNotes" class="note-loading">
+              <Loader2 class="spin" :size="24" />
+              <span>正在获取内容...</span>
+            </div>
+
+            <!-- 笔记正文视图 -->
+            <div v-else-if="currentPrivateNote" class="private-content-view">
+              <div class="view-header">
+                <h3>{{ currentPrivateNote.title }}</h3>
+              </div>
+              <div class="view-body markdown-content" v-html="md.render(currentPrivateNote.content || '')"></div>
+            </div>
+
+            <!-- 列表视图 -->
+            <div v-else class="private-list-view">
+              <div v-if="privateNotes.length === 0" class="note-empty">
+                <StickyNote :size="32" class="empty-icon" />
+                <p>当前文件夹暂无笔记</p>
+                <button class="create-btn" @click="openCreatePrivate('markdown')">立即创建</button>
+              </div>
+              <div v-else class="private-note-list">
+                <div 
+                  v-for="item in privateNotes" 
+                  :key="item.id" 
+                  class="private-note-item"
+                  @click="handlePrivateItemClick(item)"
+                >
+                  <div class="item-icon">
+                    <Folder v-if="item.type === 'folder'" :size="18" class="folder-icon-color" />
+                    <FileText v-else :size="18" class="file-icon-color" />
+                  </div>
+                  <div class="note-info">
+                    <span class="note-title">{{ item.title }}</span>
+                    <span class="note-date">{{ new Date(item.updatedAt).toLocaleDateString() }}</span>
+                  </div>
+                  <ChevronRight :size="14" class="arrow-icon" />
+                </div>
+              </div>
+            </div>
+
+            <div class="private-footer-tip">
+              <Lock :size="12" />
+              <span>私人笔记仅你自己可见</span>
+            </div>
+          </div>
+        </template>
       </div>
     </aside>
 
     <!-- 收藏弹窗 -->
     <Teleport to="body">
+      <!-- 原有的收藏弹窗保持不变... -->
+      <div v-if="showCollectModal" class="modal-overlay" @click.self="showCollectModal = false">
+        <!-- ... -->
+      </div>
+
+      <!-- 新建私人笔记/文件夹弹窗 -->
+      <div v-if="showCreatePrivateModal" class="modal-overlay" @click.self="showCreatePrivateModal = false">
+        <div class="modal-content small-modal">
+          <header class="modal-header">
+            <h3>新建{{ createPrivateType === 'folder' ? '文件夹' : '笔记' }}</h3>
+            <button class="close-btn" @click="showCreatePrivateModal = false">
+              <X :size="20" />
+            </button>
+          </header>
+          <div class="modal-body">
+            <!-- 提示创建位置 -->
+            <div class="location-tip">
+              <Folder :size="14" />
+              <span>创建在：{{ privateNavStack[privateNavStack.length - 1]?.title || '根目录' }}</span>
+            </div>
+            
+            <div class="form-group" style="margin-top: 16px;">
+              <label>标题</label>
+              <input 
+                v-model="createPrivateTitle" 
+                type="text" 
+                :placeholder="createPrivateType === 'folder' ? '请输入文件夹名称' : '请输入笔记标题'"
+                maxlength="255"
+              />
+            </div>
+            <div v-if="createPrivateType === 'markdown'" class="form-group" style="margin-top: 16px;">
+              <label>内容</label>
+              <textarea 
+                v-model="createPrivateContent" 
+                placeholder="请输入笔记内容..."
+                maxlength="1000"
+              ></textarea>
+            </div>
+          </div>
+          <footer class="modal-footer">
+            <div class="form-actions">
+              <button class="cancel-btn" @click="showCreatePrivateModal = false">取消</button>
+              <button 
+                class="confirm-btn" 
+                :disabled="creatingPrivate"
+                @click="handleCreatePrivate"
+              >
+                <Loader2 v-if="creatingPrivate" class="spin" :size="16" />
+                <span v-else>确认创建</span>
+              </button>
+            </div>
+          </footer>
+        </div>
+      </div>
+
+      <!-- 收藏弹窗 -->
       <div v-if="showCollectModal" class="modal-overlay" @click.self="showCollectModal = false">
         <div class="modal-content collect-modal">
           <header class="modal-header">
@@ -1642,20 +1927,257 @@ const goBack = () => {
 }
 
 .note-header {
-  padding: 24px 20px;
+  padding: 16px 20px;
   border-bottom: 1px solid #f1f5f9;
 }
 
-.note-title {
+.note-tabs {
   display: flex;
-  align-items: center;
-  gap: 10px;
-  color: #7c3aed;
+  background: #f1f5f9;
+  padding: 4px;
+  border-radius: 10px;
+  width: 100%;
 }
 
-.note-title h3 { font-size: 17px; font-weight: 700; color: #1e293b; }
+.tab-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 0;
+  border: none;
+  background: transparent;
+  color: #64748b;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  border-radius: 8px;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
 
-.note-main { flex: 1; display: flex; flex-direction: column; padding: 20px; background: #fcfdfe; }
+.tab-btn:hover {
+  color: #1e293b;
+}
+
+.tab-btn.active {
+  background: white;
+  color: #3b82f6;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.note-main { flex: 1; display: flex; flex-direction: column; background: #fcfdfe; }
+
+/* 私人笔记容器 */
+.private-note-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: #fff;
+}
+
+/* 导航栏 */
+.private-nav-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid #f1f5f9;
+  background: #fcfdfe;
+}
+
+.nav-back-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: transparent;
+  border: none;
+  color: #64748b;
+  font-size: 13px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: all 0.2s;
+}
+
+.nav-back-btn:hover {
+  background: #f1f5f9;
+  color: #3b82f6;
+}
+
+.nav-placeholder { width: 60px; }
+
+.nav-current-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #1e293b;
+  max-width: 150px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.nav-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.icon-action-btn {
+  background: transparent;
+  border: none;
+  color: #64748b;
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 6px;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+}
+
+.icon-action-btn:hover {
+  background: #eff6ff;
+  color: #3b82f6;
+}
+
+/* 列表视图 */
+.private-list-view {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.private-note-item {
+  display: flex;
+  align-items: center;
+  padding: 12px 16px;
+  cursor: pointer;
+  transition: all 0.2s;
+  border-bottom: 1px solid #f8fafc;
+}
+
+.private-note-item:hover {
+  background: #f1f5f9;
+}
+
+.item-icon {
+  margin-right: 12px;
+  display: flex;
+  align-items: center;
+}
+
+.folder-icon-color { color: #f59e0b; }
+.file-icon-color { color: #3b82f6; }
+
+/* 正文视图 */
+.private-content-view {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+  background: #fff;
+}
+
+.view-header {
+  margin-bottom: 20px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.view-header h3 {
+  margin: 0;
+  font-size: 18px;
+  color: #1e293b;
+}
+
+.private-footer-tip {
+  padding: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: #94a3b8;
+  font-size: 12px;
+  background: #fcfdfe;
+  border-top: 1px solid #f1f5f9;
+}
+
+/* 弹窗样式增强 */
+.small-modal {
+  width: 400px;
+  max-width: 90vw;
+}
+
+.location-tip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: #f8fafc;
+  border-radius: 6px;
+  color: #64748b;
+  font-size: 13px;
+  border: 1px solid #f1f5f9;
+}
+
+.location-tip span {
+  font-weight: 600;
+  color: #3b82f6;
+}
+
+.cancel-btn {
+  padding: 10px 20px;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  border-radius: 8px;
+  font-weight: 600;
+  color: #64748b;
+  cursor: pointer;
+}
+
+.confirm-btn {
+  padding: 10px 20px;
+  border: none;
+  background: #3b82f6;
+  color: #fff;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.confirm-btn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.note-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 60px 0;
+  color: #94a3b8;
+}
+
+.create-btn {
+  margin-top: 16px;
+  background: #fff;
+  border: 1px solid #3b82f6;
+  color: #3b82f6;
+  padding: 8px 24px;
+  border-radius: 20px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.create-btn:hover {
+  background: #eff6ff;
+  transform: scale(1.05);
+}
+
+.empty-icon {
+  color: #f1f5f9;
+}
 
 .note-login-guide, .note-empty, .empty-view {
   flex: 1;
@@ -1664,23 +2186,28 @@ const goBack = () => {
   align-items: center;
   justify-content: center;
   text-align: center;
+  padding: 20px;
 }
 
-.guide-icon { font-size: 40px; margin-bottom: 16px; }
-.note-login-guide p { font-weight: 600; color: #1e293b; margin-bottom: 4px; }
-.sub-p { font-size: 13px; color: #94a3b8; margin-bottom: 20px; }
+.note-active { flex: 1; display: flex; flex-direction: column; gap: 16px; padding: 20px; }
 
 .primary-btn {
-  background: #7c3aed;
+  background: #3b82f6;
   color: #fff;
   border: none;
   padding: 10px 24px;
-  border-radius: 8px;
+  border-radius: 10px;
   font-weight: 600;
   cursor: pointer;
+  transition: all 0.2s;
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.2);
 }
 
-.note-active { flex: 1; display: flex; flex-direction: column; gap: 16px; }
+.primary-btn:hover {
+  background: #2563eb;
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(59, 130, 246, 0.3);
+}
 
 .editor-wrap {
   flex: 1;

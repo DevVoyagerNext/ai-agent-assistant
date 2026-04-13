@@ -23,11 +23,8 @@ const {
   activities,
   publicPrivateNotes,
   sharedNotes,
-  learnedSubjects,
   collectFolders,
   likedSubjects,
-  learningSubjects,
-  completedSubjects,
   recentSubjects,
   
   loadingUserInfo,
@@ -37,8 +34,6 @@ const {
   loadingLearnedSubjects,
   loadingCollectFolders,
   loadingLikedSubjects,
-  loadingLearningSubjects,
-  loadingCompletedSubjects,
   loadingRecentSubjects,
   
   errorUserInfo,

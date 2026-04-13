@@ -23,6 +23,42 @@ export interface PublicPrivateNoteItem {
   id: number
   title: string
   updatedAt: string
+  type?: 'folder' | 'markdown'
+}
+
+// ---------------- 私人笔记分层 API 类型 ----------------
+
+export interface PrivateNoteBase {
+  id: number
+  title: string
+  updatedAt: string
+  type: 'folder' | 'markdown'
+}
+
+export interface PrivateFolderContent {
+  type: 'folder'
+  children: PrivateNoteBase[]
+}
+
+export interface PrivateMarkdownDetail {
+  id: number
+  title: string
+  content: string
+  updatedAt?: string
+}
+
+export interface PrivateMarkdownContent {
+  type: 'markdown'
+  content: PrivateMarkdownDetail
+}
+
+export type PrivateNoteResponse = PrivateFolderContent | PrivateMarkdownContent
+
+export interface CreatePrivateNoteReq {
+  parentId: number
+  type: 'folder' | 'markdown'
+  title: string
+  content?: string
 }
 
 export interface PublicPrivateNotesRes {

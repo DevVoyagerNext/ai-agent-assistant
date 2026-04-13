@@ -9,7 +9,9 @@ import type {
   LearnedSubjectsRes,
   CollectFolderRes,
   UserSubjectProgressRes,
-  RecentSubjectListRes
+  RecentSubjectListRes,
+  PrivateNoteResponse,
+  CreatePrivateNoteReq
 } from '../types/user'
 
 export const getUserInfo = () => {
@@ -25,6 +27,20 @@ export const getPublicPrivateNotes = (page = 1, pageSize = 10) => {
     params: { page, pageSize }
   })
 }
+
+// ---------------- 私人笔记分层管理 API ----------------
+
+// 1. 获取私人笔记内容或子文件夹列表 (noteId 为 0 获取根目录)
+export const getPrivateNoteDetail = (noteId: number) => {
+  return request.get<ApiResponse<PrivateNoteResponse>>(`/user/notes/private/${noteId}`)
+}
+
+// 2. 创建私人文件夹或笔记
+export const createPrivateNote = (data: CreatePrivateNoteReq) => {
+  return request.post<ApiResponse<null>>('/user/notes/private', data)
+}
+
+// ----------------------------------------------------
 
 export const getSharedNotes = (page = 1, pageSize = 10) => {
   return request.get<ApiResponse<SharedNotesRes>>('/user/notes/shares', {
