@@ -36,6 +36,7 @@ func (u *UserService) GetUserInfo(ctx context.Context, userID uint) (int, dto.Us
 	sharedNotesCount, _ := dao.GetUserSharedNotesCount(ctx, userID)
 
 	userInfo = dto.UserInfoRes{
+		UserID:               user.ID,
 		Username:             user.Username,
 		Email:                utils.DesensitizeEmail(user.Email),
 		AvatarUrl:            user.AvatarUrl,
@@ -132,6 +133,7 @@ func (u *UserService) Login(ctx context.Context, email, password, ip, ua string)
 
 	// 直接构造脱敏信息，减少数据库查询
 	userInfo := dto.UserInfoRes{
+		UserID:               user.ID,
 		Username:             user.Username,
 		Email:                utils.DesensitizeEmail(user.Email),
 		AvatarUrl:            user.AvatarUrl,
@@ -205,6 +207,7 @@ func (u *UserService) Register(ctx context.Context, username, email, password, c
 	// 直接构造脱敏信息，不再调用 GetUserInfo，因为数据就在内存中
 	// 新注册用户统计数据全为 0
 	userInfo := dto.UserInfoRes{
+		UserID:               user.ID,
 		Username:             user.Username,
 		Email:                utils.DesensitizeEmail(user.Email),
 		AvatarUrl:            user.AvatarUrl,

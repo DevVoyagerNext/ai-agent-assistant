@@ -16,7 +16,13 @@ func (s *UserPrivateNoteRouter) InitAuthUserPrivateNoteRouter(Router *gin.Router
 		privateNoteRouter.GET("/:noteId", privateNoteController.GetPrivateNoteOrChildren)
 		// 2. 创建私人文件夹或笔记 (如: POST /v1/user/notes/private)
 		privateNoteRouter.POST("/", privateNoteController.CreatePrivateNote)
-		// 3. 删除私人文件/文件夹 (如: DELETE /v1/user/notes/private/12)
+		// 3. 修改私人笔记内容 (仅限文件)
+		privateNoteRouter.PUT("/:noteId/content", privateNoteController.UpdatePrivateNoteContent)
+		// 4. 修改文件/文件夹标题
+		privateNoteRouter.PUT("/:noteId/title", privateNoteController.UpdatePrivateNoteTitle)
+		// 5. 修改公开状态
+		privateNoteRouter.PUT("/:noteId/public", privateNoteController.UpdatePrivateNotePublic)
+		// 6. 删除私人文件/文件夹 (如: DELETE /v1/user/notes/private/12)
 		privateNoteRouter.DELETE("/:noteId", privateNoteController.DeletePrivateNote)
 	}
 }

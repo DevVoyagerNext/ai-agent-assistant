@@ -24,6 +24,7 @@ export interface PublicPrivateNoteItem {
   title: string
   updatedAt: string
   type?: 'folder' | 'markdown'
+  isPublic: 0 | 1
 }
 
 // ---------------- 私人笔记分层 API 类型 ----------------
@@ -33,6 +34,7 @@ export interface PrivateNoteBase {
   title: string
   updatedAt: string
   type: 'folder' | 'markdown'
+  isPublic: 0 | 1
 }
 
 export interface PrivateFolderContent {
@@ -45,6 +47,7 @@ export interface PrivateMarkdownDetail {
   title: string
   content: string
   updatedAt?: string
+  isPublic: 0 | 1
 }
 
 export interface PrivateMarkdownContent {

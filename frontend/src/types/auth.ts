@@ -9,6 +9,7 @@ export interface AuthData {
   token: string
   refreshToken: string
   expiresAt: number
+  userId: number
   user: AuthUser
 }
 

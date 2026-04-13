@@ -212,6 +212,73 @@ func (s *UserPrivateNoteService) CreatePrivateNote(ctx context.Context, userID u
 	return s.privateNoteDao.CreateNote(ctx, note)
 }
 
+// UpdatePrivateNoteContent 修改笔记内容 (仅限 markdown)
+func (s *UserPrivateNoteService) UpdatePrivateNoteContent(ctx context.Context, userID uint, noteID int, req dto.UpdatePrivateNoteContentReq) error {
+	if userID == 0 {
+		return errors.New("用户未登录")
+	}
+
+	// 1. 获取笔记并校验
+	note, err := s.privateNoteDao.GetNoteByID(ctx, userID, noteID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return errors.New("笔记不存在")
+		}
+		return err
+	}
+
+	// 2. 只有 markdown 文件可以修改内容
+	if note.Type != "markdown" {
+		return errors.New("只有文件类型可以修改内容")
+	}
+
+	// 3. 校验内容
+	content := strings.TrimSpace(req.Content)
+	if content == "" {
+		return errors.New("内容不能为空")
+	}
+	if len([]rune(content)) > 1000 {
+		return errors.New("内容不能超过 1000 字符")
+	}
+
+	// 4. XSS 过滤
+	safeContent := utils.XSSFilter(content)
+
+	return s.privateNoteDao.UpdateNote(ctx, userID, noteID, map[string]interface{}{
+		"content": safeContent,
+	})
+}
+
+// UpdatePrivateNoteTitle 修改文件或文件夹标题
+func (s *UserPrivateNoteService) UpdatePrivateNoteTitle(ctx context.Context, userID uint, noteID int, req dto.UpdatePrivateNoteTitleReq) error {
+	if userID == 0 {
+		return errors.New("用户未登录")
+	}
+
+	title := strings.TrimSpace(req.Title)
+	if title == "" {
+		return errors.New("标题不能为空")
+	}
+	if len([]rune(title)) > 255 {
+		return errors.New("标题不能超过 255 字符")
+	}
+
+	return s.privateNoteDao.UpdateNote(ctx, userID, noteID, map[string]interface{}{
+		"title": title,
+	})
+}
+
+// UpdatePrivateNotePublic 修改文件或文件夹公开状态
+func (s *UserPrivateNoteService) UpdatePrivateNotePublic(ctx context.Context, userID uint, noteID int, req dto.UpdatePrivateNotePublicReq) error {
+	if userID == 0 {
+		return errors.New("用户未登录")
+	}
+
+	return s.privateNoteDao.UpdateNote(ctx, userID, noteID, map[string]interface{}{
+		"is_public": req.IsPublic,
+	})
+}
+
 func (s *UserPrivateNoteService) collectDescendantIDs(ctx context.Context, userID uint, parentID int, ids *[]int) error {
 	children, err := s.privateNoteDao.GetNotesByParent(ctx, userID, parentID)
 	if err != nil {

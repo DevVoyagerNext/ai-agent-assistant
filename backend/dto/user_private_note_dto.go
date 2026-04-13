@@ -2,13 +2,31 @@ package dto
 
 import "time"
 
+// UpsertUserStudyNoteReq 创建或修改随堂笔记请求体 (注意：这里的笔记是指知识点随堂笔记)
+// 我们这里是私人笔记 UserPrivateNote
+
 // CreatePrivateNoteReq 创建私人笔记或文件夹请求
 type CreatePrivateNoteReq struct {
 	ParentID int    `json:"parentId"`
 	Type     string `json:"type" binding:"required,oneof=folder markdown"`
 	Title    string `json:"title" binding:"required,max=255"`
-	Content  string `json:"content"` // type 为 markdown 时不能为空，后面在 service 层做更复杂的校验
-	IsPublic int8   `json:"isPublic" binding:"required,oneof=0 1"`
+	Content  string `json:"content"`  // type 为 markdown 时不能为空
+	IsPublic int8   `json:"isPublic"` // 0=不公开, 1=公开
+}
+
+// UpdatePrivateNoteContentReq 修改私人笔记内容请求
+type UpdatePrivateNoteContentReq struct {
+	Content string `json:"content" binding:"required,max=1000"`
+}
+
+// UpdatePrivateNoteTitleReq 修改标题请求
+type UpdatePrivateNoteTitleReq struct {
+	Title string `json:"title" binding:"required,max=255"`
+}
+
+// UpdatePrivateNotePublicReq 修改公开状态请求
+type UpdatePrivateNotePublicReq struct {
+	IsPublic int8 `json:"isPublic" binding:"oneof=0 1"`
 }
 
 // PrivateNoteItemRes 私人笔记列表项

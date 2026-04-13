@@ -104,10 +104,11 @@ const handleRegister = async () => {
     const response = await register(form)
     const payload = response.data
     if (payload?.code === 200 && payload.data) {
-      const { token, refreshToken, expiresAt, user } = payload.data
+      const { token, refreshToken, expiresAt, userId, user } = payload.data
       localStorage.setItem('token', token)
       localStorage.setItem('refreshToken', refreshToken)
       localStorage.setItem('expiresAt', String(expiresAt))
+      localStorage.setItem('userId', String(userId))
       localStorage.setItem('user', JSON.stringify(user))
       showToast('注册成功！正在跳转...')
       setTimeout(() => router.push('/me'), 1500)

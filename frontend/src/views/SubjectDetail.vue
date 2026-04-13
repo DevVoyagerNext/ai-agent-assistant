@@ -17,7 +17,10 @@ import {
   uncollectSubject,
   getPrivateNoteDetail,
   createPrivateNote,
-  deletePrivateNote
+  deletePrivateNote,
+  updatePrivateNoteContent,
+  updatePrivateNoteTitle,
+  updatePrivateNotePublic
 } from '../api/user'
 import type { SubjectNode, SubjectNodeDetail, NodeNote } from '../types/node'
 import type { 
@@ -40,7 +43,8 @@ import {
   LayoutList, LayoutPanelLeft, CheckCircle2,
   Heart, Bookmark, Plus, X, Globe, Lock,
   StickyNote, ChevronRight,
-  Folder, FolderPlus, FilePlus, ChevronLeft, Trash2
+  Folder, FolderPlus, FilePlus, ChevronLeft, Trash2,
+  ToggleRight, ToggleLeft
 } from 'lucide-vue-next'
 
 const route = useRoute()
@@ -489,6 +493,76 @@ const handleCreatePrivate = async () => {
 const showDeletePrivateModal = ref(false)
 const deletingPrivate = ref(false)
 const pendingDeleteItem = ref<PrivateNoteBase | null>(null)
+
+// ----------------- 修改私人笔记相关 -----------------
+const showRenamePrivateModal = ref(false)
+const renamePrivateTitle = ref('')
+const renamingPrivate = ref(false)
+const pendingRenameItem = ref<PrivateNoteBase | null>(null)
+
+const openRenamePrivate = (item: PrivateNoteBase) => {
+  pendingRenameItem.value = item
+  renamePrivateTitle.value = item.title
+  showRenamePrivateModal.value = true
+}
+
+const handleRenamePrivate = async () => {
+  if (!renamePrivateTitle.value.trim() || !pendingRenameItem.value) return
+  renamingPrivate.value = true
+  try {
+    const res = await updatePrivateNoteTitle(pendingRenameItem.value.id, renamePrivateTitle.value)
+    if (res.data?.code === 200) {
+      showToast('重命名成功')
+      showRenamePrivateModal.value = false
+      // 如果当前正在查看这个笔记的正文，同步更新标题
+      if (currentPrivateNote.value && currentPrivateNote.value.id === pendingRenameItem.value.id) {
+        currentPrivateNote.value.title = renamePrivateTitle.value
+      }
+      fetchPrivateContent(currentFolderId.value)
+    }
+  } catch (error: any) {
+    showToast(error.response?.data?.msg || '重命名失败', 'error')
+  } finally {
+    renamingPrivate.value = false
+  }
+}
+
+const handleTogglePublic = async (item: PrivateNoteBase | PrivateMarkdownDetail) => {
+  const newPublic = item.isPublic === 1 ? 0 : 1
+  try {
+    const res = await updatePrivateNotePublic(item.id, newPublic as 0 | 1)
+    if (res.data?.code === 200) {
+      item.isPublic = newPublic as 0 | 1
+      showToast(newPublic === 1 ? '已设为公开' : '已设为私密')
+    }
+  } catch (error: any) {
+    showToast(error.response?.data?.msg || '修改公开状态失败', 'error')
+  }
+}
+
+const savingPrivateContent = ref(false)
+const privateContentDebounceTimer = ref<number | null>(null)
+
+const handlePrivateContentChange = (content: string) => {
+  if (privateContentDebounceTimer.value) {
+    clearTimeout(privateContentDebounceTimer.value)
+  }
+  
+  privateContentDebounceTimer.value = window.setTimeout(async () => {
+    if (!currentPrivateNote.value) return
+    savingPrivateContent.value = true
+    try {
+      const res = await updatePrivateNoteContent(currentPrivateNote.value.id, content)
+      if (res.data?.code === 200) {
+        // 保存成功，无需提示，静默更新
+      }
+    } catch (error) {
+      console.error('保存笔记内容失败', error)
+    } finally {
+      savingPrivateContent.value = false
+    }
+  }, 1000)
+}
 
 const openDeletePrivate = (item: PrivateNoteBase) => {
   pendingDeleteItem.value = item
@@ -1213,7 +1287,39 @@ const goBack = () => {
               </div>
 
               <div v-if="currentPrivateNote" class="private-content-view">
-                <div class="view-body markdown-content" v-html="md.render(currentPrivateNote.content || '')"></div>
+                <div class="private-content-header">
+                  <div class="title-edit-area">
+                    <input 
+                      v-model="currentPrivateNote.title" 
+                      class="content-title-input" 
+                      @blur="updatePrivateNoteTitle(currentPrivateNote.id, currentPrivateNote.title)"
+                    />
+                  </div>
+                  <div class="content-header-actions">
+                    <button 
+                      class="toggle-public-btn" 
+                      :class="{ isPublic: currentPrivateNote.isPublic === 1 }"
+                      @click="handleTogglePublic(currentPrivateNote)"
+                      :title="currentPrivateNote.isPublic === 1 ? '点击设为私密' : '点击设为公开'"
+                    >
+                      <ToggleRight v-if="currentPrivateNote.isPublic === 1" :size="20" />
+                      <ToggleLeft v-else :size="20" />
+                      <span>{{ currentPrivateNote.isPublic === 1 ? '公开' : '私密' }}</span>
+                    </button>
+                    <div v-if="savingPrivateContent" class="save-status-mini">
+                      <Loader2 class="spin" :size="14" />
+                      <span>保存中...</span>
+                    </div>
+                  </div>
+                </div>
+                <div class="view-body">
+                  <textarea 
+                    v-model="currentPrivateNote.content" 
+                    class="private-editor" 
+                    placeholder="输入笔记内容..."
+                    @input="handlePrivateContentChange(($event.target as HTMLTextAreaElement).value)"
+                  ></textarea>
+                </div>
               </div>
 
               <div v-else class="private-list-view">
@@ -1234,10 +1340,22 @@ const goBack = () => {
                       <FileText v-else :size="18" class="file-icon-color" />
                     </div>
                     <div class="note-info">
-                      <span class="note-title">{{ item.title }}</span>
+                      <div class="title-row">
+                        <span class="note-title" @click.stop="openRenamePrivate(item)">{{ item.title }}</span>
+                        <Edit3 :size="12" class="edit-icon" @click.stop="openRenamePrivate(item)" />
+                      </div>
                       <span class="note-date">{{ new Date(item.updatedAt).toLocaleDateString() }}</span>
                     </div>
                     <div class="private-item-actions">
+                      <button 
+                        class="toggle-public-mini" 
+                        :class="{ isPublic: item.isPublic === 1 }"
+                        @click.stop="handleTogglePublic(item)"
+                        :title="item.isPublic === 1 ? '已公开' : '私密'"
+                      >
+                        <ToggleRight v-if="item.isPublic === 1" :size="16" />
+                        <ToggleLeft v-else :size="16" />
+                      </button>
                       <button class="item-delete-btn" title="删除" @click.stop="openDeletePrivate(item)">
                         <Trash2 :size="16" />
                       </button>
@@ -1335,6 +1453,42 @@ const goBack = () => {
               <button class="danger-btn" :disabled="deletingPrivate" @click="handleDeletePrivate">
                 <Loader2 v-if="deletingPrivate" class="spin" :size="16" />
                 <span v-else>确认删除</span>
+              </button>
+            </div>
+          </footer>
+        </div>
+      </div>
+
+      <!-- 重命名弹窗 -->
+      <div v-if="showRenamePrivateModal" class="modal-overlay" @click.self="showRenamePrivateModal = false">
+        <div class="modal-content small-modal">
+          <header class="modal-header">
+            <h3>重命名</h3>
+            <button class="close-btn" @click="showRenamePrivateModal = false">
+              <X :size="20" />
+            </button>
+          </header>
+          <div class="modal-body">
+            <div class="form-group">
+              <label>新名称</label>
+              <input 
+                v-model="renamePrivateTitle" 
+                type="text" 
+                placeholder="请输入新名称"
+                maxlength="255"
+              />
+            </div>
+          </div>
+          <footer class="modal-footer">
+            <div class="form-actions">
+              <button class="cancel-btn" @click="showRenamePrivateModal = false">取消</button>
+              <button 
+                class="confirm-btn" 
+                :disabled="renamingPrivate"
+                @click="handleRenamePrivate"
+              >
+                <Loader2 v-if="renamingPrivate" class="spin" :size="16" />
+                <span v-else>确认</span>
               </button>
             </div>
           </footer>
@@ -2150,62 +2304,121 @@ const goBack = () => {
 .private-list-view {
   flex: 1;
   overflow-y: auto;
+  padding: 8px;
 }
 
 .private-note-item {
   display: flex;
   align-items: center;
+  gap: 12px;
   padding: 12px 16px;
+  background: #fff;
+  border: 1px solid #f1f5f9;
+  border-radius: 10px;
   cursor: pointer;
-  transition: all 0.2s;
-  border-bottom: 1px solid #f8fafc;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  margin-bottom: 8px;
 }
 
 .private-note-item:hover {
-  background: #f1f5f9;
+  border-color: #dbeafe;
+  background: #fcfdfe;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03);
 }
 
 .item-icon {
-  margin-right: 12px;
   display: flex;
   align-items: center;
 }
 
 .note-info {
   flex: 1;
-  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 4px;
+  min-width: 0;
+}
+
+.title-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .note-title {
   font-size: 14px;
   font-weight: 600;
-  color: #334155;
+  color: #1e293b;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
+.note-title:hover {
+  color: #3b82f6;
+  text-decoration: underline;
+}
+
+.edit-icon {
+  color: #94a3b8;
+  opacity: 0;
+  transition: opacity 0.2s;
+  cursor: pointer;
+}
+
+.private-note-item:hover .edit-icon {
+  opacity: 1;
+}
+
+.edit-icon:hover {
+  color: #3b82f6;
+}
+
 .note-date {
-  font-size: 12px;
+  font-size: 11px;
   color: #94a3b8;
 }
 
 .private-item-actions {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
+  opacity: 0.6;
+  transition: opacity 0.2s;
+}
+
+.private-note-item:hover .private-item-actions {
+  opacity: 1;
+}
+
+.toggle-public-mini {
+  background: transparent;
+  border: none;
+  padding: 4px;
+  border-radius: 4px;
+  color: #94a3b8;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  transition: all 0.2s;
+}
+
+.toggle-public-mini.isPublic {
+  color: #3b82f6;
+}
+
+.toggle-public-mini:hover {
+  background: #f1f5f9;
 }
 
 .item-delete-btn {
   background: transparent;
   border: none;
+  padding: 6px;
+  border-radius: 6px;
   color: #94a3b8;
   cursor: pointer;
-  padding: 6px;
-  border-radius: 8px;
   display: flex;
   align-items: center;
   transition: all 0.2s;
@@ -2226,9 +2439,101 @@ const goBack = () => {
 /* 正文视图 */
 .private-content-view {
   flex: 1;
-  overflow-y: auto;
-  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   background: #fff;
+}
+
+.private-content-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 20px;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.title-edit-area {
+  flex: 1;
+  margin-right: 16px;
+}
+
+.content-title-input {
+  width: 100%;
+  border: 1px solid transparent;
+  background: transparent;
+  font-size: 16px;
+  font-weight: 700;
+  color: #1e293b;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.content-title-input:hover,
+.content-title-input:focus {
+  background: #f8fafc;
+  border-color: #e2e8f0;
+  outline: none;
+}
+
+.content-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.toggle-public-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  border-radius: 20px;
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.toggle-public-btn.isPublic {
+  background: #eff6ff;
+  border-color: #dbeafe;
+  color: #3b82f6;
+}
+
+.toggle-public-btn:hover {
+  opacity: 0.8;
+}
+
+.save-status-mini {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.view-body {
+  flex: 1;
+  padding: 0;
+  overflow: hidden;
+}
+
+.private-editor {
+  width: 100%;
+  height: 100%;
+  padding: 20px;
+  border: none;
+  resize: none;
+  font-size: 14px;
+  line-height: 1.6;
+  color: #334155;
+  background: #fff;
+  outline: none;
+  font-family: inherit;
 }
 
 .private-footer-tip {

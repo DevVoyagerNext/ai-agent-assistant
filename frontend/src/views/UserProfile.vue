@@ -1,15 +1,16 @@
 <script setup lang="ts">
-import { computed, reactive, onMounted } from 'vue'
+import { computed, reactive, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import Toast from '../components/Toast.vue'
 import Skeleton from '../components/Skeleton.vue'
 import { 
   ArrowLeft, LogOut, RefreshCcw, 
   Activity, BookOpen, Share2, Book, Users, Star, Layers, FolderHeart, Bookmark,
-  Folder, FileText
+  Folder, FileText, ToggleRight, ToggleLeft, Edit3, X, Loader2
 } from 'lucide-vue-next'
 import { useUserProfile } from '../composables/useUserProfile'
 import ActivityCalendar from '../components/ActivityCalendar.vue'
+import { updatePrivateNoteTitle, updatePrivateNotePublic } from '../api/user'
 
 const router = useRouter()
 const isAuthenticated = computed(() => !!localStorage.getItem('token'))
@@ -97,6 +98,48 @@ const privateNotesPreview = computed(() => {
 })
 
 const privateNotesHasMore = computed(() => (publicPrivateNotes.value?.length || 0) > 5)
+
+// ----------------- 私人笔记修改相关 -----------------
+const showRenameModal = ref(false)
+const renameTitle = ref('')
+const renaming = ref(false)
+const pendingRenameNote = ref<any>(null)
+
+const openRename = (note: any) => {
+  pendingRenameNote.value = note
+  renameTitle.value = note.title
+  showRenameModal.value = true
+}
+
+const handleRename = async () => {
+  if (!renameTitle.value.trim() || !pendingRenameNote.value) return
+  renaming.value = true
+  try {
+    const res = await updatePrivateNoteTitle(pendingRenameNote.value.id, renameTitle.value)
+    if (res.data?.code === 200) {
+      pendingRenameNote.value.title = renameTitle.value
+      showToast('重命名成功', 'success')
+      showRenameModal.value = false
+    }
+  } catch (err: any) {
+    showToast(err.response?.data?.msg || '重命名失败', 'error')
+  } finally {
+    renaming.value = false
+  }
+}
+
+const handleTogglePublic = async (note: any) => {
+  const newPublic = note.isPublic === 1 ? 0 : 1
+  try {
+    const res = await updatePrivateNotePublic(note.id, newPublic as 0 | 1)
+    if (res.data?.code === 200) {
+      note.isPublic = newPublic as 0 | 1
+      showToast(newPublic === 1 ? '已设为公开' : '已设为私密', 'success')
+    }
+  } catch (err: any) {
+    showToast(err.response?.data?.msg || '修改失败', 'error')
+  }
+}
 
 const getCoverStyle = (id: number) => {
   const palettes: Array<[string, string]> = [
@@ -315,12 +358,26 @@ const getCoverStyle = (id: number) => {
           </div>
           <div v-else class="note-list">
             <div v-for="note in privateNotesPreview" :key="note.id" class="note-item">
-              <div class="note-title-line">
-                <Folder v-if="note.type === 'folder'" :size="16" class="note-type-icon folder" />
-                <FileText v-else :size="16" class="note-type-icon file" />
-                <h4>{{ note.title }}</h4>
+              <div class="note-main-info">
+                <div class="note-title-line">
+                  <Folder v-if="note.type === 'folder'" :size="16" class="note-type-icon folder" />
+                  <FileText v-else :size="16" class="note-type-icon file" />
+                  <h4 @click="openRename(note)">{{ note.title }}</h4>
+                  <Edit3 :size="12" class="edit-icon-mini" @click="openRename(note)" />
+                </div>
+                <span class="date">{{ formatDate(note.updatedAt) }}</span>
               </div>
-              <span class="date">{{ formatDate(note.updatedAt) }}</span>
+              <div class="note-item-actions">
+                <button 
+                  class="toggle-public-mini" 
+                  :class="{ isPublic: note.isPublic === 1 }"
+                  @click="handleTogglePublic(note)"
+                  :title="note.isPublic === 1 ? '已公开' : '已私密'"
+                >
+                  <ToggleRight v-if="note.isPublic === 1" :size="18" />
+                  <ToggleLeft v-else :size="18" />
+                </button>
+              </div>
             </div>
             <div v-if="privateNotesHasMore" class="note-item note-ellipsis">
               <h4>...</h4>
@@ -365,6 +422,35 @@ const getCoverStyle = (id: number) => {
         </div>
       </div>
     </div>
+
+    <!-- 重命名弹窗 -->
+    <Teleport to="body">
+      <div v-if="showRenameModal" class="modal-overlay" @click.self="showRenameModal = false">
+        <div class="modal-content small-modal">
+          <header class="modal-header">
+            <h3>重命名</h3>
+            <button class="close-btn" @click="showRenameModal = false">
+              <X :size="20" />
+            </button>
+          </header>
+          <div class="modal-body">
+            <div class="form-group">
+              <label>新名称</label>
+              <input v-model="renameTitle" type="text" placeholder="请输入新名称" maxlength="255" />
+            </div>
+          </div>
+          <footer class="modal-footer">
+            <div class="form-actions">
+              <button class="cancel-btn" @click="showRenameModal = false">取消</button>
+              <button class="confirm-btn" :disabled="renaming" @click="handleRename">
+                <Loader2 v-if="renaming" class="spin" :size="16" />
+                <span>确认</span>
+              </button>
+            </div>
+          </footer>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -717,38 +803,65 @@ const getCoverStyle = (id: number) => {
 }
 
 .note-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   padding: 12px;
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.5);
   border: 1px solid rgba(148, 163, 184, 0.15);
-  transition: background 0.2s;
+  transition: all 0.2s;
 }
 
 .note-item:hover {
   background: rgba(255, 255, 255, 0.8);
+  border-color: rgba(59, 130, 246, 0.3);
+  transform: translateX(2px);
 }
 
-.note-item h4 {
-  margin: 0 0 6px 0;
-  font-size: 14px;
-  color: #1e293b;
-  line-height: 1.4;
+.note-main-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .note-title-line {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 6px;
+  margin-bottom: 4px;
   min-width: 0;
 }
 
 .note-title-line h4 {
   margin: 0;
-  min-width: 0;
+  font-size: 14px;
+  color: #1e293b;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.note-title-line h4:hover {
+  color: #3b82f6;
+  text-decoration: underline;
+}
+
+.edit-icon-mini {
+  color: #94a3b8;
+  opacity: 0;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.note-item:hover .edit-icon-mini {
+  opacity: 1;
+}
+
+.edit-icon-mini:hover {
+  color: #3b82f6;
 }
 
 .note-type-icon {
@@ -764,8 +877,34 @@ const getCoverStyle = (id: number) => {
 }
 
 .note-item .date {
-  font-size: 12px;
+  font-size: 11px;
   color: #94a3b8;
+}
+
+.note-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.toggle-public-mini {
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  padding: 4px;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.toggle-public-mini.isPublic {
+  color: #3b82f6;
+}
+
+.toggle-public-mini:hover {
+  background: rgba(148, 163, 184, 0.1);
 }
 
 .note-item.shared {
@@ -775,12 +914,17 @@ const getCoverStyle = (id: number) => {
 }
 
 .note-item.note-ellipsis {
-  text-align: center;
+  justify-content: center;
   opacity: 0.75;
+}
+
+.note-item.note-ellipsis h4 {
+  margin: 0;
 }
 
 .note-item.note-ellipsis:hover {
   background: rgba(255, 255, 255, 0.5);
+  transform: none;
 }
 
 .note-header {
@@ -805,6 +949,124 @@ const getCoverStyle = (id: number) => {
   justify-content: space-between;
   font-size: 11px;
   color: #64748b;
+}
+
+/* Modal Styles */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  backdrop-filter: blur(4px);
+}
+
+.small-modal {
+  width: 380px;
+  background: #fff;
+  border-radius: 16px;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+}
+
+.modal-header {
+  padding: 16px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.modal-header h3 {
+  margin: 0;
+  font-size: 16px;
+  color: #1e293b;
+}
+
+.close-btn {
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+}
+
+.close-btn:hover {
+  background: #f1f5f9;
+}
+
+.modal-body {
+  padding: 20px;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.form-group label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #64748b;
+}
+
+.form-group input {
+  padding: 10px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  outline: none;
+  transition: all 0.2s;
+}
+
+.form-group input:focus {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.modal-footer {
+  padding: 16px 20px;
+  border-top: 1px solid #f1f5f9;
+}
+
+.form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.cancel-btn {
+  padding: 8px 16px;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  color: #64748b;
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.confirm-btn {
+  padding: 8px 16px;
+  border-radius: 8px;
+  border: none;
+  background: #3b82f6;
+  color: #fff;
+  cursor: pointer;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.confirm-btn:hover {
+  background: #2563eb;
+}
+
+.confirm-btn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
 }
 
 @media (max-width: 1024px) {

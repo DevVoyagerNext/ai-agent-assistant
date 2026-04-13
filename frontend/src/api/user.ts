@@ -31,9 +31,10 @@ export const getPublicPrivateNotes = (page = 1, pageSize = 10) => {
 // ---------------- 私人笔记分层管理 API ----------------
 
 // 1. 获取私人笔记内容或子文件夹列表 (noteId 为 0 获取根目录)
-export const getPrivateNoteDetail = (noteId: number, scope: 0 | 1 | 2 = 0) => {
+export const getPrivateNoteDetail = (noteId: number, scope: 0 | 1 | 2 = 0, userId?: number) => {
+  const resolvedUserId = userId ?? Number(localStorage.getItem('userId') || '')
   return request.get<ApiResponse<PrivateNoteResponse>>(`/user/notes/private/${noteId}`, {
-    params: { scope }
+    params: { scope, userId: Number.isFinite(resolvedUserId) ? resolvedUserId : undefined }
   })
 }
 
@@ -44,6 +45,21 @@ export const createPrivateNote = (data: CreatePrivateNoteReq) => {
 
 export const deletePrivateNote = (noteId: number) => {
   return request.delete<ApiResponse<null>>(`/user/notes/private/${noteId}`)
+}
+
+// 3. 修改私人笔记内容 (仅限文件)
+export const updatePrivateNoteContent = (noteId: number, content: string) => {
+  return request.put<ApiResponse<null>>(`/user/notes/private/${noteId}/content`, { content })
+}
+
+// 4. 修改文件或文件夹标题
+export const updatePrivateNoteTitle = (noteId: number, title: string) => {
+  return request.put<ApiResponse<null>>(`/user/notes/private/${noteId}/title`, { title })
+}
+
+// 5. 修改文件或文件夹公开状态
+export const updatePrivateNotePublic = (noteId: number, isPublic: 0 | 1) => {
+  return request.put<ApiResponse<null>>(`/user/notes/private/${noteId}/public`, { isPublic })
 }
 
 // ----------------------------------------------------

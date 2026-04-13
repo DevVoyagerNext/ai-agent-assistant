@@ -126,7 +126,8 @@ export const useUserProfile = () => {
             id: item.id,
             title: item.title,
             updatedAt: item.updatedAt,
-            type: item.type
+            type: item.type,
+            isPublic: item.isPublic
           }))
         } else {
           publicPrivateNotes.value = []

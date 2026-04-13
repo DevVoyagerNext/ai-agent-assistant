@@ -24,6 +24,7 @@ type RegisterRes struct {
 
 // UserInfoRes 用户信息响应数据
 type UserInfoRes struct {
+	UserID    uint   `json:"userId"`
 	Username  string `json:"username"`
 	Email     string `json:"email"`
 	AvatarUrl string `json:"avatarUrl"`

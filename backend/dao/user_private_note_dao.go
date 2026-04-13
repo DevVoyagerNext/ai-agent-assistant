@@ -60,6 +60,14 @@ func (dao *UserPrivateNoteDao) CreateNote(ctx context.Context, note *model.UserP
 	return global.GVA_DB.WithContext(ctx).Create(note).Error
 }
 
+// UpdateNote 更新笔记或文件夹
+func (dao *UserPrivateNoteDao) UpdateNote(ctx context.Context, userID uint, noteID int, updates map[string]interface{}) error {
+	return global.GVA_DB.WithContext(ctx).
+		Model(&model.UserPrivateNote{}).
+		Where("user_id = ? AND id = ?", userID, noteID).
+		Updates(updates).Error
+}
+
 // DeleteNotesByIDs 按 ID 批量逻辑删除用户的私人笔记/文件夹
 func (dao *UserPrivateNoteDao) DeleteNotesByIDs(ctx context.Context, userID uint, ids []int) error {
 	if len(ids) == 0 || userID == 0 {
