@@ -6,6 +6,7 @@ import "time"
 type UserActivityItem struct {
 	Date  string `json:"date"`  // 格式: YYYY-MM-DD
 	Count int    `json:"count"` // 当日活跃次数/分数
+	Score int    `json:"score"`
 }
 
 // UserActivityCalendarRes 用户活跃度日历响应

@@ -11,6 +11,7 @@ import (
 type DailyActivityCount struct {
 	ActivityDate  time.Time `gorm:"column:activity_date"`
 	ActivityCount int       `gorm:"column:activity_count"`
+	ActivityScore int       `gorm:"column:activity_score"`
 }
 
 // GetUserActivities 获取用户一年的活跃度
@@ -18,7 +19,7 @@ func GetUserActivities(ctx context.Context, userID uint, startTime, endTime time
 	var activities []DailyActivityCount
 	err := global.GVA_DB.WithContext(ctx).
 		Table("user_daily_action_stats").
-		Select("activity_date, sum(action_count) as activity_count").
+		Select("activity_date, sum(action_count) as activity_count, sum(action_score) as activity_score").
 		Where("user_id = ? AND activity_date >= ? AND activity_date <= ?", userID, startTime, endTime).
 		Group("activity_date").
 		Find(&activities).Error

@@ -35,11 +35,11 @@ const shiftDays = (d: Date, days: number) => {
 
 const labels = computed(() => ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'])
 
-const byDate = computed<Map<string, number>>(() => {
-  const map = new Map<string, number>()
+const byDate = computed<Map<string, { count: number; score: number }>>(() => {
+  const map = new Map<string, { count: number; score: number }>()
   for (const it of props.items || []) {
     if (it?.date) {
-      map.set(it.date, it.count || 0)
+      map.set(it.date, { count: it.count || 0, score: it.score || 0 })
     }
   }
   return map
@@ -63,15 +63,17 @@ const startDate = computed(() => {
 })
 
 const weeksData = computed(() => {
-  const cols: { date: string; count: number; d: Date }[][] = []
+  const cols: { date: string; count: number; score: number; d: Date }[][] = []
   let cursor = new Date(startDate.value)
   for (let w = 0; w < WEEKS.value; w++) {
-    const col: { date: string; count: number; d: Date }[] = []
+    const col: { date: string; count: number; score: number; d: Date }[] = []
     for (let i = 0; i < 7; i++) {
       const ymd = toYMD(cursor)
+      const mapped = byDate.value.get(ymd)
       col.push({
         date: ymd,
-        count: byDate.value.get(ymd) ?? 0,
+        count: mapped?.count ?? 0,
+        score: mapped?.score ?? 0,
         d: new Date(cursor),
       })
       cursor = shiftDays(cursor, 1)
@@ -165,8 +167,8 @@ watch(() => props.items, () => {
             v-for="(cell, di) in week"
             :key="`${wi}-${di}`"
             class="cell"
-            :class="`lv-${levelFor(cell.count)}`"
-            :title="`${cell.date}: 活跃度 ${cell.count}${cell.date === toYMD(today) ? ' (今天)' : ''}`"
+            :class="`lv-${levelFor(cell.score)}`"
+            :title="`${cell.date}: 操作 ${cell.count} 次，活跃度 ${cell.score}${cell.date === toYMD(today) ? ' (今天)' : ''}`"
           />
         </div>
       </div>

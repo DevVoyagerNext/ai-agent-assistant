@@ -12,6 +12,7 @@ export interface UserInfoRes {
 export interface ActivityCalendarItem {
   date: string
   count: number
+  score: number
 }
 
 export interface ActivityCalendarRes {

@@ -87,7 +87,7 @@ export const useUserProfile = () => {
             const yyyy = d.getFullYear()
             const mm = String(d.getMonth() + 1).padStart(2, '0')
             const dd = String(d.getDate()).padStart(2, '0')
-            out.push({ date: `${yyyy}-${mm}-${dd}`, count: 0 })
+            out.push({ date: `${yyyy}-${mm}-${dd}`, count: 0, score: 0 })
           }
           return out
         }
@@ -96,13 +96,14 @@ export const useUserProfile = () => {
         if (apiItems.length === 0) {
           activities.value = range
         } else {
-          const byDate = new Map<string, number>()
+          const byDate = new Map<string, { count: number; score: number }>()
           for (const item of apiItems) {
-            byDate.set(item.date, item.count || 0)
+            byDate.set(item.date, { count: item.count || 0, score: item.score || 0 })
           }
           activities.value = range.map(d => ({
             date: d.date,
-            count: byDate.get(d.date) ?? 0
+            count: byDate.get(d.date)?.count ?? 0,
+            score: byDate.get(d.date)?.score ?? 0
           }))
         }
       }

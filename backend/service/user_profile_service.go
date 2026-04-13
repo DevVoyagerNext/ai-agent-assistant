@@ -23,6 +23,7 @@ func (u *UserService) GetUserActivitiesCalendar(ctx context.Context, userID uint
 		res.Activities = append(res.Activities, dto.UserActivityItem{
 			Date:  act.ActivityDate.Format("2006-01-02"),
 			Count: act.ActivityCount,
+			Score: act.ActivityScore,
 		})
 	}
 	return errmsg.CodeSuccess, res
