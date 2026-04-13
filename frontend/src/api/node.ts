@@ -1,6 +1,7 @@
 import request from '../utils/request'
 import type { ApiResponse } from '../types/index'
 import type { SubjectNode, SubjectNodeDetail, NodeNote } from '../types/node'
+import { validateNoteContent } from '../utils/noteValidation'
 
 // 获取教材顶级知识点
 export const getTopNodes = (subjectId: number) => {
@@ -26,7 +27,8 @@ export const getNodeNote = (nodeId: number) => {
 
 // 保存/创建随堂笔记
 export const saveNodeNote = (nodeId: number, data: { noteContent: string; isImportant: number }) => {
-  return request.post<ApiResponse<null>>(`/nodes/${nodeId}/note`, data)
+  const noteContent = validateNoteContent(data.noteContent)
+  return request.post<ApiResponse<null>>(`/nodes/${nodeId}/note`, { ...data, noteContent })
 }
 
 // 修改知识点的学习状态

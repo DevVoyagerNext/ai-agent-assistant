@@ -4,10 +4,10 @@ import (
 	"backend/global"
 	"backend/model"
 	"context"
-	"errors"
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // CreateUserActivityLog 记录用户行为流水
@@ -19,31 +19,27 @@ func CreateUserActivityLog(ctx context.Context, log *model.UserActivityLog) erro
 func UpsertUserDailyActionStat(ctx context.Context, userID int, actionType, targetType string, score int) error {
 	today := time.Now().Truncate(24 * time.Hour)
 
-	var stat model.UserDailyActionStat
-	err := global.GVA_DB.WithContext(ctx).
-		Where("user_id = ? AND activity_date = ? AND action_type = ? AND target_type = ?", userID, today, actionType, targetType).
-		First(&stat).Error
-
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			// 创建新记录
-			stat = model.UserDailyActionStat{
-				UserID:       userID,
-				ActivityDate: today,
-				ActionType:   actionType,
-				TargetType:   targetType,
-				ActionCount:  1,
-				ActionScore:  score,
-			}
-			return global.GVA_DB.WithContext(ctx).Create(&stat).Error
-		}
-		return err
-	}
-
-	// 更新记录
-	return global.GVA_DB.WithContext(ctx).Model(&stat).Updates(map[string]interface{}{
-		"action_count": gorm.Expr("action_count + ?", 1),
-		"action_score": gorm.Expr("action_score + ?", score),
+	// 使用 MySQL 的 ON DUPLICATE KEY UPDATE 语法实现原子的 Upsert
+	// 这样可以彻底解决在高并发（如 MQ 快速消费）时，“先查后改”导致的 1062 Duplicate Entry 错误
+	return global.GVA_DB.WithContext(ctx).Clauses(clause.OnConflict{
+		Columns: []clause.Column{
+			{Name: "user_id"},
+			{Name: "activity_date"},
+			{Name: "action_type"},
+			{Name: "target_type"},
+		},
+		DoUpdates: clause.Assignments(map[string]interface{}{
+			"action_count": gorm.Expr("user_daily_action_stats.action_count + ?", 1),
+			"action_score": gorm.Expr("user_daily_action_stats.action_score + ?", score),
+			"updated_at":   time.Now(),
+		}),
+	}).Create(&model.UserDailyActionStat{
+		UserID:       userID,
+		ActivityDate: today,
+		ActionType:   actionType,
+		TargetType:   targetType,
+		ActionCount:  1,
+		ActionScore:  score,
 	}).Error
 }
 

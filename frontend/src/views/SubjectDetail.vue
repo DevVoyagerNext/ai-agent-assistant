@@ -26,6 +26,7 @@ import {
   normalizeNodeProgressStatus,
   type NodeProgressStatus
 } from '../utils/nodeProgress'
+import { NOTE_MAX_LENGTH, validateNoteContent } from '../utils/noteValidation'
 import { 
   FileText, ArrowLeft, 
   Edit3, BookOpen, 
@@ -352,7 +353,8 @@ const loadingDetail = ref(false)
 const updatingStatus = ref(false)
 const updatingDifficulty = ref(false)
 const savingNote = ref(false)
-const saveStatusText = ref('') // 'saving', 'saved', 'error'
+const saveStatusText = ref<'saving' | 'saved' | 'error-empty' | 'error-too-long' | 'error-xss' | 'error-net' | ''>('')
+let debounceTimer: ReturnType<typeof setTimeout> | null = null
 
 // ----------------- 反馈弹窗相关 -----------------
 const toast = reactive({
@@ -421,6 +423,10 @@ const syncNodeStatus = (id: number, status: NodeProgressStatus) => {
 }
 
 const selectNode = async (id: number) => {
+  if (debounceTimer) {
+    clearTimeout(debounceTimer)
+    debounceTimer = null
+  }
   currentNodeId.value = id
   
   // 1. 检查缓存：如果命中，直接使用并返回
@@ -665,24 +671,26 @@ const handleSaveNote = async () => {
   savingNote.value = true
   saveStatusText.value = 'saving'
   try {
+    const noteContent = validateNoteContent(noteEditContent.value)
     const res = await saveNodeNote(currentNodeId.value, {
-      noteContent: noteEditContent.value,
+      noteContent,
       isImportant: isNoteImportant.value
     })
     if (res.data?.code === 200) {
-      lastSavedContent.value = noteEditContent.value
+      noteEditContent.value = noteContent
+      lastSavedContent.value = noteContent
       saveStatusText.value = 'saved'
       
       // 更新当前显示的时间
       const now = new Date().toLocaleString('zh-CN', { hour12: false }).replace(/\//g, '-')
       if (nodeNote.value) {
-        nodeNote.value.noteContent = noteEditContent.value
+        nodeNote.value.noteContent = noteContent
         nodeNote.value.updatedAt = now
       } else {
         nodeNote.value = {
           id: 0,
           nodeId: currentNodeId.value,
-          noteContent: noteEditContent.value,
+          noteContent,
           isImportant: isNoteImportant.value,
           updatedAt: now
         }
@@ -696,17 +704,56 @@ const handleSaveNote = async () => {
     }
   } catch (error: any) {
     console.error('保存笔记失败', error)
-    saveStatusText.value = 'error'
+    const msg = String(error?.message || '')
+    if (msg.includes('不能为空')) {
+      saveStatusText.value = 'error-empty'
+    } else if (msg.includes('不能超过')) {
+      saveStatusText.value = 'error-too-long'
+    } else if (msg.includes('非法字符')) {
+      saveStatusText.value = 'error-xss'
+    } else {
+      saveStatusText.value = 'error-net'
+    }
   } finally {
     savingNote.value = false
   }
 }
 
 // 自动保存监听逻辑
-let debounceTimer: any = null
 watch([noteEditContent, isNoteImportant], ([newContent, newImportant]) => {
   if (!currentNodeId.value) return
   
+  if (!newContent.trim()) {
+    if (lastSavedContent.value) {
+      saveStatusText.value = 'error-empty'
+    } else {
+      saveStatusText.value = ''
+    }
+    if (debounceTimer) {
+      clearTimeout(debounceTimer)
+      debounceTimer = null
+    }
+    return
+  }
+
+  if (newContent.length > NOTE_MAX_LENGTH) {
+    saveStatusText.value = 'error-too-long'
+    if (debounceTimer) {
+      clearTimeout(debounceTimer)
+      debounceTimer = null
+    }
+    return
+  }
+
+  if (newContent.includes('<') || newContent.includes('>')) {
+    saveStatusText.value = 'error-xss'
+    if (debounceTimer) {
+      clearTimeout(debounceTimer)
+      debounceTimer = null
+    }
+    return
+  }
+
   // 仅当内容或重要程度发生实际变化时才触发防抖保存
   const isContentChanged = newContent !== lastSavedContent.value
   const isImportantChanged = nodeNote.value ? newImportant !== nodeNote.value.isImportant : false
@@ -912,6 +959,7 @@ const goBack = () => {
               class="note-textarea" 
               v-model="noteEditContent"
               placeholder="在这里输入你的随堂笔记..."
+              :maxlength="NOTE_MAX_LENGTH"
             ></textarea>
           </div>
           <div class="editor-footer">
@@ -927,7 +975,16 @@ const goBack = () => {
               <span v-else-if="saveStatusText === 'saved'" class="status-saved">
                 已同步到云端
               </span>
-              <span v-else-if="saveStatusText === 'error'" class="status-error">
+              <span v-else-if="saveStatusText === 'error-empty'" class="status-error">
+                内容不能为空
+              </span>
+              <span v-else-if="saveStatusText === 'error-too-long'" class="status-error">
+                最多 {{ NOTE_MAX_LENGTH }} 字符
+              </span>
+              <span v-else-if="saveStatusText === 'error-xss'" class="status-error">
+                包含非法字符
+              </span>
+              <span v-else-if="saveStatusText === 'error-net'" class="status-error">
                 同步失败，请检查网络
               </span>
             </div>

@@ -6,8 +6,10 @@ import (
 	"backend/global"
 	"backend/model"
 	"backend/pkg/mq/tasks"
+	"backend/pkg/utils"
 	"context"
 	"errors"
+	"strings"
 
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -194,7 +196,21 @@ func (s *KnowledgeNodeService) UpsertUserStudyNote(ctx context.Context, userID u
 		return errors.New("用户未登录")
 	}
 
-	// 检查知识点是否存在
+	// 1. 校验内容非空（去除空格后）
+	noteContent := strings.TrimSpace(req.NoteContent)
+	if noteContent == "" {
+		return errors.New("笔记内容不能为空")
+	}
+
+	// 2. 限制长度（虽然 DTO 有 max=1000，但业务层做双重保险或处理特殊字符后长度变化）
+	if len([]rune(noteContent)) > 1000 {
+		return errors.New("笔记内容不能超过 1000 个字符")
+	}
+
+	// 3. 防止 XSS 攻击
+	safeContent := utils.XSSFilter(noteContent)
+
+	// 4. 检查知识点是否存在
 	_, err := s.nodeDao.GetNodeByID(nodeID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -203,7 +219,7 @@ func (s *KnowledgeNodeService) UpsertUserStudyNote(ctx context.Context, userID u
 		return err
 	}
 
-	return s.nodeDao.UpsertUserStudyNote(userID, nodeID, req.NoteContent, req.IsImportant)
+	return s.nodeDao.UpsertUserStudyNote(userID, nodeID, safeContent, req.IsImportant)
 }
 
 // UpdateNodeStatus 更新用户对知识点的学习状态
