@@ -97,11 +97,11 @@ const monthLabels = computed(() => {
   return labels
 })
 
-const levelFor = (count: number) => {
-  if (!count || count <= 0) return 0
-  if (count <= 3) return 1
-  if (count <= 7) return 2
-  if (count <= 15) return 3
+const levelFor = (value: number) => {
+  if (!value || value <= 0) return 0
+  if (value <= 5) return 1
+  if (value <= 15) return 2
+  if (value <= 30) return 3
   return 4
 }
 
@@ -166,20 +166,20 @@ watch(() => props.items, () => {
             :key="`${wi}-${di}`"
             class="cell"
             :class="`lv-${levelFor(cell.count)}`"
-            :title="`${cell.date}: ${cell.count} 次活跃${cell.date === toYMD(today) ? ' (今天)' : ''}`"
+            :title="`${cell.date}: 活跃度 ${cell.count}${cell.date === toYMD(today) ? ' (今天)' : ''}`"
           />
         </div>
       </div>
     </div>
 
       <div class="legend">
-        <span>Less</span>
+        <span>低</span>
         <span class="legend-cell lv-0"></span>
         <span class="legend-cell lv-1"></span>
         <span class="legend-cell lv-2"></span>
         <span class="legend-cell lv-3"></span>
         <span class="legend-cell lv-4"></span>
-        <span>More</span>
+        <span>高</span>
       </div>
     </div>
     

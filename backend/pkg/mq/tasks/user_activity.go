@@ -37,7 +37,7 @@ func HandleUserActivity(ctx context.Context, payloadStr string) error {
 	}
 
 	description := ""
-	if p.ActionType == "study_note" && p.TargetType == "knowledge_nodes" {
+	if (p.ActionType == "study_note" || p.ActionType == "create_note") && p.TargetType == "knowledge_nodes" {
 		// 1. 查询知识点名称和学科ID
 		var nodeDao dao.KnowledgeNodeDao
 		node, err := nodeDao.GetNodeByID(p.TargetID)
@@ -45,10 +45,16 @@ func HandleUserActivity(ctx context.Context, payloadStr string) error {
 			// 2. 查询学科名称
 			var subjectDao dao.SubjectDao
 			subject, err := subjectDao.GetSubjectById(ctx, node.SubjectID)
+
+			actionText := "学习了知识点"
+			if p.ActionType == "create_note" {
+				actionText = "记录了随堂笔记"
+			}
+
 			if err == nil {
-				description = fmt.Sprintf("用户学习了知识点 %s (学科: %s)", node.Name, subject.Name)
+				description = fmt.Sprintf("用户%s %s (学科: %s)", actionText, node.Name, subject.Name)
 			} else {
-				description = fmt.Sprintf("用户学习了知识点 %s", node.Name)
+				description = fmt.Sprintf("用户%s %s", actionText, node.Name)
 			}
 		}
 	}

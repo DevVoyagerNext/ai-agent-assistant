@@ -219,7 +219,23 @@ func (s *KnowledgeNodeService) UpsertUserStudyNote(ctx context.Context, userID u
 		return err
 	}
 
-	return s.nodeDao.UpsertUserStudyNote(userID, nodeID, safeContent, req.IsImportant)
+	err = s.nodeDao.UpsertUserStudyNote(userID, nodeID, safeContent, req.IsImportant)
+	if err != nil {
+		return err
+	}
+
+	// 5. 异步发布用户活跃度更新消息 (笔记创建/修改，5分)
+	if err := global.GVA_MQ.Publish(ctx, "user_activity", tasks.UserActivityPayload{
+		UserID:     userID,
+		ActionType: "create_note",
+		TargetType: "knowledge_nodes",
+		TargetID:   nodeID,
+		Score:      5,
+	}); err != nil {
+		global.GVA_LOG.Error("发布用户活跃度消息失败", zap.Error(err))
+	}
+
+	return nil
 }
 
 // UpdateNodeStatus 更新用户对知识点的学习状态
