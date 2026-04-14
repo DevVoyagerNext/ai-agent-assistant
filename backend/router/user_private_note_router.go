@@ -15,7 +15,7 @@ func (s *UserPrivateNoteRouter) InitAuthUserPrivateNoteRouter(Router *gin.Router
 		// 1. 获取私人笔记内容或子文件夹列表 (如: GET /v1/user/notes/private/12)
 		privateNoteRouter.GET("/:noteId", privateNoteController.GetPrivateNoteOrChildren)
 		// 2. 创建私人文件夹或笔记 (如: POST /v1/user/notes/private)
-		privateNoteRouter.POST("/", privateNoteController.CreatePrivateNote)
+		privateNoteRouter.POST("", privateNoteController.CreatePrivateNote)
 		// 3. 修改私人笔记内容 (仅限文件)
 		privateNoteRouter.PUT("/:noteId/content", privateNoteController.UpdatePrivateNoteContent)
 		// 4. 修改文件/文件夹标题
