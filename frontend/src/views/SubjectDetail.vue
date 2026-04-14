@@ -6,7 +6,7 @@ import hljs from 'highlight.js'
 import 'highlight.js/styles/github.css' // 切换回浅色主题，适合灰色背景
 import { 
   getTopNodes, getChildNodes, getNodeDetail, getNodeNote,
-  updateNodeStatus, updateNodeDifficulty, saveNodeNote
+  updateNodeStatus, updateNodeDifficulty, saveNodeNote, getNodePath
 } from '../api/node'
 import { getSubjectDetail } from '../api/subject'
 import { 
@@ -209,6 +209,54 @@ const toggleExpandMode = () => {
 const fetchTopNodes = async () => {
   loadingTree.value = true
   try {
+    const targetNodeId = Number(route.query.nodeId)
+    
+    // 如果 URL 中有 nodeId，使用 getNodePath 接口
+    if (targetNodeId && !isNaN(targetNodeId)) {
+      const resPath = await getNodePath(targetNodeId)
+      if (resPath.data?.code === 200 && resPath.data.data) {
+        const pathNodes = resPath.data.data
+        if (pathNodes.length > 0) {
+          // 1. 获取顶级节点（路径的第一项）并初始化 topNodes
+          const resTop = await getTopNodes(subjectId)
+          if (resTop.data?.code === 200 && resTop.data.data) {
+            topNodes.value = resTop.data.data.map(node => ({
+              ...node,
+              expanded: false,
+              children: [],
+              userProgressStatus: normalizeNodeProgressStatus(node.userProgressStatus)
+            }))
+
+            // 2. 按照路径深度逐层展开并加载子节点
+            let currentNodes = topNodes.value
+            for (let i = 0; i < pathNodes.length; i++) {
+              const pNode = pathNodes[i]
+              const foundNode = currentNodes.find(n => n.id === pNode.id)
+              
+              if (foundNode) {
+                // 如果不是最后一个节点（即路径中的中间节点），则展开并加载子节点
+                if (i < pathNodes.length - 1) {
+                  foundNode.expanded = true
+                  await ensureChildrenLoaded(foundNode)
+                  currentNodes = foundNode.children || []
+                } else {
+                  // 最后一个节点，直接选中
+                  await selectNode(foundNode.id)
+                  // 如果是文件夹，也展开一下
+                  if (foundNode.isLeaf === 0) {
+                    foundNode.expanded = true
+                    await ensureChildrenLoaded(foundNode)
+                  }
+                }
+              }
+            }
+            return // 成功处理路径逻辑后退出
+          }
+        }
+      }
+    }
+
+    // 默认逻辑：获取顶级节点并选中第一个
     const res = await getTopNodes(subjectId)
     if (res.data?.code === 200 && res.data.data) {
       topNodes.value = res.data.data.map(node => ({ 
@@ -222,7 +270,7 @@ const fetchTopNodes = async () => {
       }
     }
   } catch (error) {
-    console.error('获取顶级节点失败', error)
+    console.error('获取知识点树失败', error)
   } finally {
     loadingTree.value = false
   }
@@ -480,14 +528,20 @@ const setPrivateSyncStatus = (status: 'saving' | 'saved' | '') => {
   }
 }
 
-const fetchPrivateContent = async (noteId: number) => {
+const privateNotesTotal = ref(0)
+const privateNotesPage = ref(1)
+const privateNotesPageSize = ref(20)
+
+const fetchPrivateContent = async (noteId: number, page = 1) => {
   if (!isLoggedIn.value) return
   loadingPrivateNotes.value = true
+  privateNotesPage.value = page
   try {
-    const res = await getPrivateNoteDetail(noteId, 2)
+    const res = await getPrivateNoteDetail(noteId, 2, page, privateNotesPageSize.value)
     if (res.data?.code === 200) {
       if (!res.data.data) {
         privateNotes.value = []
+        privateNotesTotal.value = 0
         currentPrivateNote.value = null
         lastPrivateSyncAt.value = ''
         setPrivateSyncStatus('')
@@ -496,11 +550,13 @@ const fetchPrivateContent = async (noteId: number) => {
       const data = res.data.data
       if (data.type === 'folder') {
         privateNotes.value = Array.isArray(data.children) ? data.children : []
+        privateNotesTotal.value = data.total || 0
         currentPrivateNote.value = null
         lastPrivateSyncAt.value = ''
         setPrivateSyncStatus('')
       } else {
         privateNotes.value = []
+        privateNotesTotal.value = 0
         currentPrivateNote.value = data.content ?? null
         lastPrivateSyncAt.value = currentPrivateNote.value?.updatedAt ? formatDateTimeText(currentPrivateNote.value.updatedAt) : ''
         setPrivateSyncStatus('')
@@ -526,9 +582,9 @@ const fetchPrivateContent = async (noteId: number) => {
 const handlePrivateItemClick = (item: PrivateNoteBase) => {
   if (item.type === 'folder') {
     privateNavStack.value.push({ id: item.id, title: item.title })
-    fetchPrivateContent(item.id)
+    fetchPrivateContent(item.id, 1)
   } else {
-    fetchPrivateContent(item.id)
+    fetchPrivateContent(item.id, 1)
   }
 }
 
@@ -537,14 +593,14 @@ const goBackPrivate = () => {
     // 如果当前正在查看笔记正文，点击返回应停留在当前文件夹
     if (currentPrivateNote.value) {
       currentPrivateNote.value = null
-      fetchPrivateContent(currentFolderId.value)
+      fetchPrivateContent(currentFolderId.value, 1)
     } else {
       privateNavStack.value.pop()
-      fetchPrivateContent(currentFolderId.value)
+      fetchPrivateContent(currentFolderId.value, 1)
     }
   } else if (currentPrivateNote.value) {
     currentPrivateNote.value = null
-    fetchPrivateContent(0)
+    fetchPrivateContent(0, 1)
   }
 }
 
@@ -555,7 +611,7 @@ const toggleNoteType = (type: 'class' | 'private') => {
       privateNavStack.value = [{ id: 0, title: '根目录' }]
     }
     if (!currentPrivateNote.value && privateNotes.value.length === 0) {
-      fetchPrivateContent(currentFolderId.value)
+      fetchPrivateContent(currentFolderId.value, 1)
     }
   }
 }
@@ -595,7 +651,7 @@ const handleCreatePrivate = async () => {
     if (res.data?.code === 200) {
       showToast('创建成功')
       showCreatePrivateModal.value = false
-      fetchPrivateContent(currentFolderId.value)
+      fetchPrivateContent(currentFolderId.value, 1)
     } else {
       showToast(res.data?.msg || '创建失败', 'error')
     }
@@ -643,9 +699,9 @@ const handleRenamePrivate = async () => {
       // 如果当前正在查看这个笔记的正文，同步更新标题
       if (currentPrivateNote.value && currentPrivateNote.value.id === pendingRenameItem.value.id) {
         currentPrivateNote.value.title = renamePrivateTitle.value
-        fetchPrivateContent(currentPrivateNote.value.id)
+        fetchPrivateContent(currentPrivateNote.value.id, 1)
       } else {
-        fetchPrivateContent(currentFolderId.value)
+        fetchPrivateContent(currentFolderId.value, privateNotesPage.value)
       }
     }
   } catch (error: any) {
@@ -721,7 +777,7 @@ const handleDeletePrivate = async () => {
       showToast('已移入回收站')
       showDeletePrivateModal.value = false
       pendingDeleteItem.value = null
-      fetchPrivateContent(currentFolderId.value)
+      fetchPrivateContent(currentFolderId.value, privateNotesPage.value)
       return
     }
     showToast(res.data?.msg || '删除失败', 'error')

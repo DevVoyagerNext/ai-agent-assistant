@@ -23,19 +23,30 @@ func (dao *UserPrivateNoteDao) GetNoteByIDWithScope(ctx context.Context, userID 
 	return note, err
 }
 
-func (dao *UserPrivateNoteDao) GetNotesByParentWithScope(ctx context.Context, userID uint, parentID int, scope int) ([]model.UserPrivateNote, error) {
-	var notes []model.UserPrivateNote
-
-	tx := global.GVA_DB.WithContext(ctx).
+// GetNotesByParentWithScope 获取子文件夹/文件列表 (支持公开状态过滤)
+func (dao *UserPrivateNoteDao) GetNotesByParentWithScope(ctx context.Context, userID uint, parentID int, scope int, page, pageSize int) ([]model.UserPrivateNote, int64, error) {
+	query := global.GVA_DB.WithContext(ctx).
+		Model(&model.UserPrivateNote{}).
 		Where("user_id = ? AND parent_id = ? AND is_deleted = 0", userID, parentID)
+
 	if scope == 0 {
-		tx = tx.Where("is_public = 0")
+		query = query.Where("is_public = 0")
 	} else if scope == 1 {
-		tx = tx.Where("is_public = 1")
+		query = query.Where("is_public = 1")
 	}
 
-	err := tx.Order("sort_order asc, updated_at desc").Find(&notes).Error
-	return notes, err
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	var notes []model.UserPrivateNote
+	offset := (page - 1) * pageSize
+	err := query.Order("sort_order asc, updated_at desc").
+		Offset(offset).
+		Limit(pageSize).
+		Find(&notes).Error
+	return notes, total, err
 }
 
 // GetNoteByID 获取笔记详情 (只查询未删除的)
@@ -46,13 +57,23 @@ func (dao *UserPrivateNoteDao) GetNoteByID(ctx context.Context, userID uint, not
 }
 
 // GetNotesByParent 获取子文件夹/文件列表 (只查询未删除的)
-func (dao *UserPrivateNoteDao) GetNotesByParent(ctx context.Context, userID uint, parentID int) ([]model.UserPrivateNote, error) {
+func (dao *UserPrivateNoteDao) GetNotesByParent(ctx context.Context, userID uint, parentID int, page, pageSize int) ([]model.UserPrivateNote, int64, error) {
+	query := global.GVA_DB.WithContext(ctx).
+		Model(&model.UserPrivateNote{}).
+		Where("user_id = ? AND parent_id = ? AND is_deleted = 0", userID, parentID)
+
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
 	var notes []model.UserPrivateNote
-	err := global.GVA_DB.WithContext(ctx).
-		Where("user_id = ? AND parent_id = ? AND is_deleted = 0", userID, parentID).
-		Order("sort_order asc, updated_at desc").
+	offset := (page - 1) * pageSize
+	err := query.Order("sort_order asc, updated_at desc").
+		Offset(offset).
+		Limit(pageSize).
 		Find(&notes).Error
-	return notes, err
+	return notes, total, err
 }
 
 // CheckNoteExists 判断同一个文件夹下是否存在同名同类型的文件/文件夹

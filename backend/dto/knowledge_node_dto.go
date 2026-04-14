@@ -21,6 +21,19 @@ type KnowledgeNodeItemRes struct {
 	UserProgressStatus string `json:"userProgressStatus"`
 }
 
+// KnowledgeNodeSimpleRes 知识点简易信息
+type KnowledgeNodeSimpleRes struct {
+	ID        uint   `json:"id"`
+	ParentID  int    `json:"parentId"`
+	Name      string `json:"name"`
+	Path      string `json:"path"`
+	SortOrder int    `json:"sortOrder"`
+	ImageUrl  string `json:"imageUrl"`
+	IsLeaf    int8   `json:"isLeaf"`
+	// 用户的知识点学习进度 (unstarted, learning, completed)
+	UserProgressStatus string `json:"userProgressStatus"`
+}
+
 // KnowledgeNodeDetailRes 知识点详细信息（带内容正文）
 type KnowledgeNodeDetailRes struct {
 	KnowledgeNodeItemRes

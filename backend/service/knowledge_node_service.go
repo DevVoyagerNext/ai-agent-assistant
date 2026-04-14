@@ -9,6 +9,7 @@ import (
 	"backend/pkg/utils"
 	"context"
 	"errors"
+	"strconv"
 	"strings"
 
 	"go.uber.org/zap"
@@ -114,6 +115,83 @@ func (s *KnowledgeNodeService) GetChildNodes(ctx context.Context, parentID int, 
 		return nil, err
 	}
 	return s.enrichNodes(nodes, userID)
+}
+
+// GetPathNodes 根据 nodeId 查询路径，并返回路径上中间节点的子节点列表
+func (s *KnowledgeNodeService) GetPathNodes(ctx context.Context, nodeID int, userID uint) ([]dto.KnowledgeNodeSimpleRes, error) {
+	// 1. 获取当前节点获取路径
+	node, err := s.nodeDao.GetNodeByID(nodeID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, errors.New("知识点不存在")
+		}
+		return nil, err
+	}
+
+	// 2. 解析路径，例如 "0/127/128/129/130/"
+	// 路径解析逻辑：去除第一个（0）和最后一个（当前节点自身ID）
+	trimmedPath := strings.Trim(node.Path, "/")
+	pathParts := strings.Split(trimmedPath, "/")
+	if len(pathParts) <= 2 {
+		// 如果路径只有 0 和自身，则没有中间 parentId 需要查询
+		return []dto.KnowledgeNodeSimpleRes{}, nil
+	}
+
+	// 提取中间部分的 parentId：从索引 1 开始到倒数第二个
+	intermediateIDs := pathParts[1 : len(pathParts)-1]
+	var parentIDs []int
+	for _, idStr := range intermediateIDs {
+		id, _ := strconv.Atoi(idStr)
+		if id > 0 {
+			parentIDs = append(parentIDs, id)
+		}
+	}
+
+	// 3. 批量查询这些 parentId 下的所有子节点
+	nodes, err := s.nodeDao.GetNodesByParentIDs(parentIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	// 4. 获取用户在这些节点上的学习进度
+	var nodeIDs []uint
+	for _, n := range nodes {
+		nodeIDs = append(nodeIDs, n.ID)
+	}
+
+	var statusMap = make(map[uint]string)
+	if userID > 0 && len(nodeIDs) > 0 {
+		statuses, err := s.nodeDao.GetUserStudyStatusByNodeIDs(userID, nodeIDs)
+		if err != nil {
+			return nil, err
+		}
+		for _, st := range statuses {
+			statusMap[uint(st.NodeID)] = st.Status
+		}
+	}
+
+	// 5. 组装返回数据
+	var result []dto.KnowledgeNodeSimpleRes
+	for _, n := range nodes {
+		// 默认进度为 unstarted
+		progress := "unstarted"
+		if st, ok := statusMap[n.ID]; ok {
+			progress = st
+		}
+
+		result = append(result, dto.KnowledgeNodeSimpleRes{
+			ID:                 n.ID,
+			ParentID:           n.ParentID,
+			Name:               n.Name,
+			Path:               n.Path,
+			SortOrder:          n.SortOrder,
+			ImageUrl:           n.ImageUrl,
+			IsLeaf:             n.IsLeaf,
+			UserProgressStatus: progress,
+		})
+	}
+
+	return result, nil
 }
 
 // GetNodeDetail 获取知识点详情（包含正文、难度评价、用户进度）

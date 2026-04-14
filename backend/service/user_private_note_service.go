@@ -18,13 +18,22 @@ type UserPrivateNoteService struct {
 
 // GetNoteOrChildren 获取笔记内容或子文件夹列表
 func (s *UserPrivateNoteService) GetNoteOrChildren(ctx context.Context, userID uint, noteID int) (interface{}, error) {
+	// 调用带分页的版本，默认第一页，100条（目录通常不分页或分页很大）
+	return s.GetNoteOrChildrenWithScope(ctx, userID, noteID, 2, 1, 100)
+}
+
+// GetNoteOrChildrenWithScope 获取笔记内容或子文件夹列表 (支持分页和 scope)
+func (s *UserPrivateNoteService) GetNoteOrChildrenWithScope(ctx context.Context, userID uint, noteID int, scope int, page, pageSize int) (interface{}, error) {
 	if userID == 0 {
 		return nil, errors.New("用户未登录")
+	}
+	if scope != 0 && scope != 1 && scope != 2 {
+		return nil, errors.New("scope 参数错误")
 	}
 
 	// 1. 如果 id 为 0，默认查询根目录
 	if noteID == 0 {
-		notes, err := s.privateNoteDao.GetNotesByParent(ctx, userID, 0)
+		notes, total, err := s.privateNoteDao.GetNotesByParentWithScope(ctx, userID, 0, scope, page, pageSize)
 		if err != nil {
 			return nil, err
 		}
@@ -35,18 +44,20 @@ func (s *UserPrivateNoteService) GetNoteOrChildren(ctx context.Context, userID u
 				ParentID:  note.ParentID,
 				Type:      note.Type,
 				Title:     note.Title,
+				IsPublic:  note.IsPublic,
 				UpdatedAt: note.UpdatedAt,
 				CreatedAt: note.CreatedAt,
 			})
 		}
 		return dto.PrivateNoteResponse{
 			Type:     "folder",
+			Total:    total,
 			Children: children,
 		}, nil
 	}
 
 	// 2. 查询该笔记
-	note, err := s.privateNoteDao.GetNoteByID(ctx, userID, noteID)
+	note, err := s.privateNoteDao.GetNoteByIDWithScope(ctx, userID, noteID, scope)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, errors.New("笔记不存在")
@@ -56,7 +67,7 @@ func (s *UserPrivateNoteService) GetNoteOrChildren(ctx context.Context, userID u
 
 	// 3. 如果是文件夹，获取其子节点
 	if note.Type == "folder" {
-		notes, err := s.privateNoteDao.GetNotesByParent(ctx, userID, noteID)
+		notes, total, err := s.privateNoteDao.GetNotesByParentWithScope(ctx, userID, noteID, scope, page, pageSize)
 		if err != nil {
 			return nil, err
 		}
@@ -67,12 +78,14 @@ func (s *UserPrivateNoteService) GetNoteOrChildren(ctx context.Context, userID u
 				ParentID:  n.ParentID,
 				Type:      n.Type,
 				Title:     n.Title,
+				IsPublic:  n.IsPublic,
 				UpdatedAt: n.UpdatedAt,
 				CreatedAt: n.CreatedAt,
 			})
 		}
 		return dto.PrivateNoteResponse{
 			Type:     "folder",
+			Total:    total,
 			Children: children,
 		}, nil
 	}
@@ -86,80 +99,7 @@ func (s *UserPrivateNoteService) GetNoteOrChildren(ctx context.Context, userID u
 			Type:      note.Type,
 			Title:     note.Title,
 			Content:   note.Content,
-			UpdatedAt: note.UpdatedAt,
-			CreatedAt: note.CreatedAt,
-		},
-	}, nil
-}
-
-func (s *UserPrivateNoteService) GetNoteOrChildrenWithScope(ctx context.Context, userID uint, noteID int, scope int) (interface{}, error) {
-	if userID == 0 {
-		return nil, errors.New("用户未登录")
-	}
-	if scope != 0 && scope != 1 && scope != 2 {
-		return nil, errors.New("scope 参数错误")
-	}
-
-	if noteID == 0 {
-		notes, err := s.privateNoteDao.GetNotesByParentWithScope(ctx, userID, 0, scope)
-		if err != nil {
-			return nil, err
-		}
-		var children []dto.PrivateNoteItemRes
-		for _, note := range notes {
-			children = append(children, dto.PrivateNoteItemRes{
-				ID:        note.ID,
-				ParentID:  note.ParentID,
-				Type:      note.Type,
-				Title:     note.Title,
-				UpdatedAt: note.UpdatedAt,
-				CreatedAt: note.CreatedAt,
-			})
-		}
-		return dto.PrivateNoteResponse{
-			Type:     "folder",
-			Children: children,
-		}, nil
-	}
-
-	note, err := s.privateNoteDao.GetNoteByIDWithScope(ctx, userID, noteID, scope)
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errors.New("笔记不存在")
-		}
-		return nil, err
-	}
-
-	if note.Type == "folder" {
-		notes, err := s.privateNoteDao.GetNotesByParentWithScope(ctx, userID, noteID, scope)
-		if err != nil {
-			return nil, err
-		}
-		var children []dto.PrivateNoteItemRes
-		for _, n := range notes {
-			children = append(children, dto.PrivateNoteItemRes{
-				ID:        n.ID,
-				ParentID:  n.ParentID,
-				Type:      n.Type,
-				Title:     n.Title,
-				UpdatedAt: n.UpdatedAt,
-				CreatedAt: n.CreatedAt,
-			})
-		}
-		return dto.PrivateNoteResponse{
-			Type:     "folder",
-			Children: children,
-		}, nil
-	}
-
-	return dto.PrivateNoteResponse{
-		Type: "markdown",
-		Content: &dto.PrivateNoteDetailRes{
-			ID:        note.ID,
-			ParentID:  note.ParentID,
-			Type:      note.Type,
-			Title:     note.Title,
-			Content:   note.Content,
+			IsPublic:  note.IsPublic,
 			UpdatedAt: note.UpdatedAt,
 			CreatedAt: note.CreatedAt,
 		},
@@ -313,11 +253,12 @@ func (s *UserPrivateNoteService) UpdatePrivateNotePublic(ctx context.Context, us
 }
 
 func (s *UserPrivateNoteService) collectDescendantIDs(ctx context.Context, userID uint, parentID int, ids *[]int) error {
-	children, err := s.privateNoteDao.GetNotesByParent(ctx, userID, parentID)
+	// 递归时默认获取全部(scope=2)，且不分页(给个很大的数)
+	notes, _, err := s.privateNoteDao.GetNotesByParentWithScope(ctx, userID, parentID, 2, 1, 10000)
 	if err != nil {
 		return err
 	}
-	for _, child := range children {
+	for _, child := range notes {
 		*ids = append(*ids, int(child.ID))
 		if child.Type == "folder" {
 			if err := s.collectDescendantIDs(ctx, userID, int(child.ID), ids); err != nil {

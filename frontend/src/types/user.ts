@@ -39,6 +39,7 @@ export interface PrivateNoteBase {
 
 export interface PrivateFolderContent {
   type: 'folder'
+  total: number
   children: PrivateNoteBase[]
 }
 
@@ -110,13 +111,8 @@ export interface CollectFolderRes {
   updatedAt: string
 }
 
-export interface UserSubjectProgressRes {
-  subject: Subject
+export interface UserSubjectProgressRes extends Subject {
   status: string
-  isLiked: boolean
-  isCollected: boolean
-  progressPercent: number
-  lastNodeId: number
   lastStudyTime: string
 }
 

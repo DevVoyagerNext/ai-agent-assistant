@@ -31,10 +31,15 @@ export const getPublicPrivateNotes = (page = 1, pageSize = 10) => {
 // ---------------- 私人笔记分层管理 API ----------------
 
 // 1. 获取私人笔记内容或子文件夹列表 (noteId 为 0 获取根目录)
-export const getPrivateNoteDetail = (noteId: number, scope: 0 | 1 | 2 = 0, userId?: number) => {
+export const getPrivateNoteDetail = (noteId: number, scope: 0 | 1 | 2 = 0, page = 1, pageSize = 20, userId?: number) => {
   const resolvedUserId = userId ?? Number(localStorage.getItem('userId') || '')
   return request.get<ApiResponse<PrivateNoteResponse>>(`/user/notes/private/${noteId}`, {
-    params: { scope, userId: Number.isFinite(resolvedUserId) ? resolvedUserId : undefined }
+    params: { 
+      scope, 
+      userId: Number.isFinite(resolvedUserId) ? resolvedUserId : undefined,
+      page,
+      pageSize
+    }
   })
 }
 
@@ -79,19 +84,25 @@ export const getUserCollectFolders = () => {
   return request.get<ApiResponse<CollectFolderRes[]>>('/user/subjects/folders')
 }
 
-// 2. 获取该用户点赞的教材
-export const getUserLikedSubjects = () => {
-  return request.get<ApiResponse<Subject[]>>('/user/subjects/liked')
+// 2. 获取该用户点赞的教材 (分页)
+export const getUserLikedSubjects = (page = 1, pageSize = 20) => {
+  return request.get<ApiResponse<RecentSubjectListRes>>('/user/subjects/liked', {
+    params: { page, pageSize }
+  })
 }
 
-// 3. 获取该用户正在学习的教材
-export const getUserLearningSubjects = () => {
-  return request.get<ApiResponse<UserSubjectProgressRes[]>>('/user/subjects/learning')
+// 3. 获取该用户正在学习的教材 (分页)
+export const getUserLearningSubjects = (page = 1, pageSize = 20) => {
+  return request.get<ApiResponse<RecentSubjectListRes>>('/user/subjects/learning', {
+    params: { page, pageSize }
+  })
 }
 
-// 4. 获取该用户已经学习完成的教材
-export const getUserCompletedSubjects = () => {
-  return request.get<ApiResponse<UserSubjectProgressRes[]>>('/user/subjects/completed')
+// 4. 获取该用户已经学习完成的教材 (分页)
+export const getUserCompletedSubjects = (page = 1, pageSize = 20) => {
+  return request.get<ApiResponse<RecentSubjectListRes>>('/user/subjects/completed', {
+    params: { page, pageSize }
+  })
 }
 
 // 5. 获取该用户最近学习的教材 (分页)
@@ -101,9 +112,18 @@ export const getUserRecentSubjects = (page = 1, pageSize = 10) => {
   })
 }
 
-// 获取该用户已经收藏的教材
-export const getUserCollectedSubjects = () => {
-  return request.get<ApiResponse<UserSubjectProgressRes[]>>('/user/subjects/collected')
+// 6. 获取该用户已经收藏的教材 (分页)
+export const getUserCollectedSubjects = (page = 1, pageSize = 20) => {
+  return request.get<ApiResponse<RecentSubjectListRes>>('/user/subjects/collected', {
+    params: { page, pageSize }
+  })
+}
+
+// 7. 获取某个收藏夹下的教材 (分页)
+export const getSubjectsInFolder = (folderId: number, page = 1, pageSize = 20) => {
+  return request.get<ApiResponse<RecentSubjectListRes>>(`/user/subjects/folders/${folderId}`, {
+    params: { page, pageSize }
+  })
 }
 
 // 6. 点赞或取消点赞教材

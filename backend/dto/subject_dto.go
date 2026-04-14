@@ -47,6 +47,11 @@ type SubjectSearchReq struct {
 	PageSize int    `form:"pageSize" binding:"omitempty,min=1,max=100"`
 }
 
+type UserPaginationReq struct {
+	Page     int `form:"page" binding:"omitempty,min=1"`
+	PageSize int `form:"pageSize" binding:"omitempty,min=1,max=100"`
+}
+
 type SubjectListRes struct {
 	Total int64        `json:"total"`
 	List  []SubjectRes `json:"list"`

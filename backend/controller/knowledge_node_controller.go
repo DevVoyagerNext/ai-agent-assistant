@@ -55,6 +55,26 @@ func (con *KnowledgeNodeController) GetChildNodes(c *gin.Context) {
 	response.Ok(nodes, c)
 }
 
+// GetPathNodes 获取某个知识点的路径节点列表（所有祖先节点的同级节点列表）
+func (con *KnowledgeNodeController) GetPathNodes(c *gin.Context) {
+	nodeIdStr := c.Query("nodeId")
+	nodeId, err := strconv.Atoi(nodeIdStr)
+	if err != nil || nodeId <= 0 {
+		response.FailWithMsg(errmsg.CodeError, "知识点ID格式错误", c)
+		return
+	}
+
+	userId, _ := con.authService.GetUserID(c) // 允许游客，如果是游客，则学习状态默认为 unstarted
+
+	nodes, err := con.nodeService.GetPathNodes(c.Request.Context(), nodeId, userId)
+	if err != nil {
+		response.FailWithMsg(errmsg.CodeError, "获取路径节点列表失败", c)
+		return
+	}
+
+	response.Ok(nodes, c)
+}
+
 // GetNodeDetail 获取知识点详情（包含正文、难度评价、用户进度）
 func (con *KnowledgeNodeController) GetNodeDetail(c *gin.Context) {
 	nodeIdStr := c.Param("nodeId")

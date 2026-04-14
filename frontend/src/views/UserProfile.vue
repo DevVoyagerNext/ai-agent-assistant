@@ -261,26 +261,23 @@ const getCoverStyle = (id: number) => {
             </div>
           </div>
           <div v-else class="subject-list">
-            <div v-for="item in recentSubjects" :key="item.subject.id" class="subject-item">
-              <div class="subject-cover" :style="getCoverStyle(item.subject.id)">
-                <Book :size="24" color="#fff" />
-              </div>
-              <div class="subject-info">
-                <div class="subject-title-row">
-                  <h4>{{ item.subject.name }}</h4>
-                  <div class="subject-status-icons">
-                    <Star v-if="item.isLiked" :size="14" class="icon-liked" fill="currentColor" />
-                    <Bookmark v-if="item.isCollected" :size="14" class="icon-collected" fill="currentColor" />
-                  </div>
+            <div v-for="item in recentSubjects" :key="item.id" class="subject-item">
+              <div class="subject-info" @click="router.push(`/subject/${item.id}?nodeId=${item.lastNodeId}`)">
+                <div class="subject-cover" :style="getCoverStyle(item.id)">
+                  <BookOpen :size="20" />
                 </div>
-                <div class="progress-bar-wrap">
-                  <div class="progress-bar">
-                    <div 
-                      class="progress-inner" 
-                      :style="{ width: `${item.progressPercent}%` }"
-                    ></div>
+                <div class="subject-text">
+                  <h3>{{ item.name }}</h3>
+                  <div class="subject-meta">
+                    <span class="meta-item">
+                      <Clock :size="12" />
+                      {{ item.lastStudyTime ? formatDate(item.lastStudyTime) : '未知时间' }}
+                    </span>
+                    <span class="meta-item">
+                      <Activity :size="12" />
+                      进度 {{ item.progressPercent }}%
+                    </span>
                   </div>
-                  <span class="progress-text">{{ item.progressPercent }}%</span>
                 </div>
               </div>
             </div>
@@ -307,8 +304,15 @@ const getCoverStyle = (id: number) => {
             </div>
           </div>
           <div v-else class="note-list">
-            <div v-for="subject in likedSubjects" :key="subject.id" class="note-item">
+            <div 
+              v-for="subject in likedSubjects" 
+              :key="subject.id" 
+              class="note-item"
+              @click="router.push(`/subject/${subject.id}`)"
+              style="cursor: pointer;"
+            >
               <h4>{{ subject.name }}</h4>
+              <span v-if="subject.progressPercent > 0" class="date">进度 {{ subject.progressPercent }}%</span>
             </div>
             <div v-if="!likedSubjects.length" class="empty-state">
               暂无点赞教材

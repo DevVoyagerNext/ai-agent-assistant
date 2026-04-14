@@ -52,6 +52,15 @@ func (con *UserPrivateNoteController) GetPrivateNoteOrChildren(c *gin.Context) {
 		}
 	}
 
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "20"))
+	if page <= 0 {
+		page = 1
+	}
+	if pageSize <= 0 {
+		pageSize = 20
+	}
+
 	if scope == 0 || scope == 2 {
 		if targetUserId != tokenUserId {
 			response.FailWithCode(errmsg.UserPermissionDenied, c)
@@ -59,7 +68,7 @@ func (con *UserPrivateNoteController) GetPrivateNoteOrChildren(c *gin.Context) {
 		}
 	}
 
-	res, err := con.privateNoteService.GetNoteOrChildrenWithScope(c.Request.Context(), targetUserId, noteId, scope)
+	res, err := con.privateNoteService.GetNoteOrChildrenWithScope(c.Request.Context(), targetUserId, noteId, scope, page, pageSize)
 	if err != nil {
 		response.FailWithMsg(errmsg.CodeError, err.Error(), c)
 		return

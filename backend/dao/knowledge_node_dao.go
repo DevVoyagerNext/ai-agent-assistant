@@ -30,6 +30,18 @@ func (dao *KnowledgeNodeDao) GetChildNodes(parentID int) ([]model.KnowledgeNode,
 	return nodes, err
 }
 
+// GetNodesByParentIDs 批量根据 parentId 列表获取子节点列表
+func (dao *KnowledgeNodeDao) GetNodesByParentIDs(parentIDs []int) ([]model.KnowledgeNode, error) {
+	var nodes []model.KnowledgeNode
+	if len(parentIDs) == 0 {
+		return nodes, nil
+	}
+	err := global.GVA_DB.Where("parent_id IN ?", parentIDs).
+		Order("parent_id asc, sort_order asc").
+		Find(&nodes).Error
+	return nodes, err
+}
+
 // GetNodeByID 获取知识点基础信息
 func (dao *KnowledgeNodeDao) GetNodeByID(nodeID int) (model.KnowledgeNode, error) {
 	var node model.KnowledgeNode

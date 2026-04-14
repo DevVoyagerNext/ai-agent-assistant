@@ -20,7 +20,6 @@ import type {
   CollectFolderRes,
   UserSubjectProgressRes
 } from '../types/user'
-import type { Subject } from '../types/subject'
 
 export const useUserProfile = () => {
   // State
@@ -32,7 +31,7 @@ export const useUserProfile = () => {
   
   // 新增 State
   const collectFolders = ref<CollectFolderRes[]>([])
-  const likedSubjects = ref<Subject[]>([])
+  const likedSubjects = ref<UserSubjectProgressRes[]>([])
   const learningSubjects = ref<UserSubjectProgressRes[]>([])
   const completedSubjects = ref<UserSubjectProgressRes[]>([])
   const recentSubjects = ref<UserSubjectProgressRes[]>([])
@@ -53,6 +52,15 @@ export const useUserProfile = () => {
 
   // Errors (optional, could be handled globally, but here we keep track to show error states)
   const errorUserInfo = ref('')
+
+  const normalizeSubjectProgressItem = (item: any): UserSubjectProgressRes => {
+    const subject = item?.subject ?? item ?? {}
+    return {
+      ...subject,
+      status: item?.status ?? subject?.status ?? '',
+      lastStudyTime: item?.lastStudyTime ?? subject?.lastStudyTime ?? ''
+    } as UserSubjectProgressRes
+  }
   
   // Fetchers
   const fetchUserInfo = async () => {
@@ -117,7 +125,7 @@ export const useUserProfile = () => {
   const fetchPublicPrivateNotes = async () => {
     loadingPublicPrivateNotes.value = true
     try {
-      const res = await getPrivateNoteDetail(0, 2)
+      const res = await getPrivateNoteDetail(0, 2, 1, 10)
       if (res.data?.code === 200) {
         const data = res.data.data
         if (data && data.type === 'folder') {
@@ -190,9 +198,9 @@ export const useUserProfile = () => {
   const fetchLikedSubjects = async () => {
     loadingLikedSubjects.value = true
     try {
-      const res = await getUserLikedSubjects()
+      const res = await getUserLikedSubjects(1, 20)
       if (res.data?.code === 200 && res.data.data) {
-        likedSubjects.value = res.data.data || []
+        likedSubjects.value = (res.data.data.list || []).map(normalizeSubjectProgressItem)
       }
     } catch (err) {
       console.error(err)
@@ -204,9 +212,9 @@ export const useUserProfile = () => {
   const fetchLearningSubjects = async () => {
     loadingLearningSubjects.value = true
     try {
-      const res = await getUserLearningSubjects()
+      const res = await getUserLearningSubjects(1, 20)
       if (res.data?.code === 200 && res.data.data) {
-        learningSubjects.value = res.data.data || []
+        learningSubjects.value = (res.data.data.list || []).map(normalizeSubjectProgressItem)
       }
     } catch (err) {
       console.error(err)
@@ -218,9 +226,9 @@ export const useUserProfile = () => {
   const fetchCompletedSubjects = async () => {
     loadingCompletedSubjects.value = true
     try {
-      const res = await getUserCompletedSubjects()
+      const res = await getUserCompletedSubjects(1, 20)
       if (res.data?.code === 200 && res.data.data) {
-        completedSubjects.value = res.data.data || []
+        completedSubjects.value = (res.data.data.list || []).map(normalizeSubjectProgressItem)
       }
     } catch (err) {
       console.error(err)
@@ -234,7 +242,7 @@ export const useUserProfile = () => {
     try {
       const res = await getUserRecentSubjects(1, 10)
       if (res.data?.code === 200 && res.data.data) {
-        recentSubjects.value = res.data.data.list || []
+        recentSubjects.value = (res.data.data.list || []).map(normalizeSubjectProgressItem)
       }
     } catch (err) {
       console.error(err)

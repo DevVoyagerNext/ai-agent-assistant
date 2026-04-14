@@ -206,34 +206,66 @@ func (con *SubjectController) SearchSubjects(c *gin.Context) {
 
 // GetUserCollectedSubjects 获取该用户收藏的教材（需要登录）
 func (con *SubjectController) GetUserCollectedSubjects(c *gin.Context) {
+	var pagination dto.UserPaginationReq
+	if err := c.ShouldBindQuery(&pagination); err != nil {
+		response.FailWithMsg(errmsg.CodeError, "分页参数错误", c)
+		return
+	}
+	if pagination.Page <= 0 {
+		pagination.Page = 1
+	}
+	if pagination.PageSize <= 0 {
+		pagination.PageSize = 20
+	}
+
 	userId, err := con.authService.GetUserID(c)
-	if err != nil {
-		response.FailWithCode(errmsg.UserNotExist, c)
+	if err != nil || userId == 0 {
+		response.FailWithCode(errmsg.UserTokenNotExist, c)
 		return
 	}
 
-	res, code := con.subjectService.GetUserCollectedSubjects(c.Request.Context(), userId)
-	if code != errmsg.CodeSuccess {
-		response.FailWithCode(code, c)
+	res, total, err := con.subjectService.GetUserCollectedSubjects(c.Request.Context(), userId, pagination.Page, pagination.PageSize)
+	if err != nil {
+		response.FailWithCode(errmsg.CodeError, c)
 		return
 	}
-	response.Ok(res, c)
+
+	response.Ok(map[string]interface{}{
+		"total": total,
+		"list":  res,
+	}, c)
 }
 
 // GetUserLikedSubjects 获取该用户点赞的教材（需要登录）
 func (con *SubjectController) GetUserLikedSubjects(c *gin.Context) {
+	var pagination dto.UserPaginationReq
+	if err := c.ShouldBindQuery(&pagination); err != nil {
+		response.FailWithMsg(errmsg.CodeError, "分页参数错误", c)
+		return
+	}
+	if pagination.Page <= 0 {
+		pagination.Page = 1
+	}
+	if pagination.PageSize <= 0 {
+		pagination.PageSize = 20
+	}
+
 	userId, err := con.authService.GetUserID(c)
-	if err != nil {
-		response.FailWithCode(errmsg.UserNotExist, c)
+	if err != nil || userId == 0 {
+		response.FailWithCode(errmsg.UserTokenNotExist, c)
 		return
 	}
 
-	res, code := con.subjectService.GetUserLikedSubjects(c.Request.Context(), userId)
-	if code != errmsg.CodeSuccess {
-		response.FailWithCode(code, c)
+	res, total, err := con.subjectService.GetUserLikedSubjects(c.Request.Context(), userId, pagination.Page, pagination.PageSize)
+	if err != nil {
+		response.FailWithCode(errmsg.CodeError, c)
 		return
 	}
-	response.Ok(res, c)
+
+	response.Ok(map[string]interface{}{
+		"total": total,
+		"list":  res,
+	}, c)
 }
 
 // GetUserLearningSubjects 获取该用户正在学习的教材（需要登录）
@@ -308,10 +340,16 @@ func (con *SubjectController) GetUserCollectFolders(c *gin.Context) {
 
 // GetUserCollectedSubjectsByFolder 获取该用户收藏夹下的教材（需要登录）
 func (con *SubjectController) GetUserCollectedSubjectsByFolder(c *gin.Context) {
-	userId, err := con.authService.GetUserID(c)
-	if err != nil {
-		response.FailWithCode(errmsg.UserNotExist, c)
+	var pagination dto.UserPaginationReq
+	if err := c.ShouldBindQuery(&pagination); err != nil {
+		response.FailWithMsg(errmsg.CodeError, "分页参数错误", c)
 		return
+	}
+	if pagination.Page <= 0 {
+		pagination.Page = 1
+	}
+	if pagination.PageSize <= 0 {
+		pagination.PageSize = 20
 	}
 
 	folderIdStr := c.Param("folderId")
@@ -321,10 +359,20 @@ func (con *SubjectController) GetUserCollectedSubjectsByFolder(c *gin.Context) {
 		return
 	}
 
-	res, code := con.subjectService.GetUserCollectedSubjectsByFolder(c.Request.Context(), userId, folderId)
-	if code != errmsg.CodeSuccess {
-		response.FailWithCode(code, c)
+	userId, err := con.authService.GetUserID(c)
+	if err != nil || userId == 0 {
+		response.FailWithCode(errmsg.UserTokenNotExist, c)
 		return
 	}
-	response.Ok(res, c)
+
+	res, total, err := con.subjectService.GetUserCollectedSubjectsByFolder(c.Request.Context(), userId, folderId, pagination.Page, pagination.PageSize)
+	if err != nil {
+		response.FailWithCode(errmsg.CodeError, c)
+		return
+	}
+
+	response.Ok(map[string]interface{}{
+		"total": total,
+		"list":  res,
+	}, c)
 }

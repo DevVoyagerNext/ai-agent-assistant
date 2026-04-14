@@ -46,22 +46,38 @@ func (d *SubjectDao) SearchSubjectsByName(ctx context.Context, keyword string, p
 	return subjects, total, err
 }
 
-func (d *SubjectDao) GetUserCollectedSubjects(ctx context.Context, userId uint) ([]model.Subject, error) {
-	var subjects []model.Subject
-	err := global.GVA_DB.WithContext(ctx).
+func (d *SubjectDao) GetUserCollectedSubjects(ctx context.Context, userId uint, page, pageSize int) ([]model.Subject, int64, error) {
+	query := global.GVA_DB.WithContext(ctx).
+		Model(&model.Subject{}).
 		Joins("JOIN user_collect_items ON user_collect_items.subject_id = subjects.id").
-		Where("user_collect_items.user_id = ?", userId).
-		Find(&subjects).Error
-	return subjects, err
+		Where("user_collect_items.user_id = ?", userId)
+
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	var subjects []model.Subject
+	offset := (page - 1) * pageSize
+	err := query.Order("user_collect_items.created_at desc").Offset(offset).Limit(pageSize).Find(&subjects).Error
+	return subjects, total, err
 }
 
-func (d *SubjectDao) GetUserLikedSubjects(ctx context.Context, userId uint) ([]model.Subject, error) {
-	var subjects []model.Subject
-	err := global.GVA_DB.WithContext(ctx).
+func (d *SubjectDao) GetUserLikedSubjects(ctx context.Context, userId uint, page, pageSize int) ([]model.Subject, int64, error) {
+	query := global.GVA_DB.WithContext(ctx).
+		Model(&model.Subject{}).
 		Joins("JOIN user_subject_likes ON user_subject_likes.subject_id = subjects.id").
-		Where("user_subject_likes.user_id = ?", userId).
-		Find(&subjects).Error
-	return subjects, err
+		Where("user_subject_likes.user_id = ?", userId)
+
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	var subjects []model.Subject
+	offset := (page - 1) * pageSize
+	err := query.Order("user_subject_likes.created_at desc").Offset(offset).Limit(pageSize).Find(&subjects).Error
+	return subjects, total, err
 }
 
 func (d *SubjectDao) GetUserCollectFolders(ctx context.Context, userId uint) ([]model.UserCollectFolder, error) {
@@ -73,14 +89,22 @@ func (d *SubjectDao) GetUserCollectFolders(ctx context.Context, userId uint) ([]
 	return folders, err
 }
 
-func (d *SubjectDao) GetUserCollectedSubjectsByFolder(ctx context.Context, userId uint, folderId int) ([]model.Subject, error) {
-	var subjects []model.Subject
-	err := global.GVA_DB.WithContext(ctx).
+func (d *SubjectDao) GetUserCollectedSubjectsByFolder(ctx context.Context, userId uint, folderId int, page, pageSize int) ([]model.Subject, int64, error) {
+	query := global.GVA_DB.WithContext(ctx).
+		Model(&model.Subject{}).
 		Distinct("subjects.*").
 		Joins("JOIN user_collect_items ON user_collect_items.subject_id = subjects.id").
-		Where("user_collect_items.user_id = ? AND user_collect_items.folder_id = ?", userId, folderId).
-		Find(&subjects).Error
-	return subjects, err
+		Where("user_collect_items.user_id = ? AND user_collect_items.folder_id = ?", userId, folderId)
+
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	var subjects []model.Subject
+	offset := (page - 1) * pageSize
+	err := query.Order("user_collect_items.created_at desc").Offset(offset).Limit(pageSize).Find(&subjects).Error
+	return subjects, total, err
 }
 
 func (d *SubjectDao) GetUserRecentSubjectProgress(ctx context.Context, userId uint, page int, pageSize int) ([]model.UserSubjectProgress, int64, error) {

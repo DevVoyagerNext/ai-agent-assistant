@@ -106,22 +106,64 @@ func (s *SubjectService) SearchSubjects(ctx context.Context, keyword string, use
 	return dto.SubjectListRes{Total: total, List: enriched}, errmsg.CodeSuccess
 }
 
-func (s *SubjectService) GetUserCollectedSubjects(ctx context.Context, userId uint) ([]dto.SubjectRes, int) {
-	subjects, err := s.subjectDao.GetUserCollectedSubjects(ctx, userId)
+func (s *SubjectService) GetUserCollectedSubjects(ctx context.Context, userId uint, page, pageSize int) ([]dto.SubjectRes, int64, error) {
+	subjects, total, err := s.subjectDao.GetUserCollectedSubjects(ctx, userId, page, pageSize)
 	if err != nil {
-		return nil, errmsg.CodeError
+		return nil, 0, err
 	}
 
-	return s.enrichSubjectList(ctx, userId, subjects)
+	var subjectIds []uint
+	for _, sub := range subjects {
+		subjectIds = append(subjectIds, sub.ID)
+	}
+
+	likedMap, collectedMap, progressMap, err := s.subjectDao.GetUserSubjectInteractions(ctx, userId, subjectIds)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	var res []dto.SubjectRes
+	for _, sub := range subjects {
+		item := dto.ConvertSubjectToRes(&sub)
+		item.IsLiked = likedMap[sub.ID]
+		item.IsCollected = collectedMap[sub.ID]
+		if p, ok := progressMap[sub.ID]; ok {
+			item.ProgressPercent = p.ProgressPercent
+			item.LastNodeID = p.LastNodeID
+		}
+		res = append(res, item)
+	}
+	return res, total, nil
 }
 
-func (s *SubjectService) GetUserLikedSubjects(ctx context.Context, userId uint) ([]dto.SubjectRes, int) {
-	subjects, err := s.subjectDao.GetUserLikedSubjects(ctx, userId)
+func (s *SubjectService) GetUserLikedSubjects(ctx context.Context, userId uint, page, pageSize int) ([]dto.SubjectRes, int64, error) {
+	subjects, total, err := s.subjectDao.GetUserLikedSubjects(ctx, userId, page, pageSize)
 	if err != nil {
-		return nil, errmsg.CodeError
+		return nil, 0, err
 	}
 
-	return s.enrichSubjectList(ctx, userId, subjects)
+	var subjectIds []uint
+	for _, sub := range subjects {
+		subjectIds = append(subjectIds, sub.ID)
+	}
+
+	likedMap, collectedMap, progressMap, err := s.subjectDao.GetUserSubjectInteractions(ctx, userId, subjectIds)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	var res []dto.SubjectRes
+	for _, sub := range subjects {
+		item := dto.ConvertSubjectToRes(&sub)
+		item.IsLiked = likedMap[sub.ID]
+		item.IsCollected = collectedMap[sub.ID]
+		if p, ok := progressMap[sub.ID]; ok {
+			item.ProgressPercent = p.ProgressPercent
+			item.LastNodeID = p.LastNodeID
+		}
+		res = append(res, item)
+	}
+	return res, total, nil
 }
 
 func (s *SubjectService) GetUserCollectFolders(ctx context.Context, userId uint) ([]dto.CollectFolderRes, int) {
@@ -137,12 +179,34 @@ func (s *SubjectService) GetUserCollectFolders(ctx context.Context, userId uint)
 	return res, errmsg.CodeSuccess
 }
 
-func (s *SubjectService) GetUserCollectedSubjectsByFolder(ctx context.Context, userId uint, folderId int) ([]dto.SubjectRes, int) {
-	subjects, err := s.subjectDao.GetUserCollectedSubjectsByFolder(ctx, userId, folderId)
+func (s *SubjectService) GetUserCollectedSubjectsByFolder(ctx context.Context, userId uint, folderId int, page, pageSize int) ([]dto.SubjectRes, int64, error) {
+	subjects, total, err := s.subjectDao.GetUserCollectedSubjectsByFolder(ctx, userId, folderId, page, pageSize)
 	if err != nil {
-		return nil, errmsg.CodeError
+		return nil, 0, err
 	}
-	return s.enrichSubjectList(ctx, userId, subjects)
+
+	var subjectIds []uint
+	for _, sub := range subjects {
+		subjectIds = append(subjectIds, sub.ID)
+	}
+
+	likedMap, collectedMap, progressMap, err := s.subjectDao.GetUserSubjectInteractions(ctx, userId, subjectIds)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	var res []dto.SubjectRes
+	for _, sub := range subjects {
+		item := dto.ConvertSubjectToRes(&sub)
+		item.IsLiked = likedMap[sub.ID]
+		item.IsCollected = collectedMap[sub.ID]
+		if p, ok := progressMap[sub.ID]; ok {
+			item.ProgressPercent = p.ProgressPercent
+			item.LastNodeID = p.LastNodeID
+		}
+		res = append(res, item)
+	}
+	return res, total, nil
 }
 
 func (s *SubjectService) GetUserRecentSubjects(ctx context.Context, userId uint, page int, pageSize int) (dto.RecentSubjectListRes, int) {

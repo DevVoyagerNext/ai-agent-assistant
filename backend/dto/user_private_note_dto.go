@@ -35,6 +35,7 @@ type PrivateNoteItemRes struct {
 	ParentID  int       `json:"parentId"`
 	Type      string    `json:"type"`
 	Title     string    `json:"title"`
+	IsPublic  int8      `json:"isPublic"`
 	UpdatedAt time.Time `json:"updatedAt"`
 	CreatedAt time.Time `json:"createdAt"`
 }
@@ -46,6 +47,7 @@ type PrivateNoteDetailRes struct {
 	Type      string    `json:"type"`
 	Title     string    `json:"title"`
 	Content   string    `json:"content"`
+	IsPublic  int8      `json:"isPublic"`
 	UpdatedAt time.Time `json:"updatedAt"`
 	CreatedAt time.Time `json:"createdAt"`
 }
@@ -53,6 +55,7 @@ type PrivateNoteDetailRes struct {
 // PrivateNoteResponse 获取内容的响应结构，根据类型可能是列表或详情
 type PrivateNoteResponse struct {
 	Type     string                `json:"type"`               // folder 或 markdown
+	Total    int64                 `json:"total,omitempty"`    // 当 type 为 folder 时有值
 	Children []PrivateNoteItemRes  `json:"children,omitempty"` // 当 type 为 folder 时有值
 	Content  *PrivateNoteDetailRes `json:"content,omitempty"`  // 当 type 为 markdown 时有值
 }

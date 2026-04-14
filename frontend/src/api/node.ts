@@ -20,6 +20,13 @@ export const getNodeDetail = (nodeId: number) => {
   return request.get<ApiResponse<SubjectNodeDetail>>(`/nodes/${nodeId}/detail`)
 }
 
+// 获取知识点层级路径 (用于定位节点)
+export const getNodePath = (nodeId: number) => {
+  return request.get<ApiResponse<SubjectNode[]>>('/nodes/path', {
+    params: { nodeId }
+  })
+}
+
 // 获取知识点随堂笔记（必须登录）
 export const getNodeNote = (nodeId: number) => {
   return request.get<ApiResponse<NodeNote>>(`/nodes/${nodeId}/note`)

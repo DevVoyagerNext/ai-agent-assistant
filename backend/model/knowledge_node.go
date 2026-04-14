@@ -11,6 +11,7 @@ type KnowledgeNode struct {
 	IsLeaf    int8   `gorm:"default:0;index:idx_is_leaf;comment:是否为叶子节点（内容页）：1=是, 0=否" json:"isLeaf"`
 	SortOrder int    `gorm:"default:0;comment:同层级下的显示排序序号" json:"sortOrder"`
 	ImageID   int    `gorm:"default:0;comment:节点封面/配图ID" json:"imageId"`
+	ImageUrl  string `gorm:"type:varchar(512);default:'';comment:节点封面图外部URL地址" json:"imageUrl"`
 }
 
 // TableName KnowledgeNode 表名
