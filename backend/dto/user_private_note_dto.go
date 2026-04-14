@@ -10,13 +10,13 @@ type CreatePrivateNoteReq struct {
 	ParentID int    `json:"parentId"`
 	Type     string `json:"type" binding:"required,oneof=folder markdown"`
 	Title    string `json:"title" binding:"required,max=255"`
-	Content  string `json:"content"`  // type 为 markdown 时不能为空
+	Content  string `json:"content"`  // type 为 markdown 时可为空
 	IsPublic int8   `json:"isPublic"` // 0=不公开, 1=公开
 }
 
 // UpdatePrivateNoteContentReq 修改私人笔记内容请求
 type UpdatePrivateNoteContentReq struct {
-	Content string `json:"content" binding:"required,max=1000"`
+	Content string `json:"content" binding:"max=1000"`
 }
 
 // UpdatePrivateNoteTitleReq 修改标题请求

@@ -172,12 +172,9 @@ func (s *UserPrivateNoteService) CreatePrivateNote(ctx context.Context, userID u
 		return errors.New("用户未登录")
 	}
 
-	// 1. 如果是文件，内容不能为空且长度不能超过 1000
+	// 1. 如果是文件，内容长度不能超过 1000（允许为空）
 	if req.Type == "markdown" {
 		content := strings.TrimSpace(req.Content)
-		if content == "" {
-			return errors.New("文件内容不能为空")
-		}
 		if len([]rune(content)) > 1000 {
 			return errors.New("文件内容不能超过 1000 个字符")
 		}
@@ -244,11 +241,8 @@ func (s *UserPrivateNoteService) UpdatePrivateNoteContent(ctx context.Context, u
 		return errors.New("只有文件类型可以修改内容")
 	}
 
-	// 3. 校验内容
+	// 3. 校验内容（允许为空）
 	content := strings.TrimSpace(req.Content)
-	if content == "" {
-		return errors.New("内容不能为空")
-	}
 	if len([]rune(content)) > 1000 {
 		return errors.New("内容不能超过 1000 字符")
 	}

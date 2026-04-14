@@ -375,6 +375,39 @@ const currentPrivateNote = ref<PrivateMarkdownDetail | null>(null)
 const privateNavStack = ref<{ id: number; title: string }[]>([{ id: 0, title: '根目录' }])
 const loadingPrivateNotes = ref(false)
 const currentFolderId = computed(() => privateNavStack.value[privateNavStack.value.length - 1].id)
+const lastPrivateSyncAt = ref('')
+const privateSyncStatus = ref<'saving' | 'saved' | ''>('')
+const privateSyncStatusTimer = ref<number | null>(null)
+
+const formatDateTime = (date: Date) => {
+  const yyyy = date.getFullYear()
+  const mm = date.getMonth() + 1
+  const dd = date.getDate()
+  const HH = String(date.getHours()).padStart(2, '0')
+  const MM = String(date.getMinutes()).padStart(2, '0')
+  const SS = String(date.getSeconds()).padStart(2, '0')
+  return `${yyyy}-${mm}-${dd} ${HH}:${MM}:${SS}`
+}
+
+const formatDateTimeText = (value: string) => {
+  const d = new Date(value)
+  if (!Number.isNaN(d.getTime())) return formatDateTime(d)
+  return value
+}
+
+const setPrivateSyncStatus = (status: 'saving' | 'saved' | '') => {
+  if (privateSyncStatusTimer.value) {
+    clearTimeout(privateSyncStatusTimer.value)
+    privateSyncStatusTimer.value = null
+  }
+  privateSyncStatus.value = status
+  if (status === 'saved') {
+    privateSyncStatusTimer.value = window.setTimeout(() => {
+      privateSyncStatus.value = ''
+      privateSyncStatusTimer.value = null
+    }, 1500)
+  }
+}
 
 const fetchPrivateContent = async (noteId: number) => {
   if (!isLoggedIn.value) return
@@ -385,15 +418,21 @@ const fetchPrivateContent = async (noteId: number) => {
       if (!res.data.data) {
         privateNotes.value = []
         currentPrivateNote.value = null
+        lastPrivateSyncAt.value = ''
+        setPrivateSyncStatus('')
         return
       }
       const data = res.data.data
       if (data.type === 'folder') {
         privateNotes.value = Array.isArray(data.children) ? data.children : []
         currentPrivateNote.value = null
+        lastPrivateSyncAt.value = ''
+        setPrivateSyncStatus('')
       } else {
         privateNotes.value = []
         currentPrivateNote.value = data.content ?? null
+        lastPrivateSyncAt.value = currentPrivateNote.value?.updatedAt ? formatDateTimeText(currentPrivateNote.value.updatedAt) : ''
+        setPrivateSyncStatus('')
       }
     }
   } catch (error: any) {
@@ -402,6 +441,8 @@ const fetchPrivateContent = async (noteId: number) => {
     if (noteId === 0 && (status === 404 || code === 404)) {
       privateNotes.value = []
       currentPrivateNote.value = null
+      lastPrivateSyncAt.value = ''
+      setPrivateSyncStatus('')
       return
     }
     console.error('获取私人笔记失败', error)
@@ -482,6 +523,8 @@ const handleCreatePrivate = async () => {
       showToast('创建成功')
       showCreatePrivateModal.value = false
       fetchPrivateContent(currentFolderId.value)
+    } else {
+      showToast(res.data?.msg || '创建失败', 'error')
     }
   } catch (error: any) {
     showToast(error.response?.data?.msg || '创建失败', 'error')
@@ -498,7 +541,7 @@ const pendingDeleteItem = ref<PrivateNoteBase | null>(null)
 const showRenamePrivateModal = ref(false)
 const renamePrivateTitle = ref('')
 const renamingPrivate = ref(false)
-const pendingRenameItem = ref<PrivateNoteBase | null>(null)
+const pendingRenameItem = ref<{ id: number; title: string } | null>(null)
 
 const openRenamePrivate = (item: PrivateNoteBase) => {
   pendingRenameItem.value = item
@@ -506,21 +549,34 @@ const openRenamePrivate = (item: PrivateNoteBase) => {
   showRenamePrivateModal.value = true
 }
 
+const openRenameCurrentPrivate = () => {
+  if (!currentPrivateNote.value) return
+  pendingRenameItem.value = { id: currentPrivateNote.value.id, title: currentPrivateNote.value.title }
+  renamePrivateTitle.value = currentPrivateNote.value.title
+  showRenamePrivateModal.value = true
+}
+
 const handleRenamePrivate = async () => {
   if (!renamePrivateTitle.value.trim() || !pendingRenameItem.value) return
   renamingPrivate.value = true
+  setPrivateSyncStatus('saving')
   try {
     const res = await updatePrivateNoteTitle(pendingRenameItem.value.id, renamePrivateTitle.value)
     if (res.data?.code === 200) {
       showToast('重命名成功')
       showRenamePrivateModal.value = false
+      lastPrivateSyncAt.value = formatDateTime(new Date())
+      setPrivateSyncStatus('saved')
       // 如果当前正在查看这个笔记的正文，同步更新标题
       if (currentPrivateNote.value && currentPrivateNote.value.id === pendingRenameItem.value.id) {
         currentPrivateNote.value.title = renamePrivateTitle.value
+        fetchPrivateContent(currentPrivateNote.value.id)
+      } else {
+        fetchPrivateContent(currentFolderId.value)
       }
-      fetchPrivateContent(currentFolderId.value)
     }
   } catch (error: any) {
+    setPrivateSyncStatus('')
     showToast(error.response?.data?.msg || '重命名失败', 'error')
   } finally {
     renamingPrivate.value = false
@@ -530,12 +586,19 @@ const handleRenamePrivate = async () => {
 const handleTogglePublic = async (item: PrivateNoteBase | PrivateMarkdownDetail) => {
   const newPublic = item.isPublic === 1 ? 0 : 1
   try {
+    setPrivateSyncStatus('saving')
     const res = await updatePrivateNotePublic(item.id, newPublic as 0 | 1)
     if (res.data?.code === 200) {
       item.isPublic = newPublic as 0 | 1
       showToast(newPublic === 1 ? '已设为公开' : '已设为私密')
+      lastPrivateSyncAt.value = formatDateTime(new Date())
+      setPrivateSyncStatus('saved')
+    } else {
+      setPrivateSyncStatus('')
+      showToast(res.data?.msg || '修改公开状态失败', 'error')
     }
   } catch (error: any) {
+    setPrivateSyncStatus('')
     showToast(error.response?.data?.msg || '修改公开状态失败', 'error')
   }
 }
@@ -551,13 +614,20 @@ const handlePrivateContentChange = (content: string) => {
   privateContentDebounceTimer.value = window.setTimeout(async () => {
     if (!currentPrivateNote.value) return
     savingPrivateContent.value = true
+    setPrivateSyncStatus('saving')
     try {
       const res = await updatePrivateNoteContent(currentPrivateNote.value.id, content)
       if (res.data?.code === 200) {
-        // 保存成功，无需提示，静默更新
+        lastPrivateSyncAt.value = formatDateTime(new Date())
+        currentPrivateNote.value.updatedAt = lastPrivateSyncAt.value
+        setPrivateSyncStatus('saved')
+      } else {
+        setPrivateSyncStatus('')
+        showToast(res.data?.msg || '同步失败', 'error')
       }
-    } catch (error) {
-      console.error('保存笔记内容失败', error)
+    } catch (error: any) {
+      setPrivateSyncStatus('')
+      showToast(error?.response?.data?.msg || '同步失败', 'error')
     } finally {
       savingPrivateContent.value = false
     }
@@ -1246,18 +1316,41 @@ const goBack = () => {
         <template v-else>
           <div class="private-note-container">
             <div class="private-nav-bar">
-              <button 
-                v-if="privateNavStack.length > 1 || currentPrivateNote" 
-                class="nav-back-btn"
-                @click="goBackPrivate"
-              >
-                <ChevronLeft :size="16" />
-                <span>返回</span>
-              </button>
-              <div v-else class="nav-placeholder"></div>
+              <div class="nav-left-group">
+                <button 
+                  v-if="privateNavStack.length > 1 || currentPrivateNote" 
+                  class="nav-back-btn"
+                  @click="goBackPrivate"
+                >
+                  <ChevronLeft :size="16" />
+                  <span>返回</span>
+                </button>
+                <div v-else class="nav-placeholder"></div>
+              </div>
               
-              <div class="nav-current-title">
-                {{ currentPrivateNote ? (currentPrivateNote?.title || '笔记') : (privateNavStack[privateNavStack.length - 1]?.title || '根目录') }}
+              <div class="nav-center-group">
+                <div 
+                  class="nav-current-title" 
+                  @click="currentPrivateNote ? openRenameCurrentPrivate() : null"
+                  :style="currentPrivateNote ? { cursor: 'pointer' } : {}"
+                >
+                  {{ currentPrivateNote ? (currentPrivateNote?.title || '笔记') : (privateNavStack[privateNavStack.length - 1]?.title || '根目录') }}
+                </div>
+
+                <div v-if="currentPrivateNote" class="nav-file-actions">
+                  <button class="icon-action-btn" title="重命名" @click="openRenameCurrentPrivate">
+                    <Edit3 :size="16" />
+                  </button>
+                  <button 
+                    class="icon-action-btn nav-toggle-btn" 
+                    :class="{ isPublic: currentPrivateNote.isPublic === 1 }"
+                    @click="handleTogglePublic(currentPrivateNote)"
+                    :title="currentPrivateNote.isPublic === 1 ? '点击设为私密' : '点击设为公开'"
+                  >
+                    <ToggleRight v-if="currentPrivateNote.isPublic === 1" :size="18" />
+                    <ToggleLeft v-else :size="18" />
+                  </button>
+                </div>
               </div>
 
               <div class="nav-actions">
@@ -1287,31 +1380,6 @@ const goBack = () => {
               </div>
 
               <div v-if="currentPrivateNote" class="private-content-view">
-                <div class="private-content-header">
-                  <div class="title-edit-area">
-                    <input 
-                      v-model="currentPrivateNote.title" 
-                      class="content-title-input" 
-                      @blur="updatePrivateNoteTitle(currentPrivateNote.id, currentPrivateNote.title)"
-                    />
-                  </div>
-                  <div class="content-header-actions">
-                    <button 
-                      class="toggle-public-btn" 
-                      :class="{ isPublic: currentPrivateNote.isPublic === 1 }"
-                      @click="handleTogglePublic(currentPrivateNote)"
-                      :title="currentPrivateNote.isPublic === 1 ? '点击设为私密' : '点击设为公开'"
-                    >
-                      <ToggleRight v-if="currentPrivateNote.isPublic === 1" :size="20" />
-                      <ToggleLeft v-else :size="20" />
-                      <span>{{ currentPrivateNote.isPublic === 1 ? '公开' : '私密' }}</span>
-                    </button>
-                    <div v-if="savingPrivateContent" class="save-status-mini">
-                      <Loader2 class="spin" :size="14" />
-                      <span>保存中...</span>
-                    </div>
-                  </div>
-                </div>
                 <div class="view-body">
                   <textarea 
                     v-model="currentPrivateNote.content" 
@@ -1366,9 +1434,20 @@ const goBack = () => {
               </div>
             </div>
 
-            <div class="private-footer-tip">
-              <Lock :size="12" />
-              <span>私人笔记仅你自己可见</span>
+            <div v-if="currentPrivateNote" class="private-footer-tip">
+              <div class="save-status">
+                <Clock :size="12" />
+                <span v-if="lastPrivateSyncAt">上次同步: {{ lastPrivateSyncAt }}</span>
+                <span v-else>尚未同步</span>
+              </div>
+              <div class="autosave-indicator">
+                <span v-if="privateSyncStatus === 'saving'" class="status-saving">
+                  <Loader2 class="spin" :size="12" /> 正在同步...
+                </span>
+                <span v-else-if="privateSyncStatus === 'saved'" class="status-saved">
+                  已同步到云端
+                </span>
+              </div>
             </div>
           </div>
         </template>
@@ -2247,6 +2326,29 @@ const goBack = () => {
   background: #fcfdfe;
 }
 
+.nav-left-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 120px;
+}
+
+.nav-center-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.nav-file-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.nav-toggle-btn.isPublic {
+  color: #3b82f6;
+}
+
 .nav-back-btn {
   display: flex;
   align-items: center;
@@ -2281,6 +2383,8 @@ const goBack = () => {
 .nav-actions {
   display: flex;
   gap: 8px;
+  min-width: 120px;
+  justify-content: flex-end;
 }
 
 .icon-action-btn {
@@ -2537,13 +2641,11 @@ const goBack = () => {
 }
 
 .private-footer-tip {
-  padding: 12px;
+  padding: 12px 16px;
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 8px;
-  color: #94a3b8;
-  font-size: 12px;
+  justify-content: space-between;
+  gap: 12px;
   background: #fcfdfe;
   border-top: 1px solid #f1f5f9;
 }
