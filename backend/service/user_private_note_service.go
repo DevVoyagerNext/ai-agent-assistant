@@ -199,7 +199,19 @@ func (s *UserPrivateNoteService) CreatePrivateNote(ctx context.Context, userID u
 		}
 	}
 
-	// 4. 创建笔记
+	// 4. 检查同一文件夹下是否存在同名同类型的文件/文件夹
+	exists, err := s.privateNoteDao.CheckNoteExists(ctx, userID, req.ParentID, req.Title, req.Type)
+	if err != nil {
+		return err
+	}
+	if exists {
+		if req.Type == "folder" {
+			return errors.New("该文件夹下已存在同名的文件夹")
+		}
+		return errors.New("该文件夹下已存在同名的文件")
+	}
+
+	// 5. 创建笔记
 	note := &model.UserPrivateNote{
 		UserID:   int(userID),
 		ParentID: req.ParentID,
@@ -263,6 +275,33 @@ func (s *UserPrivateNoteService) UpdatePrivateNoteTitle(ctx context.Context, use
 		return errors.New("标题不能超过 255 字符")
 	}
 
+	// 1. 先获取当前笔记，得知它的 type 和 parentId
+	note, err := s.privateNoteDao.GetNoteByID(ctx, userID, noteID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return errors.New("要修改的笔记或文件夹不存在")
+		}
+		return err
+	}
+
+	// 2. 如果标题没变，直接返回成功
+	if note.Title == title {
+		return nil
+	}
+
+	// 3. 检查同一文件夹下是否已存在同名同类型的文件/文件夹
+	exists, err := s.privateNoteDao.CheckNoteExists(ctx, userID, note.ParentID, title, note.Type)
+	if err != nil {
+		return err
+	}
+	if exists {
+		if note.Type == "folder" {
+			return errors.New("该文件夹下已存在同名的文件夹")
+		}
+		return errors.New("该文件夹下已存在同名的文件")
+	}
+
+	// 4. 更新标题
 	return s.privateNoteDao.UpdateNote(ctx, userID, noteID, map[string]interface{}{
 		"title": title,
 	})

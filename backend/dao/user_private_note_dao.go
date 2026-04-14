@@ -55,6 +55,16 @@ func (dao *UserPrivateNoteDao) GetNotesByParent(ctx context.Context, userID uint
 	return notes, err
 }
 
+// CheckNoteExists 判断同一个文件夹下是否存在同名同类型的文件/文件夹
+func (dao *UserPrivateNoteDao) CheckNoteExists(ctx context.Context, userID uint, parentID int, title string, noteType string) (bool, error) {
+	var count int64
+	err := global.GVA_DB.WithContext(ctx).
+		Model(&model.UserPrivateNote{}).
+		Where("user_id = ? AND parent_id = ? AND title = ? AND type = ? AND is_deleted = 0", userID, parentID, title, noteType).
+		Count(&count).Error
+	return count > 0, err
+}
+
 // CreateNote 创建文件夹或文件
 func (dao *UserPrivateNoteDao) CreateNote(ctx context.Context, note *model.UserPrivateNote) error {
 	return global.GVA_DB.WithContext(ctx).Create(note).Error
