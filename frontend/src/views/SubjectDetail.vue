@@ -42,7 +42,7 @@ import {
   Clock, Award, BookOpenCheck, Loader2,
   LayoutList, LayoutPanelLeft, CheckCircle2,
   Heart, Bookmark, Plus, X, Globe, Lock,
-  StickyNote, ChevronRight,
+  StickyNote, ChevronRight, Copy,
   Folder, FolderPlus, FilePlus, ChevronLeft, Trash2,
   ToggleRight, ToggleLeft
 } from 'lucide-vue-next'
@@ -359,6 +359,8 @@ const currentNodeId = ref<number | null>(null)
 const nodeDetail = ref<SubjectNodeDetail | null>(null)
 const nodeNote = ref<NodeNote | null>(null)
 const noteEditContent = ref('') // 编辑中的笔记内容
+const isAppendingToPrivate = ref(false)
+const isOverwritingPrivate = ref(false)
 const lastSavedContent = ref('') // 上次保存的内容，用于减少无谓请求
 const isNoteImportant = ref(1) // 默认标记为重要
 const loadingDetail = ref(false)
@@ -367,6 +369,75 @@ const updatingDifficulty = ref(false)
 const savingNote = ref(false)
 const saveStatusText = ref<'saving' | 'saved' | 'error-empty' | 'error-too-long' | 'error-xss' | 'error-net' | ''>('')
 let debounceTimer: ReturnType<typeof setTimeout> | null = null
+
+const appendClassNoteToCurrentPrivate = async () => {
+  if (!isLoggedIn.value) {
+    showToast('请先登录再使用私人笔记', 'error')
+    router.push('/login')
+    return
+  }
+  if (!currentPrivateNote.value) {
+    showToast('请先在私人笔记中打开一个笔记文件', 'error')
+    return
+  }
+  if (!noteEditContent.value.trim()) {
+    showToast('随堂笔记为空，无法追加', 'error')
+    return
+  }
+  if (isAppendingToPrivate.value) return
+  isAppendingToPrivate.value = true
+  try {
+    const separator = currentPrivateNote.value.content ? '\n\n---\n\n' : ''
+    const newContent = `${currentPrivateNote.value.content || ''}${separator}${noteEditContent.value}`
+    const res = await updatePrivateNoteContent(currentPrivateNote.value.id, newContent)
+    if (res.data?.code === 200) {
+      currentPrivateNote.value.content = newContent
+      lastPrivateSyncAt.value = formatDateTime(new Date())
+      setPrivateSyncStatus('saved')
+      showToast('已将随堂笔记追加到当前私人笔记', 'success')
+    } else {
+      showToast(res.data?.msg || '追加失败', 'error')
+    }
+  } catch (error: any) {
+    showToast(error?.response?.data?.msg || '追加失败', 'error')
+  } finally {
+    isAppendingToPrivate.value = false
+  }
+}
+
+const overwriteClassNoteToCurrentPrivate = async () => {
+  if (!isLoggedIn.value) {
+    showToast('请先登录再使用私人笔记', 'error')
+    router.push('/login')
+    return
+  }
+  if (!currentPrivateNote.value) {
+    showToast('请先在私人笔记中打开一个笔记文件', 'error')
+    return
+  }
+  if (!noteEditContent.value.trim()) {
+    showToast('随堂笔记为空，无法覆盖', 'error')
+    return
+  }
+  if (isOverwritingPrivate.value) return
+  isOverwritingPrivate.value = true
+  try {
+    const newContent = noteEditContent.value
+    const res = await updatePrivateNoteContent(currentPrivateNote.value.id, newContent)
+    if (res.data?.code === 200) {
+      currentPrivateNote.value.content = newContent
+      lastPrivateSyncAt.value = formatDateTime(new Date())
+      setPrivateSyncStatus('saved')
+      showToast('已用随堂笔记覆盖当前私人笔记', 'success')
+    } else {
+      showToast(res.data?.msg || '覆盖失败', 'error')
+    }
+  } catch (error: any) {
+    showToast(error?.response?.data?.msg || '覆盖失败', 'error')
+  } finally {
+    isOverwritingPrivate.value = false
+  }
+}
 
 // ----------------- 私人笔记相关 -----------------
 const noteType = ref<'class' | 'private'>('class')
@@ -480,10 +551,12 @@ const goBackPrivate = () => {
 const toggleNoteType = (type: 'class' | 'private') => {
   noteType.value = type
   if (type === 'private') {
-    // 每次点击私人笔记 Tab，都默认回到根目录并重置导航
-    privateNavStack.value = [{ id: 0, title: '根目录' }]
-    currentPrivateNote.value = null
-    fetchPrivateContent(0)
+    if (!privateNavStack.value.length) {
+      privateNavStack.value = [{ id: 0, title: '根目录' }]
+    }
+    if (!currentPrivateNote.value && privateNotes.value.length === 0) {
+      fetchPrivateContent(currentFolderId.value)
+    }
   }
 }
 
@@ -670,6 +743,38 @@ const showToast = (message: string, type: 'success' | 'error' = 'success') => {
   toast.message = message
   toast.type = type
   toast.show = true
+}
+
+const copyToClipboard = async (text: string, successMessage: string) => {
+  if (!text) {
+    showToast('内容为空，无法复制', 'error')
+    return
+  }
+  try {
+    await navigator.clipboard.writeText(text)
+    showToast(successMessage, 'success')
+  } catch {
+    showToast('复制失败，请检查浏览器权限', 'error')
+  }
+}
+
+const copyNodeTitle = () => {
+  if (!nodeDetail.value) return
+  copyToClipboard(nodeDetail.value.name || '', '标题已复制')
+}
+
+const copyNodeContent = () => {
+  if (!nodeDetail.value) return
+  copyToClipboard(nodeDetail.value.content || '', '教材正文已复制')
+}
+
+const copyClassNote = () => {
+  copyToClipboard(noteEditContent.value || '', '随堂笔记已复制')
+}
+
+const copyPrivateNote = () => {
+  if (!currentPrivateNote.value) return
+  copyToClipboard(currentPrivateNote.value.content || '', '私人笔记已复制')
 }
 
 const renderedMarkdown = computed(() => {
@@ -1167,7 +1272,17 @@ const goBack = () => {
             <BookOpen :size="14" />
             <span>教材正文</span>
           </div>
-          <h1>{{ nodeDetail.name }}</h1>
+          <div class="content-title-line">
+            <h1>{{ nodeDetail.name }}</h1>
+            <button 
+              class="icon-action-btn copy-icon-btn" 
+              type="button"
+              title="复制标题"
+              @click="copyNodeTitle"
+            >
+              <Copy :size="16" />
+            </button>
+          </div>
           <div class="meta-info">
             <div class="difficulty-tags">
               <span 
@@ -1196,6 +1311,16 @@ const goBack = () => {
 
         <article class="markdown-article">
           <div class="content-body">
+            <div class="copy-actions-overlay content-body-copy-actions">
+              <button 
+                class="icon-action-btn copy-icon-btn" 
+                type="button"
+                title="复制教材正文"
+                @click="copyNodeContent"
+              >
+                <Copy :size="16" />
+              </button>
+            </div>
             <div 
               class="markdown-content" 
               v-html="renderedMarkdown"
@@ -1258,6 +1383,28 @@ const goBack = () => {
             <span>私人笔记</span>
           </button>
         </div>
+        <div v-if="noteType === 'class'" class="class-note-header-actions">
+          <button 
+            class="append-to-private-btn" 
+            :disabled="!currentPrivateNote || !noteEditContent.trim() || isAppendingToPrivate"
+            @click="appendClassNoteToCurrentPrivate"
+            title="将当前随堂笔记内容追加到右侧当前打开的私人笔记末尾"
+          >
+            <Loader2 v-if="isAppendingToPrivate" class="spin" :size="12" />
+            <StickyNote v-else :size="12" />
+            <span>追加到当前私人笔记</span>
+          </button>
+          <button 
+            class="append-to-private-btn danger" 
+            :disabled="!currentPrivateNote || !noteEditContent.trim() || isOverwritingPrivate"
+            @click="overwriteClassNoteToCurrentPrivate"
+            title="用当前随堂笔记内容覆盖右侧当前打开的私人笔记"
+          >
+            <Loader2 v-if="isOverwritingPrivate" class="spin" :size="12" />
+            <FileText v-else :size="12" />
+            <span>覆盖当前私人笔记</span>
+          </button>
+        </div>
       </div>
       
       <div class="note-main">
@@ -1275,6 +1422,16 @@ const goBack = () => {
           </div>
           <div v-else class="note-active">
             <div class="editor-wrap">
+              <div class="copy-actions-overlay note-editor-copy-actions">
+                <button 
+                  class="icon-action-btn copy-icon-btn"
+                  type="button"
+                  title="复制随堂笔记"
+                  @click="copyClassNote"
+                >
+                  <Copy :size="14" />
+                </button>
+              </div>
               <textarea 
                 class="note-textarea" 
                 v-model="noteEditContent"
@@ -1381,6 +1538,16 @@ const goBack = () => {
 
               <div v-if="currentPrivateNote" class="private-content-view">
                 <div class="view-body">
+                  <div class="copy-actions-overlay private-editor-copy-actions">
+                    <button 
+                      class="icon-action-btn copy-icon-btn"
+                      type="button"
+                      title="复制当前私人笔记"
+                      @click="copyPrivateNote"
+                    >
+                      <Copy :size="16" />
+                    </button>
+                  </div>
                   <textarea 
                     v-model="currentPrivateNote.content" 
                     class="private-editor" 
@@ -2142,6 +2309,7 @@ const goBack = () => {
   font-size: 16px;
   line-height: 1.8;
   color: #334155;
+  position: relative;
 }
 
 /* Markdown 样式增强 */
@@ -2212,7 +2380,7 @@ const goBack = () => {
 .content-loading-overlay {
   position: absolute;
   top: 24px;
-  right: 24px;
+  left: 24px;
   width: 44px;
   height: 44px;
   border-radius: 12px;
@@ -2225,6 +2393,62 @@ const goBack = () => {
   color: #3b82f6;
   box-shadow: 0 10px 18px rgba(15, 23, 42, 0.08);
   pointer-events: none;
+}
+
+.copy-actions-overlay {
+  position: absolute;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  backdrop-filter: none;
+  border: none;
+  box-shadow: none;
+}
+
+.copy-icon-btn {
+  padding: 2px !important;
+  border-radius: 6px !important;
+  background: transparent !important;
+  color: rgba(148, 163, 184, 0.55) !important;
+}
+
+.copy-icon-btn:hover {
+  background: transparent !important;
+  color: #3b82f6 !important;
+}
+
+.copy-icon-btn:disabled {
+  opacity: 0.35;
+}
+
+.content-body-copy-actions {
+  top: -18px;
+  right: -15px;
+}
+
+.note-editor-copy-actions {
+  top: 10px;
+  right: 10px;
+}
+
+.private-editor-copy-actions {
+  top: 10px;
+  right: 10px;
+}
+
+.content-title-line {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.content-title-line h1 {
+  margin-bottom: 0;
 }
 
 /* 右侧笔记区 */
@@ -2279,6 +2503,51 @@ const goBack = () => {
 }
 
 .note-main { flex: 1; display: flex; flex-direction: column; background: #fcfdfe; }
+
+.class-note-header-actions {
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+}
+
+.append-to-private-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  color: #475569;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.append-to-private-btn:hover:not(:disabled) {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+  color: #1d4ed8;
+}
+
+.append-to-private-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.append-to-private-btn.danger {
+  background: #fef2f2;
+  border-color: #fecaca;
+  color: #b91c1c;
+}
+
+.append-to-private-btn.danger:hover:not(:disabled) {
+  background: #fee2e2;
+  border-color: #fca5a5;
+  color: #991b1b;
+}
 
 /* 私人笔记容器 */
 .private-note-container {
@@ -2547,6 +2816,7 @@ const goBack = () => {
   flex-direction: column;
   overflow: hidden;
   background: #fff;
+  position: relative;
 }
 
 .private-content-header {
@@ -2624,6 +2894,7 @@ const goBack = () => {
   flex: 1;
   padding: 0;
   overflow: hidden;
+  position: relative;
 }
 
 .private-editor {
@@ -2765,7 +3036,7 @@ const goBack = () => {
   padding: 20px;
 }
 
-.note-active { flex: 1; display: flex; flex-direction: column; gap: 16px; padding: 20px; }
+.note-active { flex: 1; display: flex; flex-direction: column; gap: 16px; padding: 20px; position: relative; }
 
 .primary-btn {
   background: #3b82f6;
@@ -2792,6 +3063,7 @@ const goBack = () => {
   border-radius: 12px;
   box-shadow: 0 2px 4px rgba(0,0,0,0.02);
   display: flex;
+  position: relative;
 }
 
 .note-textarea {

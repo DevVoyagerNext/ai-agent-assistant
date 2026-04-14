@@ -38,7 +38,7 @@ type UserStudyNoteRes struct {
 
 // UpsertUserStudyNoteReq 创建或修改随堂笔记请求体
 type UpsertUserStudyNoteReq struct {
-	NoteContent string `json:"noteContent" binding:"required,max=1000"`
+	NoteContent string `json:"noteContent" binding:"max=1000"`
 	IsImportant int8   `json:"isImportant"`
 }
 

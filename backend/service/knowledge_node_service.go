@@ -196,18 +196,13 @@ func (s *KnowledgeNodeService) UpsertUserStudyNote(ctx context.Context, userID u
 		return errors.New("用户未登录")
 	}
 
-	// 1. 校验内容非空（去除空格后）
+	// 1. 校验内容长度（允许空字符串）
 	noteContent := strings.TrimSpace(req.NoteContent)
-	if noteContent == "" {
-		return errors.New("笔记内容不能为空")
-	}
-
-	// 2. 限制长度（虽然 DTO 有 max=1000，但业务层做双重保险或处理特殊字符后长度变化）
 	if len([]rune(noteContent)) > 1000 {
 		return errors.New("笔记内容不能超过 1000 个字符")
 	}
 
-	// 3. 防止 XSS 攻击
+	// 2. 防止 XSS 攻击
 	safeContent := utils.XSSFilter(noteContent)
 
 	// 4. 检查知识点是否存在
