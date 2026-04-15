@@ -6,7 +6,7 @@ import Skeleton from '../components/Skeleton.vue'
 import { 
   ArrowLeft, LogOut, RefreshCcw, 
   Activity, BookOpen, Share2, Book, Users, Star, Layers, FolderHeart, Bookmark,
-  Folder, FileText, ToggleRight, ToggleLeft, Edit3, X, Loader2, ChevronRight
+  Folder, FileText, ToggleRight, ToggleLeft, Edit3, X, Loader2, ChevronRight, Clock
 } from 'lucide-vue-next'
 import { useUserProfile } from '../composables/useUserProfile'
 import ActivityCalendar from '../components/ActivityCalendar.vue'
@@ -141,6 +141,11 @@ const handleTogglePublic = async (note: any) => {
   }
 }
 
+const handleToggleCollectionPublic = (folder: any) => {
+  // 由于接口可能未提供收藏夹公开状态修改，这里仅做 UI 演示或提示
+  showToast('该功能暂未开放', 'error')
+}
+
 const getCoverStyle = (id: number) => {
   const palettes: Array<[string, string]> = [
     ['#3b82f6', '#8b5cf6'],
@@ -194,15 +199,15 @@ const scrollTo = (id: string) => {
       <aside class="side-nav">
         <div class="nav-group">
           <div class="nav-item" @click="scrollTo('user-info')">
-            <Users :size="18" class="icon-primary" />
+            <Users :size="18" class="icon-blue" />
             <span>关于我</span>
           </div>
           <div class="nav-item" @click="scrollTo('activity')">
-            <Activity :size="18" class="icon-success" />
+            <Activity :size="18" class="icon-green" />
             <span>活跃度</span>
           </div>
           <div class="nav-item" @click="scrollTo('collections')">
-            <FolderHeart :size="18" class="icon-danger" />
+            <FolderHeart :size="18" class="icon-pink" />
             <span>收藏夹</span>
           </div>
           <div class="nav-item" @click="scrollTo('recent')">
@@ -210,15 +215,15 @@ const scrollTo = (id: string) => {
             <span>最近学习</span>
           </div>
           <div class="nav-item" @click="scrollTo('liked')">
-            <Star :size="18" class="icon-warning" />
+            <Star :size="18" class="icon-orange" />
             <span>点赞教材</span>
           </div>
           <div class="nav-item" @click="scrollTo('private')">
-            <BookOpen :size="18" class="icon-success" />
+            <BookOpen :size="18" class="icon-teal" />
             <span>私人笔记</span>
           </div>
           <div class="nav-item" @click="scrollTo('shared')">
-            <Share2 :size="18" class="icon-info" />
+            <Share2 :size="18" class="icon-purple" />
             <span>分享笔记</span>
           </div>
         </div>
@@ -254,27 +259,27 @@ const scrollTo = (id: string) => {
           <div v-else class="stats-grid">
             <div class="stat-item">
               <span class="stat-value">{{ userInfo?.followersCount || 0 }}</span>
-              <span class="stat-label"><Users :size="14" class="icon-primary" /> 粉丝</span>
+              <span class="stat-label"><Users :size="14" class="icon-blue" /> 粉丝</span>
             </div>
             <div class="stat-item">
               <span class="stat-value">{{ userInfo?.followingCount || 0 }}</span>
-              <span class="stat-label"><Star :size="14" class="icon-primary" /> 关注</span>
+              <span class="stat-label"><Star :size="14" class="icon-orange" /> 关注</span>
             </div>
             <div class="stat-item">
               <span class="stat-value">{{ userInfo?.learnedSubjectsCount || 0 }}</span>
-              <span class="stat-label"><Book :size="14" class="icon-primary" /> 已学课程</span>
+              <span class="stat-label"><Book :size="14" class="icon-teal" /> 已学课程</span>
             </div>
             <div class="stat-item">
               <span class="stat-value">{{ userInfo?.sharedNotesCount || 0 }}</span>
-              <span class="stat-label"><Share2 :size="14" class="icon-primary" /> 分享笔记</span>
+              <span class="stat-label"><Share2 :size="14" class="icon-purple" /> 分享笔记</span>
             </div>
           </div>
         </div>
 
-        <!-- Activity Calendar Card -->
+        <!-- Activity Card -->
         <div id="activity" class="card">
           <div class="card-header">
-            <Activity :size="20" class="icon-success" />
+            <Activity :size="20" class="icon-green" />
             <h2>活跃度</h2>
           </div>
           
@@ -287,7 +292,7 @@ const scrollTo = (id: string) => {
         <!-- Collect Folders -->
         <div id="collections" class="card">
           <div class="card-header clickable-header" @click="router.push('/me/collections')">
-            <FolderHeart :size="20" class="icon-danger" />
+            <FolderHeart :size="20" class="icon-pink" />
             <h2>我的收藏夹</h2>
             <ChevronRight :size="18" class="header-arrow" />
           </div>
@@ -304,7 +309,7 @@ const scrollTo = (id: string) => {
             <div v-for="folder in collectFolders" :key="folder.id" class="note-item">
               <div class="note-main-info">
                 <div class="note-title-line">
-                  <FolderHeart :size="16" class="note-type-icon icon-danger" />
+                  <Folder :size="16" class="note-type-icon folder icon-pink" />
                   <h4>{{ folder.name }}</h4>
                 </div>
               </div>
@@ -312,10 +317,12 @@ const scrollTo = (id: string) => {
                 <button 
                   class="toggle-public-mini" 
                   :class="{ isPublic: folder.isPublic }"
+                  @click="handleToggleCollectionPublic(folder)"
                   :title="folder.isPublic ? '已公开' : '已私密'"
                 >
                   <ToggleRight v-if="folder.isPublic" :size="18" />
                   <ToggleLeft v-else :size="18" />
+                  <span>{{ folder.isPublic ? '公开' : '私密' }}</span>
                 </button>
               </div>
             </div>
@@ -356,7 +363,7 @@ const scrollTo = (id: string) => {
                       {{ item.lastStudyTime ? formatDate(item.lastStudyTime) : '未知时间' }}
                     </span>
                     <span class="meta-item">
-                      <Activity :size="12" class="icon-success" />
+                      <Activity :size="12" class="icon-green" />
                       进度 {{ item.progressPercent }}%
                     </span>
                   </div>
@@ -372,7 +379,7 @@ const scrollTo = (id: string) => {
         <!-- Liked Subjects -->
         <div id="liked" class="card">
           <div class="card-header clickable-header" @click="router.push('/me/liked-subjects')">
-            <Star :size="20" class="icon-warning" />
+            <Star :size="20" class="icon-orange" />
             <h2>点赞的教材</h2>
             <ChevronRight :size="18" class="header-arrow" />
           </div>
@@ -392,13 +399,11 @@ const scrollTo = (id: string) => {
               @click="router.push(`/subject/${subject.id}`)"
               style="cursor: pointer;"
             >
-              <div class="note-main-info">
-                <div class="note-title-line">
-                  <Star :size="16" class="note-type-icon icon-warning" />
-                  <h4>{{ subject.name }}</h4>
-                </div>
+              <div class="note-title-line">
+                <Book :size="16" class="note-type-icon icon-teal" />
+                <h4>{{ subject.name }}</h4>
+                <span v-if="subject.progressPercent > 0" class="date">进度 {{ subject.progressPercent }}%</span>
               </div>
-              <span v-if="subject.progressPercent > 0" class="date">进度 {{ subject.progressPercent }}%</span>
             </div>
             <div v-if="!likedSubjects.length" class="empty-state">
               暂无点赞教材
@@ -409,7 +414,7 @@ const scrollTo = (id: string) => {
         <!-- Private Notes -->
         <div id="private" class="card">
           <div class="card-header clickable-header" @click="router.push('/me/private-notes')">
-            <BookOpen :size="20" class="icon-success" />
+            <BookOpen :size="20" class="icon-teal" />
             <h2>私人笔记</h2>
             <ChevronRight :size="18" class="header-arrow" />
           </div>
@@ -426,8 +431,8 @@ const scrollTo = (id: string) => {
             <div v-for="note in privateNotesPreview" :key="note.id" class="note-item">
               <div class="note-main-info">
                 <div class="note-title-line">
-                  <Folder v-if="note.type === 'folder'" :size="16" class="note-type-icon icon-warning" />
-                  <FileText v-else :size="16" class="note-type-icon icon-info" />
+                  <Folder v-if="note.type === 'folder'" :size="16" class="note-type-icon folder icon-pink" />
+                  <FileText v-else :size="16" class="note-type-icon file icon-blue" />
                   <h4 @click="openRename(note)">{{ note.title }}</h4>
                   <Edit3 :size="12" class="edit-icon-mini" @click="openRename(note)" />
                   <span class="date">{{ formatDate(note.updatedAt) }}</span>
@@ -442,6 +447,7 @@ const scrollTo = (id: string) => {
                 >
                   <ToggleRight v-if="note.isPublic === 1" :size="18" />
                   <ToggleLeft v-else :size="18" />
+                  <span>{{ note.isPublic === 1 ? '公开' : '私密' }}</span>
                 </button>
               </div>
             </div>
@@ -458,7 +464,7 @@ const scrollTo = (id: string) => {
         <!-- Shared Notes -->
         <div id="shared" class="card">
           <div class="card-header">
-            <Share2 :size="20" class="icon-info" />
+            <Share2 :size="20" class="icon-purple" />
             <h2>分享笔记</h2>
           </div>
           
@@ -474,10 +480,10 @@ const scrollTo = (id: string) => {
             <div v-for="note in sharedNotes" :key="note.id" class="note-item shared">
               <div class="note-header">
                 <div class="note-title-line">
-                  <Share2 :size="16" class="note-type-icon icon-info" />
+                  <Share2 :size="16" class="icon-purple" />
                   <h4>{{ note.nodeName }}</h4>
                 </div>
-                <span class="views"><Activity :size="12" class="icon-success" /> {{ note.viewCount }}</span>
+                <span class="views"><Activity :size="12" class="icon-green" /> {{ note.viewCount }}</span>
               </div>
               <div class="note-meta">
                 <span>Token: {{ note.shareToken }}</span>
@@ -747,11 +753,10 @@ const scrollTo = (id: string) => {
   letter-spacing: -0.25px;
 }
 
-.icon-primary { color: var(--notion-blue); }
-.icon-success { color: #1aae39; }
-.icon-warning { color: #dd5b00; }
+.icon-blue { color: var(--notion-blue); }
+.icon-green { color: #1aae39; }
+.icon-orange { color: #dd5b00; }
 .icon-danger { color: #eb5757; }
-.icon-info { color: #0075de; }
 .icon-teal { color: #2a9d99; }
 .icon-pink { color: #ff64c8; }
 .icon-purple { color: #391c57; }
@@ -962,11 +967,8 @@ const scrollTo = (id: string) => {
 }
 
 .note-type-icon {
-  color: var(--warm-gray-500);
+  color: var(--notion-blue);
 }
-
-.note-type-icon.folder { color: #f2994a; }
-.note-type-icon.file { color: #2d9cdb; }
 
 .note-title-line h4 {
   margin: 0;
@@ -1003,22 +1005,31 @@ const scrollTo = (id: string) => {
 }
 
 .toggle-public-mini {
-  background: transparent;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(0,0,0,0.05);
   border: none;
-  color: var(--warm-gray-300);
+  color: var(--warm-gray-500);
   cursor: pointer;
-  padding: 4px;
-  border-radius: 4px;
+  padding: 4px 10px;
+  border-radius: 9999px;
+  font-size: 12px;
+  font-weight: 600;
   transition: all 0.2s ease;
 }
 
 .toggle-public-mini:hover {
-  background: rgba(0,0,0,0.05);
-  color: var(--notion-black);
+  background: rgba(0,0,0,0.1);
 }
 
 .toggle-public-mini.isPublic {
+  background: #f2f9ff;
   color: var(--notion-blue);
+}
+
+.toggle-public-mini.isPublic:hover {
+  background: #e1f0ff;
 }
 
 .note-ellipsis h4 {
@@ -1171,11 +1182,5 @@ const scrollTo = (id: string) => {
   border-radius: 6px;
   font-weight: 600;
   cursor: pointer;
-}
-
-@media (max-width: 640px) {
-  .stats-grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
 }
 </style>

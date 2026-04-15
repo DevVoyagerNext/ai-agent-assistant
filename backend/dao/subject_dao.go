@@ -90,21 +90,52 @@ func (d *SubjectDao) GetUserCollectFolders(ctx context.Context, userId uint) ([]
 }
 
 func (d *SubjectDao) GetUserCollectedSubjectsByFolder(ctx context.Context, userId uint, folderId int, page, pageSize int) ([]model.Subject, int64, error) {
-	query := global.GVA_DB.WithContext(ctx).
-		Model(&model.Subject{}).
-		Distinct("subjects.*").
-		Joins("JOIN user_collect_items ON user_collect_items.subject_id = subjects.id").
-		Where("user_collect_items.user_id = ? AND user_collect_items.folder_id = ?", userId, folderId)
-
 	var total int64
-	if err := query.Count(&total).Error; err != nil {
+	if err := global.GVA_DB.WithContext(ctx).
+		Model(&model.UserCollectItem{}).
+		Where("user_id = ? AND folder_id = ?", userId, folderId).
+		Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
 
-	var subjects []model.Subject
 	offset := (page - 1) * pageSize
-	err := query.Order("user_collect_items.created_at desc").Offset(offset).Limit(pageSize).Find(&subjects).Error
-	return subjects, total, err
+	var items []model.UserCollectItem
+	if err := global.GVA_DB.WithContext(ctx).
+		Where("user_id = ? AND folder_id = ?", userId, folderId).
+		Order("created_at desc").
+		Offset(offset).
+		Limit(pageSize).
+		Find(&items).Error; err != nil {
+		return nil, 0, err
+	}
+
+	if len(items) == 0 {
+		return []model.Subject{}, total, nil
+	}
+
+	var subjectIds []int
+	for _, item := range items {
+		subjectIds = append(subjectIds, item.SubjectID)
+	}
+
+	subjects, err := d.GetSubjectsByIds(ctx, subjectIds)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	subjectMap := make(map[int]model.Subject)
+	for _, sub := range subjects {
+		subjectMap[int(sub.ID)] = sub
+	}
+
+	var orderedSubjects []model.Subject
+	for _, id := range subjectIds {
+		if sub, ok := subjectMap[id]; ok {
+			orderedSubjects = append(orderedSubjects, sub)
+		}
+	}
+
+	return orderedSubjects, total, nil
 }
 
 func (d *SubjectDao) GetUserRecentSubjectProgress(ctx context.Context, userId uint, page int, pageSize int) ([]model.UserSubjectProgress, int64, error) {

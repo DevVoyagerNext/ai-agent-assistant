@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ArrowLeft, BookOpen, Clock, Activity, Loader2, Star, FolderHeart, FileText, Folder } from 'lucide-vue-next'
-import { getUserRecentSubjects, getUserLikedSubjects, getUserCollectFolders, getPrivateNoteDetail } from '../api/user'
+import { ArrowLeft, BookOpen, Clock, Activity, Loader2, Star, FolderHeart, FileText, Folder, X, ToggleRight, ToggleLeft, ChevronRight } from 'lucide-vue-next'
+import { getUserRecentSubjects, getUserLikedSubjects, getUserCollectFolders, getPrivateNoteDetail, getSubjectsInFolder } from '../api/user'
 
 const route = useRoute()
 const router = useRouter()
@@ -16,6 +16,52 @@ const page = ref(1)
 const pageSize = ref(20)
 const total = ref(0)
 const hasMore = computed(() => list.value.length < total.value)
+
+// --- 收藏夹弹窗相关 ---
+const showFolderModal = ref(false)
+const selectedFolder = ref<any>(null)
+const folderSubjects = ref<any[]>([])
+const loadingFolderSubjects = ref(false)
+const folderPage = ref(1)
+const folderTotal = ref(0)
+const folderHasMore = computed(() => folderSubjects.value.length < folderTotal.value)
+
+const openFolderModal = async (folder: any) => {
+  selectedFolder.value = folder
+  showFolderModal.value = true
+  folderPage.value = 1
+  folderSubjects.value = []
+  await fetchFolderSubjects()
+}
+
+const fetchFolderSubjects = async (isLoadMore = false) => {
+  if (!selectedFolder.value) return
+  loadingFolderSubjects.value = true
+  try {
+    const res = await getSubjectsInFolder(selectedFolder.value.id, folderPage.value, pageSize.value)
+    if (res.data?.code === 200) {
+      const data = res.data.data
+      folderSubjects.value = isLoadMore ? [...folderSubjects.value, ...data.list] : data.list
+      folderTotal.value = data.total || 0
+    }
+  } catch (err) {
+    console.error('Fetch folder subjects error:', err)
+  } finally {
+    loadingFolderSubjects.value = false
+  }
+}
+
+const loadMoreFolderSubjects = () => {
+  if (loadingFolderSubjects.value || !folderHasMore.value) return
+  folderPage.value++
+  fetchFolderSubjects(true)
+}
+
+const handleFolderItemClick = (item: any) => {
+  const url = `/subject/${item.id}` + (item.lastNodeId ? `?nodeId=${item.lastNodeId}` : '')
+  router.push(url)
+}
+// ----------------------
 
 const titleMap: Record<string, string> = {
   'recent-learning': '最近学习',
@@ -115,8 +161,9 @@ const handleItemClick = (item: any) => {
   if (type.value === 'recent-learning' || type.value === 'liked-subjects') {
     const url = `/subject/${item.id}` + (item.lastNodeId ? `?nodeId=${item.lastNodeId}` : '')
     router.push(url)
+  } else if (type.value === 'collections') {
+    openFolderModal(item)
   }
-  // 其他类型暂不跳转或视需求而定
 }
 
 onMounted(() => {
@@ -162,7 +209,7 @@ onMounted(() => {
               <p class="desc">{{ item.description || '暂无简介' }}</p>
               <div class="meta">
                 <span v-if="item.progressPercent !== undefined" class="meta-item">
-                  <Activity :size="12" class="icon-success" />
+                  <Activity :size="12" class="icon-green" />
                   进度: {{ item.progressPercent }}%
                 </span>
                 <span v-if="item.lastStudyTime" class="meta-item">
@@ -176,14 +223,18 @@ onMounted(() => {
 
         <!-- 收藏夹样式 -->
         <template v-else-if="type === 'collections'">
-          <div v-for="item in list" :key="item.id" class="folder-card">
+          <div v-for="item in list" :key="item.id" class="folder-card" @click="handleItemClick(item)">
             <div class="folder-icon">
               <FolderHeart :size="32" />
             </div>
             <div class="folder-info">
               <h3>{{ item.name }}</h3>
               <p>{{ item.description || '暂无描述' }}</p>
-              <span class="badge">{{ item.isPublic ? '公开' : '私密' }}</span>
+              <button class="badge-btn" :class="{ public: item.isPublic }">
+                <ToggleRight v-if="item.isPublic" :size="16" />
+                <ToggleLeft v-else :size="16" />
+                <span>{{ item.isPublic ? '公开' : '私密' }}</span>
+              </button>
             </div>
           </div>
         </template>
@@ -216,11 +267,78 @@ onMounted(() => {
         没有更多数据了
       </div>
     </div>
+
+    <!-- 收藏夹教材列表弹窗 -->
+    <Teleport to="body">
+      <div v-if="showFolderModal" class="modal-overlay" @click.self="showFolderModal = false">
+        <div class="modal-content large-modal">
+          <header class="modal-header">
+            <div class="header-left">
+              <FolderHeart :size="24" class="icon-teal" />
+              <div class="header-text">
+                <h3>{{ selectedFolder?.name }}</h3>
+                <p>{{ selectedFolder?.description || '收藏夹教材列表' }}</p>
+              </div>
+            </div>
+            <button class="close-btn" @click="showFolderModal = false">
+              <X :size="24" />
+            </button>
+          </header>
+
+          <div class="modal-body">
+            <div v-if="loadingFolderSubjects && folderPage === 1" class="modal-loading">
+              <Loader2 class="spin" :size="32" />
+              <p>加载中...</p>
+            </div>
+            <div v-else-if="!folderSubjects.length" class="modal-empty">
+              <p>该收藏夹下暂无教材</p>
+            </div>
+            <div v-else class="modal-list">
+              <div v-for="item in folderSubjects" :key="item.id" class="subject-row" @click="handleFolderItemClick(item)">
+                <div class="subject-cover-mini" :style="getCoverStyle(item.id)">
+                  <BookOpen :size="16" />
+                </div>
+                <div class="subject-row-info">
+                  <h4>{{ item.name }}</h4>
+                  <p>{{ item.description || '暂无简介' }}</p>
+                </div>
+                <div class="subject-row-meta">
+                  <span v-if="item.progressPercent !== undefined" class="meta-item">
+                    <Activity :size="12" class="icon-green" />
+                    {{ item.progressPercent }}%
+                  </span>
+                  <ChevronRight :size="18" class="row-arrow" />
+                </div>
+              </div>
+
+              <div v-if="folderHasMore" class="modal-load-more">
+                <button class="ghost-btn" :disabled="loadingFolderSubjects" @click="loadMoreFolderSubjects">
+                  <Loader2 v-if="loadingFolderSubjects" class="spin" :size="16" />
+                  <span v-else>查看更多</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
 <style scoped>
 .list-page {
+  --notion-black: rgba(0,0,0,0.95);
+  --notion-white: #ffffff;
+  --notion-blue: #0075de;
+  --notion-blue-hover: #005bab;
+  --warm-white: #f6f5f4;
+  --warm-dark: #31302e;
+  --warm-gray-500: #615d59;
+  --warm-gray-300: #a39e98;
+  --whisper-border: 1px solid rgba(0,0,0,0.1);
+  --card-shadow: rgba(0,0,0,0.04) 0px 4px 18px, rgba(0,0,0,0.027) 0px 2.025px 7.84688px, rgba(0,0,0,0.02) 0px 0.8px 2.925px, rgba(0,0,0,0.01) 0px 0.175px 1.04062px;
+  --deep-shadow: rgba(0,0,0,0.01) 0px 1px 3px, rgba(0,0,0,0.02) 0px 3px 7px, rgba(0,0,0,0.02) 0px 7px 15px, rgba(0,0,0,0.04) 0px 14px 28px, rgba(0,0,0,0.05) 0px 23px 52px;
+  
   width: 100vw;
   height: 100vh;
   background: var(--notion-white);
@@ -326,12 +444,13 @@ onMounted(() => {
   border: 1px solid rgba(0,0,0,0.05);
 }
 
-.folder-icon { color: #ff64c8; background: #fff5f5; }
-.note-icon.folder { color: #dd5b00; }
+.folder-icon { color: #2a9d99; background: #f0f9f9; }
+.note-icon.folder { color: #ff64c8; }
 .note-icon.file { color: #0075de; }
 
 .icon-blue { color: #0075de; }
-.icon-success { color: #1aae39; }
+.icon-green { color: #1aae39; }
+.icon-teal { color: #2a9d99; }
 .icon-warning { color: #dd5b00; }
 .icon-danger { color: #eb5757; }
 .icon-pink { color: #ff64c8; }
@@ -352,6 +471,40 @@ onMounted(() => {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.folder-info p {
+  font-size: 13px;
+  color: var(--warm-gray-500);
+  margin: 0 0 12px;
+}
+
+.badge-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: rgba(0,0,0,0.05);
+  color: var(--warm-gray-500);
+  border: none;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.badge-btn:hover {
+  background: rgba(0,0,0,0.1);
+}
+
+.badge-btn.public {
+  background: #f2f9ff;
+  color: #0075de;
+}
+
+.badge-btn.public:hover {
+  background: #e1f0ff;
 }
 
 .desc {
@@ -394,6 +547,167 @@ onMounted(() => {
 .badge.public {
   background: #f2f9ff;
   color: #0075de;
+}
+
+/* Modal Styles */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.4);
+  backdrop-filter: blur(2px);
+  display: grid;
+  place-items: center;
+  z-index: 1000;
+}
+
+.modal-content.large-modal {
+  width: 90%;
+  max-width: 800px;
+  max-height: 85vh;
+  background: var(--notion-white);
+  border-radius: 12px;
+  box-shadow: var(--deep-shadow);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid rgba(0,0,0,0.1);
+}
+
+.modal-header {
+  padding: 24px;
+  border-bottom: 1px solid rgba(0,0,0,0.1);
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.header-left {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+}
+
+.header-text h3 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--notion-black);
+}
+
+.header-text p {
+  margin: 4px 0 0;
+  font-size: 14px;
+  color: var(--warm-gray-500);
+}
+
+.close-btn {
+  background: transparent;
+  border: none;
+  color: var(--warm-gray-300);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 6px;
+  transition: all 0.2s ease;
+}
+
+.close-btn:hover {
+  background: var(--warm-white);
+  color: var(--notion-black);
+}
+
+.modal-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px;
+}
+
+.modal-loading, .modal-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 0;
+  color: var(--warm-gray-300);
+  gap: 16px;
+}
+
+.modal-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.subject-row {
+  display: flex;
+  align-items: center;
+  padding: 12px 16px;
+  border-radius: 8px;
+  background: transparent;
+  cursor: pointer;
+  transition: all 0.1s ease;
+  gap: 16px;
+}
+
+.subject-row:hover {
+  background: var(--warm-white);
+}
+
+.subject-cover-mini {
+  width: 32px;
+  height: 44px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  flex-shrink: 0;
+}
+
+.subject-row-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.subject-row-info h4 {
+  margin: 0 0 4px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--notion-black);
+}
+
+.subject-row-info p {
+  margin: 0;
+  font-size: 13px;
+  color: var(--warm-gray-500);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.subject-row-meta {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  color: var(--warm-gray-300);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.row-arrow {
+  color: var(--warm-gray-300);
+  transition: transform 0.2s;
+}
+
+.subject-row:hover .row-arrow {
+  transform: translateX(4px);
+  color: var(--notion-blue);
+}
+
+.modal-load-more {
+  display: flex;
+  justify-content: center;
+  margin-top: 16px;
+  padding-bottom: 8px;
 }
 
 .loading-state, .error-state, .empty-state {
