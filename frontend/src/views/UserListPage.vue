@@ -39,13 +39,21 @@ const fetchFolderSubjects = async (isLoadMore = false) => {
   loadingFolderSubjects.value = true
   try {
     const res = await getSubjectsInFolder(selectedFolder.value.id, folderPage.value, pageSize.value)
-    if (res.data?.code === 200) {
+    if (res.data?.code === 200 && res.data.data) {
       const data = res.data.data
-      folderSubjects.value = isLoadMore ? [...folderSubjects.value, ...data.list] : data.list
+      const newList = data.list || []
+      folderSubjects.value = isLoadMore ? [...folderSubjects.value, ...newList] : newList
       folderTotal.value = data.total || 0
+    } else {
+      // 如果接口返回非200或无数据，确保列表为空
+      if (!isLoadMore) folderSubjects.value = []
+      folderTotal.value = 0
     }
   } catch (err) {
     console.error('Fetch folder subjects error:', err)
+    // 发生错误时也确保列表为空，停止加载
+    if (!isLoadMore) folderSubjects.value = []
+    folderTotal.value = 0
   } finally {
     loadingFolderSubjects.value = false
   }
