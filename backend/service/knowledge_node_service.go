@@ -129,22 +129,34 @@ func (s *KnowledgeNodeService) GetPathNodes(ctx context.Context, nodeID int, use
 	}
 
 	// 2. 解析路径，例如 "0/127/128/129/130/"
-	// 路径解析逻辑：去除第一个（0）和最后一个（当前节点自身ID）
+	// path 不包含自身ID，例如：0/127/128/129/
 	trimmedPath := strings.Trim(node.Path, "/")
+	if trimmedPath == "" {
+		return []dto.KnowledgeNodeSimpleRes{}, nil
+	}
 	pathParts := strings.Split(trimmedPath, "/")
-	if len(pathParts) <= 2 {
-		// 如果路径只有 0 和自身，则没有中间 parentId 需要查询
+
+	start := 0
+	if len(pathParts) > 0 && pathParts[0] == "0" {
+		start = 1
+	}
+	if len(pathParts) <= start {
 		return []dto.KnowledgeNodeSimpleRes{}, nil
 	}
 
-	// 提取中间部分的 parentId：从索引 1 开始到倒数第二个
-	intermediateIDs := pathParts[1 : len(pathParts)-1]
+	ancestorIDs := pathParts[start:]
 	var parentIDs []int
-	for _, idStr := range intermediateIDs {
+	seen := make(map[int]struct{})
+	for _, idStr := range ancestorIDs {
 		id, _ := strconv.Atoi(idStr)
-		if id > 0 {
-			parentIDs = append(parentIDs, id)
+		if id <= 0 {
+			continue
 		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		parentIDs = append(parentIDs, id)
 	}
 
 	// 3. 批量查询这些 parentId 下的所有子节点
