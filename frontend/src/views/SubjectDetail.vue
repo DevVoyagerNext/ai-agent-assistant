@@ -54,6 +54,7 @@ const isLoggedIn = computed(() => !!localStorage.getItem('token'))
 const isLiked = ref(false)
 const isCollected = ref(false)
 const collectFolderId = ref<number | null>(null) // 教材所属的收藏夹ID
+const lastNodeId = ref<number | null>(null) // 最近学习的知识点ID
 const updatingLike = ref(false)
 
 // ----------------- 收藏相关 -----------------
@@ -76,6 +77,7 @@ const fetchSubjectDetail = async () => {
       isLiked.value = res.data.data.isLiked
       isCollected.value = res.data.data.isCollected
       collectFolderId.value = res.data.data.collectFolderId || null
+      lastNodeId.value = res.data.data.lastNodeId || null
     }
   } catch (error) {
     console.error('获取教材详情失败', error)
@@ -209,9 +211,10 @@ const toggleExpandMode = () => {
 const fetchTopNodes = async () => {
   loadingTree.value = true
   try {
-    const targetNodeId = Number(route.query.nodeId)
+    // 优先从 URL 参数获取，如果没有，则使用 fetchSubjectDetail 拿到的 lastNodeId
+    const targetNodeId = Number(route.query.nodeId) || lastNodeId.value
     
-    // 如果 URL 中有 nodeId，使用 getNodePath 接口
+    // 如果有有效的 nodeId，使用 getNodePath 接口定位
     if (targetNodeId && !isNaN(targetNodeId)) {
       const resPath = await getNodePath(targetNodeId)
       if (resPath.data?.code === 200 && resPath.data.data) {
@@ -1073,12 +1076,12 @@ const handleDifficultyClick = async (difficulty: 'easy' | 'medium' | 'hard') => 
   }
 }
 
-onMounted(() => {
+onMounted(async () => {
   if (!subjectId) {
     router.replace('/')
     return
   }
-  fetchSubjectDetail()
+  await fetchSubjectDetail()
   fetchTopNodes()
 })
 
