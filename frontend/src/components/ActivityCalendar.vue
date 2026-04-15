@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, ref, watch, onMounted, nextTick } from 'vue'
 import type { ActivityCalendarItem } from '../types/user'
 
 const props = defineProps<{
@@ -7,6 +7,7 @@ const props = defineProps<{
   weeks?: number
 }>()
 
+const scrollAreaRef = ref<HTMLElement | null>(null)
 const WEEKS = computed(() => props.weeks ?? 53)
 
 const endDate = ref(new Date())
@@ -121,6 +122,40 @@ const availableYears = computed(() => {
 
 const selectedYear = ref(today.value.getFullYear())
 
+const scrollToToday = async (smooth = true) => {
+  await nextTick()
+  if (!scrollAreaRef.value) return
+
+  const todayYMD = toYMD(today.value)
+  let todayWeekIndex = -1
+
+  for (let w = 0; w < weeksData.value.length; w++) {
+    if (weeksData.value[w].some(cell => cell.date === todayYMD)) {
+      todayWeekIndex = w
+      break
+    }
+  }
+
+  if (todayWeekIndex !== -1) {
+    const columnWidth = 14 // 12px cell + 2px gap
+    const targetScroll = todayWeekIndex * columnWidth
+    // 尽量让今天显示在中间或者偏右侧，而不是紧贴左边缘
+    const containerWidth = scrollAreaRef.value.clientWidth
+    const offset = Math.max(0, targetScroll - containerWidth / 2)
+    
+    scrollAreaRef.value.scrollTo({
+      left: offset,
+      behavior: smooth ? 'smooth' : 'auto'
+    })
+  } else {
+    // 如果找不到今天（比如选择了往年），则滚动到最右侧
+    scrollAreaRef.value.scrollTo({
+      left: scrollAreaRef.value.scrollWidth,
+      behavior: smooth ? 'smooth' : 'auto'
+    })
+  }
+}
+
 const selectYear = (year: number) => {
   selectedYear.value = year
   if (year === today.value.getFullYear()) {
@@ -129,51 +164,59 @@ const selectYear = (year: number) => {
     // 设置为选中年份的最后一天（12月31日）
     endDate.value = new Date(year, 11, 31)
   }
+  scrollToToday(true)
 }
 
+onMounted(() => {
+  scrollToToday(false) // 初始进入时不平滑，直接定位
+})
+
 watch(() => props.items, () => {
-  // Keep current endDate, data will reactively update
+  scrollToToday(true)
 })
 </script>
 
 <template>
   <div class="gh-calendar-container">
-    <div class="gh-calendar">
-      <div class="calendar-header">
-        <div class="left">
-        <div class="y-spacer"></div>
-        <div class="months" :style="{ gridTemplateColumns: `repeat(${weeksData.length}, 15px)` }">
-          <span
-            v-for="m in monthLabels"
-            :key="m.weekIndex"
-            class="month"
-            :style="{ gridColumnStart: m.weekIndex + 1 }"
-          >
-            {{ m.text }}
-          </span>
+    <div class="gh-calendar-main">
+      <div class="calendar-content">
+        <!-- 固定在左侧的星期标签 -->
+        <div class="y-labels-column">
+          <div class="y-label-spacer"></div>
+          <div class="y-labels">
+            <span class="y-label" style="grid-row: 2">{{ labels[1] }}</span>
+            <span class="y-label" style="grid-row: 4">{{ labels[3] }}</span>
+            <span class="y-label" style="grid-row: 6">{{ labels[5] }}</span>
+          </div>
+        </div>
+
+        <!-- 可横向滚动的日历区域 -->
+        <div ref="scrollAreaRef" class="gh-calendar-scroll-area">
+          <div class="months" :style="{ gridTemplateColumns: `repeat(${weeksData.length}, 14px)` }">
+            <span
+              v-for="m in monthLabels"
+              :key="m.weekIndex"
+              class="month"
+              :style="{ gridColumnStart: m.weekIndex + 1 }"
+            >
+              {{ m.text }}
+            </span>
+          </div>
+          <div class="grid" :style="{ gridTemplateColumns: `repeat(${weeksData.length}, 14px)` }">
+            <div v-for="(week, wi) in weeksData" :key="wi" class="col">
+              <div
+                v-for="(cell, di) in week"
+                :key="`${wi}-${di}`"
+                class="cell"
+                :class="`lv-${levelFor(cell.score)}`"
+                :title="`${cell.date}: 操作 ${cell.count} 次，活跃度 ${cell.score}${cell.date === toYMD(today) ? ' (今天)' : ''}`"
+              />
+            </div>
+          </div>
         </div>
       </div>
-    </div>
 
-    <div class="calendar-body">
-      <div class="y-labels">
-        <span class="y-label" style="grid-row: 2">{{ labels[1] }}</span>
-        <span class="y-label" style="grid-row: 4">{{ labels[3] }}</span>
-        <span class="y-label" style="grid-row: 6">{{ labels[5] }}</span>
-      </div>
-      <div class="grid" :style="{ gridTemplateColumns: `repeat(${weeksData.length}, 15px)` }">
-        <div v-for="(week, wi) in weeksData" :key="wi" class="col">
-          <div
-            v-for="(cell, di) in week"
-            :key="`${wi}-${di}`"
-            class="cell"
-            :class="`lv-${levelFor(cell.score)}`"
-            :title="`${cell.date}: 操作 ${cell.count} 次，活跃度 ${cell.score}${cell.date === toYMD(today) ? ' (今天)' : ''}`"
-          />
-        </div>
-      </div>
-    </div>
-
+      <!-- 固定在下方的图例 -->
       <div class="legend">
         <span>低</span>
         <span class="legend-cell lv-0"></span>
@@ -202,136 +245,158 @@ watch(() => props.items, () => {
 <style scoped>
 .gh-calendar-container {
   display: flex;
-  gap: 20px;
+  gap: 24px;
   align-items: flex-start;
   justify-content: flex-start;
+  padding: 8px 0;
 }
-.gh-calendar {
+
+.gh-calendar-main {
+  flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  overflow-x: auto;
+  gap: 16px;
+  min-width: 0;
 }
+
+.calendar-content {
+  display: flex;
+  gap: 8px;
+}
+
+.y-labels-column {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+}
+
+.y-label-spacer {
+  height: 20px; /* 与月份行高度一致 */
+}
+
+.gh-calendar-scroll-area {
+  flex: 1;
+  overflow-x: auto;
+  padding-bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
 .year-nav {
-  width: 60px;
+  width: 72px;
   display: flex;
   flex-direction: column;
   gap: 8px;
+  border-left: 1px solid rgba(0,0,0,0.05);
+  padding-left: 16px;
 }
+
 .year-btn {
-  padding: 8px 0;
+  padding: 6px 0;
   width: 100%;
   border-radius: 6px;
-  border: none;
+  border: 1px solid transparent;
   background: transparent;
-  color: #64748b;
+  color: #615d59;
   font-size: 13px;
+  font-weight: 600;
   cursor: pointer;
   text-align: center;
   transition: all 0.2s;
 }
+
 .year-btn:hover {
-  background: rgba(148, 163, 184, 0.1);
-  color: #1e293b;
+  background: rgba(0,0,0,0.05);
+  color: rgba(0,0,0,0.95);
 }
+
 .year-btn.active {
-  background: #3b82f6;
-  color: white;
-  font-weight: 500;
+  background: #f2f9ff;
+  color: #0075de;
+  border-color: rgba(0,117,222,0.1);
 }
-.calendar-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-.left {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.y-spacer {
-  width: 25px;
-}
+
 .months {
   display: grid;
-  grid-auto-flow: column;
+  height: 20px;
+  align-items: center;
   gap: 0px;
 }
+
 .month {
-  color: #475569;
-  font-size: 12px;
-  transform: translateX(-4px); /* Slight adjustment to align with the first column of the month */
+  color: #a39e98;
+  font-size: 11px;
+  font-weight: 500;
 }
-.tools {
-  display: flex;
-  gap: 8px;
-}
-.nav {
-  padding: 6px 10px;
-  font-size: 12px;
-  border-radius: 6px;
-  border: 1px solid #cbd5e1;
-  background: white;
-  color: #0f172a;
-}
-.nav:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-.calendar-body {
-  display: flex;
-  gap: 8px;
-}
+
 .y-labels {
   display: grid;
-  grid-template-rows: repeat(7, 15px);
-  gap: 0;
-  padding-top: 0px;
+  grid-template-rows: repeat(7, 14px);
+  gap: 2px;
 }
+
 .y-label {
   font-size: 11px;
-  color: #64748b;
-  line-height: 15px;
+  color: #a39e98;
+  line-height: 14px;
   text-align: right;
   padding-right: 4px;
+  font-weight: 500;
 }
+
 .grid {
   display: grid;
-  gap: 0;
+  gap: 2px;
 }
+
 .col {
   display: grid;
-  grid-template-rows: repeat(7, 15px);
-  gap: 0;
+  grid-template-rows: repeat(7, 14px);
+  gap: 2px;
 }
+
 .cell {
   width: 12px;
   height: 12px;
-  margin: 1.5px;
   border-radius: 2px;
-  background: #e5e7eb;
+  background: #f6f5f4;
+  transition: transform 0.1s ease;
 }
-.lv-0 { background: #e5e7eb; }
-.lv-1 { background: #bbf7d0; }
-.lv-2 { background: #86efac; }
-.lv-3 { background: #4ade80; }
-.lv-4 { background: #16a34a; }
+
+.cell:hover {
+  transform: scale(1.2);
+  z-index: 10;
+}
+
+/* Notion Green activity levels */
+.lv-0 { background: #f6f5f4; }
+.lv-1 { background: #d3f4e0; }
+.lv-2 { background: #92e6b5; }
+.lv-3 { background: #4fd38a; }
+.lv-4 { background: #1aae39; }
+
 .legend {
   display: flex;
   align-items: center;
-  gap: 6px;
-  color: #64748b;
-  font-size: 12px;
+  gap: 8px;
+  color: #a39e98;
+  font-size: 11px;
+  font-weight: 500;
+  margin-top: 4px;
+  padding-left: 36px; /* 对齐 y-labels-column 的宽度 */
 }
+
 .legend-cell {
-  width: 12px;
-  height: 12px;
+  width: 10px;
+  height: 10px;
   border-radius: 2px;
   display: inline-block;
 }
-.legend-cell.lv-0 { background: #e5e7eb; }
-.legend-cell.lv-1 { background: #bbf7d0; }
-.legend-cell.lv-2 { background: #86efac; }
-.legend-cell.lv-3 { background: #4ade80; }
-.legend-cell.lv-4 { background: #16a34a; }
+
+.legend-cell.lv-0 { background: #f6f5f4; }
+.legend-cell.lv-1 { background: #d3f4e0; }
+.legend-cell.lv-2 { background: #92e6b5; }
+.legend-cell.lv-3 { background: #4fd38a; }
+.legend-cell.lv-4 { background: #1aae39; }
 </style>

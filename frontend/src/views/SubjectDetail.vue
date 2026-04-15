@@ -218,43 +218,62 @@ const fetchTopNodes = async () => {
     if (targetNodeId && !isNaN(targetNodeId)) {
       const resPath = await getNodePath(targetNodeId)
       if (resPath.data?.code === 200 && resPath.data.data) {
-        const pathNodes = resPath.data.data
-        if (pathNodes.length > 0) {
-          // 1. 获取顶级节点（路径的第一项）并初始化 topNodes
-          const resTop = await getTopNodes(subjectId)
-          if (resTop.data?.code === 200 && resTop.data.data) {
-            topNodes.value = resTop.data.data.map(node => ({
-              ...node,
-              expanded: false,
-              children: [],
-              userProgressStatus: normalizeNodeProgressStatus(node.userProgressStatus)
-            }))
+        const pathNodes = [...resPath.data.data]
+        
+        // 1. 获取顶级节点并初始化目录树
+        const resTop = await getTopNodes(subjectId)
+        if (resTop.data?.code === 200 && resTop.data.data) {
+          topNodes.value = resTop.data.data.map(node => ({
+            ...node,
+            expanded: false,
+            children: [],
+            userProgressStatus: normalizeNodeProgressStatus(node.userProgressStatus)
+          }))
 
-            // 2. 按照路径深度逐层展开并加载子节点
-            let currentNodes = topNodes.value
-            for (let i = 0; i < pathNodes.length; i++) {
-              const pNode = pathNodes[i]
-              const foundNode = currentNodes.find(n => n.id === pNode.id)
-              
-              if (foundNode) {
-                // 如果不是最后一个节点（即路径中的中间节点），则展开并加载子节点
-                if (i < pathNodes.length - 1) {
-                  foundNode.expanded = true
-                  await ensureChildrenLoaded(foundNode)
-                  currentNodes = foundNode.children || []
-                } else {
-                  // 最后一个节点，直接选中
-                  await selectNode(foundNode.id)
-                  // 如果是文件夹，也展开一下
-                  if (foundNode.isLeaf === 0) {
-                    foundNode.expanded = true
-                    await ensureChildrenLoaded(foundNode)
-                  }
-                }
-              }
-            }
-            return // 成功处理路径逻辑后退出
+          const topNodeIds = new Set(topNodes.value.map(node => node.id))
+          const pathMap = new Map(pathNodes.map(node => [node.id, node]))
+
+          // 2. 根据 parentId 从 targetNodeId 反推出完整链路。
+          // 后端返回的 path 节点可能不包含顶级节点，所以需要前端补齐到顶级节点这一层。
+          const chainIds: number[] = [targetNodeId]
+          let cursorId = targetNodeId
+          let guard = 0
+          while (!topNodeIds.has(cursorId) && guard < 100) {
+            const current = pathMap.get(cursorId)
+            const parentId = current?.parentId
+            if (!parentId || parentId === 0) break
+            chainIds.unshift(parentId)
+            cursorId = parentId
+            guard++
           }
+
+          // 如果顶级节点本身也不在链路里，但可以从第一项的 parentId 推出来，则补进去。
+          if (chainIds.length > 0 && !topNodeIds.has(chainIds[0])) {
+            const firstNode = pathMap.get(chainIds[0])
+            if (firstNode?.parentId && topNodeIds.has(firstNode.parentId)) {
+              chainIds.unshift(firstNode.parentId)
+            }
+          }
+
+          // 3. 逐层展开到目标节点的父节点
+          let currentNodes = topNodes.value
+          for (let i = 0; i < chainIds.length - 1; i++) {
+            const chainId = chainIds[i]
+            const foundNode = currentNodes.find(node => node.id === chainId)
+            if (!foundNode) break
+            if (foundNode.isLeaf === 0) {
+              await ensureChildrenLoaded(foundNode)
+              foundNode.expanded = true
+              currentNodes = foundNode.children || []
+            }
+          }
+
+          // 强制触发目录树视图更新
+          topNodes.value = [...topNodes.value]
+
+          // 4. 最后选中目标节点，触发正文、笔记加载和高亮
+          await selectNode(targetNodeId)
+          return
         }
       }
     }
@@ -957,7 +976,8 @@ const selectNode = async (id: number) => {
     // 处理笔记
     if (isLoggedIn.value) {
       console.log('[GetNodeNote]', { nodeId: id, response: resNote.data })
-      if (resNote.data?.code === 200 && resNote.data.data) {
+      // 判断 resNote.data.data.id !== 0 表示真的存在笔记，后端如果没有笔记可能返回 id:0 的空结构
+      if (resNote.data?.code === 200 && resNote.data.data && resNote.data.data.id !== 0) {
         const note = resNote.data.data
         nodeNote.value = note
         noteEditContent.value = note.noteContent || ''

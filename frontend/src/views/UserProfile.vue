@@ -6,7 +6,7 @@ import Skeleton from '../components/Skeleton.vue'
 import { 
   ArrowLeft, LogOut, RefreshCcw, 
   Activity, BookOpen, Share2, Book, Users, Star, Layers, FolderHeart, Bookmark,
-  Folder, FileText, ToggleRight, ToggleLeft, Edit3, X, Loader2
+  Folder, FileText, ToggleRight, ToggleLeft, Edit3, X, Loader2, ChevronRight
 } from 'lucide-vue-next'
 import { useUserProfile } from '../composables/useUserProfile'
 import ActivityCalendar from '../components/ActivityCalendar.vue'
@@ -154,6 +154,13 @@ const getCoverStyle = (id: number) => {
     background: `linear-gradient(135deg, ${from}, ${to})`
   }
 }
+
+const scrollTo = (id: string) => {
+  const el = document.getElementById(id)
+  if (el) {
+    el.scrollIntoView({ behavior: 'smooth' })
+  }
+}
 </script>
 
 <template>
@@ -184,9 +191,42 @@ const getCoverStyle = (id: number) => {
     </div>
 
     <div class="content-wrapper">
+      <aside class="side-nav">
+        <div class="nav-group">
+          <div class="nav-item" @click="scrollTo('user-info')">
+            <Users :size="18" class="icon-primary" />
+            <span>关于我</span>
+          </div>
+          <div class="nav-item" @click="scrollTo('activity')">
+            <Activity :size="18" class="icon-success" />
+            <span>活跃度</span>
+          </div>
+          <div class="nav-item" @click="scrollTo('collections')">
+            <FolderHeart :size="18" class="icon-danger" />
+            <span>收藏夹</span>
+          </div>
+          <div class="nav-item" @click="scrollTo('recent')">
+            <Layers :size="18" class="icon-teal" />
+            <span>最近学习</span>
+          </div>
+          <div class="nav-item" @click="scrollTo('liked')">
+            <Star :size="18" class="icon-warning" />
+            <span>点赞教材</span>
+          </div>
+          <div class="nav-item" @click="scrollTo('private')">
+            <BookOpen :size="18" class="icon-success" />
+            <span>私人笔记</span>
+          </div>
+          <div class="nav-item" @click="scrollTo('shared')">
+            <Share2 :size="18" class="icon-info" />
+            <span>分享笔记</span>
+          </div>
+        </div>
+      </aside>
+
       <div class="main-column">
         <!-- User Info Card -->
-        <div class="card user-card">
+        <div id="user-info" class="card user-card">
           <div v-if="loadingUserInfo" class="hero-skeleton">
             <Skeleton width="76px" height="76px" border-radius="18px" />
             <div class="title-skeleton">
@@ -214,28 +254,28 @@ const getCoverStyle = (id: number) => {
           <div v-else class="stats-grid">
             <div class="stat-item">
               <span class="stat-value">{{ userInfo?.followersCount || 0 }}</span>
-              <span class="stat-label"><Users :size="14" /> 粉丝</span>
+              <span class="stat-label"><Users :size="14" class="icon-primary" /> 粉丝</span>
             </div>
             <div class="stat-item">
               <span class="stat-value">{{ userInfo?.followingCount || 0 }}</span>
-              <span class="stat-label"><Star :size="14" /> 关注</span>
+              <span class="stat-label"><Star :size="14" class="icon-primary" /> 关注</span>
             </div>
             <div class="stat-item">
               <span class="stat-value">{{ userInfo?.learnedSubjectsCount || 0 }}</span>
-              <span class="stat-label"><Book :size="14" /> 已学课程</span>
+              <span class="stat-label"><Book :size="14" class="icon-primary" /> 已学课程</span>
             </div>
             <div class="stat-item">
               <span class="stat-value">{{ userInfo?.sharedNotesCount || 0 }}</span>
-              <span class="stat-label"><Share2 :size="14" /> 分享笔记</span>
+              <span class="stat-label"><Share2 :size="14" class="icon-primary" /> 分享笔记</span>
             </div>
           </div>
         </div>
 
         <!-- Activity Calendar Card -->
-        <div class="card">
+        <div id="activity" class="card">
           <div class="card-header">
-            <Activity :size="20" class="icon-primary" />
-            <h2>活跃度日历</h2>
+            <Activity :size="20" class="icon-success" />
+            <h2>活跃度</h2>
           </div>
           
           <div v-if="loadingActivities" class="activity-skeleton">
@@ -244,11 +284,53 @@ const getCoverStyle = (id: number) => {
           <ActivityCalendar v-else :items="activities" />
         </div>
 
+        <!-- Collect Folders -->
+        <div id="collections" class="card">
+          <div class="card-header clickable-header" @click="router.push('/me/collections')">
+            <FolderHeart :size="20" class="icon-danger" />
+            <h2>我的收藏夹</h2>
+            <ChevronRight :size="18" class="header-arrow" />
+          </div>
+          
+          <div v-if="loadingCollectFolders" class="list-skeleton">
+            <div v-for="i in 2" :key="i" class="list-item-skeleton" style="padding: 12px 0;">
+              <div class="skeleton-col">
+                <Skeleton width="80%" height="16px" />
+                <Skeleton width="40%" height="12px" style="margin-top: 8px;" />
+              </div>
+            </div>
+          </div>
+          <div v-else class="note-list">
+            <div v-for="folder in collectFolders" :key="folder.id" class="note-item">
+              <div class="note-main-info">
+                <div class="note-title-line">
+                  <FolderHeart :size="16" class="note-type-icon icon-danger" />
+                  <h4>{{ folder.name }}</h4>
+                </div>
+              </div>
+              <div class="note-item-actions">
+                <button 
+                  class="toggle-public-mini" 
+                  :class="{ isPublic: folder.isPublic }"
+                  :title="folder.isPublic ? '已公开' : '已私密'"
+                >
+                  <ToggleRight v-if="folder.isPublic" :size="18" />
+                  <ToggleLeft v-else :size="18" />
+                </button>
+              </div>
+            </div>
+            <div v-if="!collectFolders.length" class="empty-state">
+              暂无收藏夹
+            </div>
+          </div>
+        </div>
+
         <!-- Learned Subjects Card -->
-        <div class="card">
-          <div class="card-header">
-            <Layers :size="20" class="icon-success" />
+        <div id="recent" class="card">
+          <div class="card-header clickable-header" @click="router.push('/me/recent-learning')">
+            <Layers :size="20" class="icon-teal" />
             <h2>最近学习 (在学/已学)</h2>
+            <ChevronRight :size="18" class="header-arrow" />
           </div>
           
           <div v-if="loadingRecentSubjects" class="list-skeleton">
@@ -270,11 +352,11 @@ const getCoverStyle = (id: number) => {
                   <h3>{{ item.name }}</h3>
                   <div class="subject-meta">
                     <span class="meta-item">
-                      <Clock :size="12" />
+                      <Clock :size="12" class="icon-brown" />
                       {{ item.lastStudyTime ? formatDate(item.lastStudyTime) : '未知时间' }}
                     </span>
                     <span class="meta-item">
-                      <Activity :size="12" />
+                      <Activity :size="12" class="icon-success" />
                       进度 {{ item.progressPercent }}%
                     </span>
                   </div>
@@ -286,14 +368,13 @@ const getCoverStyle = (id: number) => {
             </div>
           </div>
         </div>
-      </div>
 
-      <div class="side-column">
         <!-- Liked Subjects -->
-        <div class="card">
-          <div class="card-header">
-            <Star :size="20" class="icon-primary" />
+        <div id="liked" class="card">
+          <div class="card-header clickable-header" @click="router.push('/me/liked-subjects')">
+            <Star :size="20" class="icon-warning" />
             <h2>点赞的教材</h2>
+            <ChevronRight :size="18" class="header-arrow" />
           </div>
           
           <div v-if="loadingLikedSubjects" class="list-skeleton">
@@ -311,7 +392,12 @@ const getCoverStyle = (id: number) => {
               @click="router.push(`/subject/${subject.id}`)"
               style="cursor: pointer;"
             >
-              <h4>{{ subject.name }}</h4>
+              <div class="note-main-info">
+                <div class="note-title-line">
+                  <Star :size="16" class="note-type-icon icon-warning" />
+                  <h4>{{ subject.name }}</h4>
+                </div>
+              </div>
               <span v-if="subject.progressPercent > 0" class="date">进度 {{ subject.progressPercent }}%</span>
             </div>
             <div v-if="!likedSubjects.length" class="empty-state">
@@ -320,36 +406,12 @@ const getCoverStyle = (id: number) => {
           </div>
         </div>
 
-        <!-- Collect Folders -->
-        <div class="card">
-          <div class="card-header">
-            <FolderHeart :size="20" class="icon-danger" />
-            <h2>我的收藏夹</h2>
-          </div>
-          
-          <div v-if="loadingCollectFolders" class="list-skeleton">
-            <div v-for="i in 2" :key="i" class="list-item-skeleton" style="padding: 12px 0;">
-              <div class="skeleton-col">
-                <Skeleton width="80%" height="16px" />
-                <Skeleton width="40%" height="12px" style="margin-top: 8px;" />
-              </div>
-            </div>
-          </div>
-          <div v-else class="note-list">
-            <div v-for="folder in collectFolders" :key="folder.id" class="note-item">
-              <h4>{{ folder.name }}</h4>
-              <span class="date">{{ folder.isPublic ? '公开' : '私密' }}</span>
-            </div>
-            <div v-if="!collectFolders.length" class="empty-state">
-              暂无收藏夹
-            </div>
-          </div>
-        </div>
         <!-- Private Notes -->
-        <div class="card">
-          <div class="card-header">
-            <BookOpen :size="20" class="icon-warning" />
+        <div id="private" class="card">
+          <div class="card-header clickable-header" @click="router.push('/me/private-notes')">
+            <BookOpen :size="20" class="icon-success" />
             <h2>私人笔记</h2>
+            <ChevronRight :size="18" class="header-arrow" />
           </div>
           
           <div v-if="loadingPublicPrivateNotes" class="list-skeleton">
@@ -364,12 +426,12 @@ const getCoverStyle = (id: number) => {
             <div v-for="note in privateNotesPreview" :key="note.id" class="note-item">
               <div class="note-main-info">
                 <div class="note-title-line">
-                  <Folder v-if="note.type === 'folder'" :size="16" class="note-type-icon folder" />
-                  <FileText v-else :size="16" class="note-type-icon file" />
+                  <Folder v-if="note.type === 'folder'" :size="16" class="note-type-icon icon-warning" />
+                  <FileText v-else :size="16" class="note-type-icon icon-info" />
                   <h4 @click="openRename(note)">{{ note.title }}</h4>
                   <Edit3 :size="12" class="edit-icon-mini" @click="openRename(note)" />
+                  <span class="date">{{ formatDate(note.updatedAt) }}</span>
                 </div>
-                <span class="date">{{ formatDate(note.updatedAt) }}</span>
               </div>
               <div class="note-item-actions">
                 <button 
@@ -394,7 +456,7 @@ const getCoverStyle = (id: number) => {
         </div>
 
         <!-- Shared Notes -->
-        <div class="card">
+        <div id="shared" class="card">
           <div class="card-header">
             <Share2 :size="20" class="icon-info" />
             <h2>分享笔记</h2>
@@ -411,8 +473,11 @@ const getCoverStyle = (id: number) => {
           <div v-else class="note-list">
             <div v-for="note in sharedNotes" :key="note.id" class="note-item shared">
               <div class="note-header">
-                <h4>{{ note.nodeName }}</h4>
-                <span class="views"><Activity :size="12" /> {{ note.viewCount }}</span>
+                <div class="note-title-line">
+                  <Share2 :size="16" class="note-type-icon icon-info" />
+                  <h4>{{ note.nodeName }}</h4>
+                </div>
+                <span class="views"><Activity :size="12" class="icon-success" /> {{ note.viewCount }}</span>
               </div>
               <div class="note-meta">
                 <span>Token: {{ note.shareToken }}</span>
@@ -459,13 +524,26 @@ const getCoverStyle = (id: number) => {
 </template>
 
 <style scoped>
+:root {
+  --notion-black: rgba(0,0,0,0.95);
+  --notion-white: #ffffff;
+  --notion-blue: #0075de;
+  --notion-blue-hover: #005bab;
+  --warm-white: #f6f5f4;
+  --warm-dark: #31302e;
+  --warm-gray-500: #615d59;
+  --warm-gray-300: #a39e98;
+  --whisper-border: 1px solid rgba(0,0,0,0.1);
+  --card-shadow: rgba(0,0,0,0.04) 0px 4px 18px, rgba(0,0,0,0.027) 0px 2.025px 7.84688px, rgba(0,0,0,0.02) 0px 0.8px 2.925px, rgba(0,0,0,0.01) 0px 0.175px 1.04062px;
+  --deep-shadow: rgba(0,0,0,0.01) 0px 1px 3px, rgba(0,0,0,0.02) 0px 3px 7px, rgba(0,0,0,0.02) 0px 7px 15px, rgba(0,0,0,0.04) 0px 14px 28px, rgba(0,0,0,0.05) 0px 23px 52px;
+}
+
 .profile-page {
   width: 100vw;
   height: 100vh;
-  background:
-    radial-gradient(1200px 600px at 20% 10%, rgba(59, 130, 246, 0.18), transparent 60%),
-    radial-gradient(900px 500px at 80% 30%, rgba(34, 197, 94, 0.16), transparent 55%),
-    linear-gradient(180deg, #f8fafc, #eef2ff);
+  background: var(--notion-white);
+  color: var(--notion-black);
+  font-family: "NotionInter", Inter, -apple-system, system-ui, sans-serif;
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -478,48 +556,60 @@ const getCoverStyle = (id: number) => {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  border-bottom: var(--whisper-border);
+  background: var(--notion-white);
 }
 
 .topbar-actions {
   display: flex;
-  gap: 10px;
+  gap: 12px;
 }
 
 .ghost-btn,
-.danger-btn {
+.danger-btn,
+.primary-btn {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 12px;
-  border-radius: 12px;
-  border: 1px solid rgba(148, 163, 184, 0.35);
-  background: rgba(255, 255, 255, 0.55);
-  backdrop-filter: blur(10px);
-  color: #0f172a;
+  padding: 8px 16px;
+  border-radius: 4px;
+  font-size: 14px;
+  font-weight: 600;
   cursor: pointer;
-  transition: transform 0.12s ease, background 0.12s ease, border-color 0.12s ease;
+  transition: all 0.1s ease;
+  border: 1px solid transparent;
+}
+
+.ghost-btn {
+  background: transparent;
+  color: var(--notion-black);
 }
 
 .ghost-btn:hover:not(:disabled) {
-  transform: translateY(-1px);
-  background: rgba(255, 255, 255, 0.75);
-  border-color: rgba(99, 102, 241, 0.35);
+  background: rgba(0,0,0,0.05);
 }
 
 .ghost-btn:disabled {
-  opacity: 0.7;
+  opacity: 0.5;
   cursor: not-allowed;
 }
 
+.primary-btn {
+  background: var(--notion-blue);
+  color: white;
+}
+
+.primary-btn:hover:not(:disabled) {
+  background: var(--notion-blue-hover);
+}
+
 .danger-btn {
-  border-color: rgba(248, 113, 113, 0.35);
-  color: #7f1d1d;
+  color: #eb5757;
+  background: transparent;
 }
 
 .danger-btn:hover {
-  transform: translateY(-1px);
-  background: rgba(254, 226, 226, 0.55);
-  border-color: rgba(248, 113, 113, 0.55);
+  background: rgba(235, 87, 87, 0.1);
 }
 
 .spin {
@@ -532,76 +622,162 @@ const getCoverStyle = (id: number) => {
 
 .content-wrapper {
   flex: 1;
-  padding: 18px 20px 24px;
-  display: grid;
-  grid-template-columns: 1fr 360px;
-  gap: 20px;
-  align-items: start;
+  padding: 40px 24px;
+  display: flex;
+  flex-direction: row;
+  justify-content: center;
+  gap: 48px;
   overflow-y: auto;
+  width: 100%;
 }
 
-.main-column,
-.side-column {
+.side-nav {
+  position: sticky;
+  top: 0;
+  height: fit-content;
+  width: 180px;
+  flex-shrink: 0;
+  padding-top: 8px;
+}
+
+.nav-group {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 4px;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  color: var(--warm-gray-500);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  user-select: none;
+}
+
+.nav-item:hover {
+  background: var(--warm-white);
+  color: var(--notion-black);
+}
+
+.nav-item:active {
+  background: rgba(0,0,0,0.1);
+}
+
+.nav-item span {
+  white-space: nowrap;
+}
+
+@media (max-width: 1024px) {
+  .side-nav {
+    display: none;
+  }
+  .content-wrapper {
+    padding: 24px 16px;
+  }
+}
+
+@media (max-width: 640px) {
+  .stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.main-column {
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+  width: 100%;
+  max-width: 900px;
 }
 
 .card {
-  border-radius: 20px;
-  border: 1px solid rgba(148, 163, 184, 0.28);
-  background: rgba(255, 255, 255, 0.68);
-  backdrop-filter: blur(12px);
-  box-shadow: 0 18px 55px rgba(15, 23, 42, 0.08);
-  padding: 22px;
-  overflow: hidden;
+  border-radius: 12px;
+  border: var(--whisper-border);
+  background: var(--notion-white);
+  padding: 32px;
+  box-shadow: var(--card-shadow);
+  transition: box-shadow 0.2s ease;
+}
+
+.card:hover {
+  box-shadow: rgba(0,0,0,0.06) 0px 6px 22px, rgba(0,0,0,0.04) 0px 3px 10px;
 }
 
 .card-header {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-bottom: 18px;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.clickable-header {
+  cursor: pointer;
+  transition: background 0.1s ease;
+  padding: 6px 12px;
+  margin-left: -12px;
+  border-radius: 6px;
+}
+
+.clickable-header:hover {
+  background: var(--warm-white);
+}
+
+.header-arrow {
+  margin-left: auto;
+  color: var(--warm-gray-300);
+  transition: transform 0.2s ease;
+}
+
+.clickable-header:hover .header-arrow {
+  transform: translateX(4px);
+  color: var(--notion-blue);
 }
 
 .card-header h2 {
-  font-size: 18px;
+  font-size: 20px;
+  font-weight: 700;
   margin: 0;
-  color: #0f172a;
+  color: var(--notion-black);
+  letter-spacing: -0.25px;
 }
 
-.icon-primary { color: #3b82f6; }
-.icon-success { color: #22c55e; }
-.icon-warning { color: #f59e0b; }
-.icon-info { color: #0ea5e9; }
+.icon-primary { color: var(--notion-blue); }
+.icon-success { color: #1aae39; }
+.icon-warning { color: #dd5b00; }
+.icon-danger { color: #eb5757; }
+.icon-info { color: #0075de; }
+.icon-teal { color: #2a9d99; }
+.icon-pink { color: #ff64c8; }
+.icon-purple { color: #391c57; }
+.icon-brown { color: #523410; }
 
 /* Hero Section */
 .hero, .hero-skeleton {
   display: flex;
-  gap: 16px;
+  gap: 28px;
   align-items: center;
-  padding-bottom: 18px;
-  border-bottom: 1px dashed rgba(148, 163, 184, 0.35);
-}
-
-.title-skeleton {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
+  padding-bottom: 32px;
+  border-bottom: 1px solid rgba(0,0,0,0.05);
 }
 
 .avatar {
-  width: 76px;
-  height: 76px;
-  border-radius: 18px;
-  background: linear-gradient(135deg, rgba(59, 130, 246, 0.18), rgba(34, 197, 94, 0.14));
-  border: 1px solid rgba(148, 163, 184, 0.22);
+  width: 96px;
+  height: 96px;
+  border-radius: 20px;
+  background: var(--warm-white);
+  border: var(--whisper-border);
   display: grid;
   place-items: center;
   overflow: hidden;
-  color: #1e293b;
-  font-weight: 800;
-  font-size: 26px;
+  color: var(--notion-black);
+  font-weight: 700;
+  font-size: 40px;
 }
 
 .avatar img {
@@ -610,110 +786,82 @@ const getCoverStyle = (id: number) => {
   object-fit: cover;
 }
 
-.title {
-  flex: 1;
-}
-
 .name-row {
   display: flex;
-  align-items: center;
-  gap: 10px;
+  align-items: baseline;
+  gap: 12px;
 }
 
 .username {
   margin: 0;
-  font-size: 24px;
-  color: #0f172a;
-  letter-spacing: 0.2px;
+  font-size: 40px;
+  font-weight: 700;
+  color: var(--notion-black);
+  letter-spacing: -1.5px;
+  line-height: 1.1;
 }
 
 .subtitle {
   margin: 8px 0 0;
-  color: #64748b;
-  font-size: 13px;
+  color: var(--warm-gray-500);
+  font-size: 18px;
+  font-weight: 400;
+  line-height: 1.5;
 }
 
 /* Stats */
 .stats-grid, .stats-skeleton {
-  padding-top: 18px;
+  padding-top: 32px;
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 14px;
+  gap: 20px;
 }
 
 .stat-item {
-  padding: 16px 12px;
-  border-radius: 16px;
-  border: 1px solid rgba(148, 163, 184, 0.25);
-  background: rgba(255, 255, 255, 0.6);
+  padding: 16px;
+  border-radius: 12px;
+  background: var(--warm-white);
+  border: 1px solid transparent;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 6px;
+  transition: all 0.2s ease;
+}
+
+.stat-item:hover {
+  background: var(--notion-white);
+  border-color: rgba(0,0,0,0.1);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.05);
 }
 
 .stat-value {
-  font-size: 20px;
+  font-size: 24px;
   font-weight: 700;
-  color: #0f172a;
+  color: var(--notion-black);
+  letter-spacing: -0.5px;
 }
 
 .stat-label {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 12px;
-  color: #64748b;
-  font-weight: 500;
+  font-size: 13px;
+  color: var(--warm-gray-500);
+  font-weight: 600;
 }
-
-/* Activity Grid */
-.activity-grid, .activity-skeleton {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(24px, 1fr));
-  gap: 6px;
-}
-
-.activity-box {
-  width: 100%;
-  aspect-ratio: 1;
-  border-radius: 4px;
-  background: rgba(148, 163, 184, 0.15);
-  transition: transform 0.2s;
-}
-
-.activity-box:hover {
-  transform: scale(1.1);
-}
-
-.low-activity { background: rgba(34, 197, 94, 0.3); }
-.mid-activity { background: rgba(34, 197, 94, 0.6); }
-.high-activity { background: rgba(34, 197, 94, 1); }
 
 /* List Common */
-.list-skeleton {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.list-item-skeleton {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-}
-
-.skeleton-col {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-}
-
 .empty-state {
   text-align: center;
-  padding: 24px;
-  color: #94a3b8;
-  font-size: 13px;
+  padding: 48px;
+  color: var(--warm-gray-300);
+  font-size: 15px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
 }
 
 /* Subject List */
@@ -724,108 +872,85 @@ const getCoverStyle = (id: number) => {
 }
 
 .subject-item {
+  padding: 16px;
+  border-radius: 12px;
+  background: var(--notion-white);
+  border: var(--whisper-border);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.subject-item:hover {
+  background: var(--warm-white);
+  transform: translateX(4px);
+}
+
+.subject-info {
   display: flex;
   gap: 16px;
   align-items: center;
-  padding: 12px;
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.4);
-  border: 1px solid rgba(148, 163, 184, 0.15);
 }
 
 .subject-cover {
   width: 48px;
   height: 64px;
   border-radius: 6px;
-  background: #f1f5f9;
+  border: var(--whisper-border);
   display: grid;
   place-items: center;
-  overflow: hidden;
+  color: white;
+  flex-shrink: 0;
 }
 
-.subject-cover img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.subject-info {
+.subject-text {
   flex: 1;
 }
 
-.subject-title-row {
+.subject-text h3 {
+  margin: 0 0 6px;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--notion-black);
+  letter-spacing: -0.2px;
+}
+
+.subject-meta {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 10px;
+  gap: 16px;
+  font-size: 13px;
+  color: var(--warm-gray-500);
 }
 
-.subject-status-icons {
-  display: flex;
-  gap: 8px;
-  color: #f59e0b;
-}
-
-.subject-info h4 {
-  margin: 0;
-  font-size: 15px;
-  color: #1e293b;
-}
-
-.progress-bar-wrap {
+.meta-item {
   display: flex;
   align-items: center;
-  gap: 10px;
-}
-
-.progress-bar {
-  flex: 1;
-  height: 6px;
-  background: rgba(148, 163, 184, 0.2);
-  border-radius: 999px;
-  overflow: hidden;
-}
-
-.progress-inner {
-  height: 100%;
-  background: #3b82f6;
-  border-radius: 999px;
-  transition: width 0.3s ease;
-}
-
-.progress-text {
-  font-size: 12px;
-  color: #64748b;
-  min-width: 40px;
+  gap: 4px;
 }
 
 /* Note List */
 .note-list {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
 }
 
 .note-item {
+  padding: 12px;
+  border-radius: 8px;
+  background: transparent;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px;
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.5);
-  border: 1px solid rgba(148, 163, 184, 0.15);
-  transition: all 0.2s;
+  transition: all 0.1s ease;
+  cursor: pointer;
 }
 
 .note-item:hover {
-  background: rgba(255, 255, 255, 0.8);
-  border-color: rgba(59, 130, 246, 0.3);
-  transform: translateX(2px);
+  background: var(--warm-white);
 }
 
 .note-main-info {
   flex: 1;
-  min-width: 0;
   display: flex;
   flex-direction: column;
 }
@@ -833,250 +958,219 @@ const getCoverStyle = (id: number) => {
 .note-title-line {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 4px;
-  min-width: 0;
+  gap: 12px;
 }
+
+.note-type-icon {
+  color: var(--warm-gray-500);
+}
+
+.note-type-icon.folder { color: #f2994a; }
+.note-type-icon.file { color: #2d9cdb; }
 
 .note-title-line h4 {
   margin: 0;
   font-size: 14px;
-  color: #1e293b;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  cursor: pointer;
+  font-weight: 600;
+  color: var(--notion-black);
 }
 
-.note-title-line h4:hover {
-  color: #3b82f6;
-  text-decoration: underline;
+.note-title-line .date {
+  font-size: 12px;
+  color: var(--warm-gray-300);
+  margin-left: auto;
+  margin-right: 12px;
 }
 
 .edit-icon-mini {
-  color: #94a3b8;
+  color: var(--warm-gray-300);
   opacity: 0;
-  cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.2s ease;
+}
+
+.edit-icon-mini:hover {
+  color: var(--notion-blue);
+  transform: scale(1.2);
 }
 
 .note-item:hover .edit-icon-mini {
   opacity: 1;
 }
 
-.edit-icon-mini:hover {
-  color: #3b82f6;
-}
-
-.note-type-icon {
-  flex-shrink: 0;
-}
-
-.note-type-icon.folder {
-  color: #f59e0b;
-}
-
-.note-type-icon.file {
-  color: #3b82f6;
-}
-
-.note-item .date {
-  font-size: 11px;
-  color: #94a3b8;
-}
-
 .note-item-actions {
   display: flex;
-  align-items: center;
   gap: 8px;
 }
 
 .toggle-public-mini {
   background: transparent;
   border: none;
-  color: #94a3b8;
+  color: var(--warm-gray-300);
   cursor: pointer;
-  display: flex;
-  align-items: center;
   padding: 4px;
   border-radius: 4px;
-  transition: all 0.2s;
-}
-
-.toggle-public-mini.isPublic {
-  color: #3b82f6;
+  transition: all 0.2s ease;
 }
 
 .toggle-public-mini:hover {
-  background: rgba(148, 163, 184, 0.1);
+  background: rgba(0,0,0,0.05);
+  color: var(--notion-black);
 }
 
+.toggle-public-mini.isPublic {
+  color: var(--notion-blue);
+}
+
+.note-ellipsis h4 {
+  color: var(--warm-gray-300);
+}
+
+/* Shared Notes */
 .note-item.shared {
-  display: flex;
   flex-direction: column;
+  align-items: stretch;
   gap: 8px;
-}
-
-.note-item.note-ellipsis {
-  justify-content: center;
-  opacity: 0.75;
-}
-
-.note-item.note-ellipsis h4 {
-  margin: 0;
-}
-
-.note-item.note-ellipsis:hover {
-  background: rgba(255, 255, 255, 0.5);
-  transform: none;
+  cursor: default;
 }
 
 .note-header {
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
+  align-items: center;
+}
+
+.note-header h4 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
 }
 
 .views {
+  font-size: 12px;
+  color: var(--warm-gray-500);
   display: flex;
   align-items: center;
   gap: 4px;
-  font-size: 11px;
-  color: #64748b;
-  background: rgba(148, 163, 184, 0.1);
-  padding: 2px 6px;
-  border-radius: 4px;
 }
 
 .note-meta {
   display: flex;
   justify-content: space-between;
-  font-size: 11px;
-  color: #64748b;
+  font-size: 12px;
+  color: var(--warm-gray-300);
 }
 
 /* Modal Styles */
 .modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  background: rgba(0,0,0,0.4);
+  backdrop-filter: blur(2px);
+  display: grid;
+  place-items: center;
   z-index: 1000;
-  backdrop-filter: blur(4px);
 }
 
-.small-modal {
-  width: 380px;
-  background: #fff;
-  border-radius: 16px;
-  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+.modal-content {
+  background: var(--notion-white);
+  border-radius: 12px;
+  box-shadow: var(--deep-shadow);
+  border: var(--whisper-border);
+  width: 90%;
+  max-width: 400px;
+  overflow: hidden;
 }
 
 .modal-header {
   padding: 16px 20px;
   display: flex;
-  align-items: center;
   justify-content: space-between;
-  border-bottom: 1px solid #f1f5f9;
+  align-items: center;
+  border-bottom: var(--whisper-border);
 }
 
 .modal-header h3 {
   margin: 0;
   font-size: 16px;
-  color: #1e293b;
+  font-weight: 700;
 }
 
 .close-btn {
   background: transparent;
   border: none;
-  color: #94a3b8;
+  color: var(--warm-gray-300);
   cursor: pointer;
   padding: 4px;
   border-radius: 4px;
 }
 
 .close-btn:hover {
-  background: #f1f5f9;
+  background: var(--warm-white);
+  color: var(--notion-black);
 }
 
 .modal-body {
-  padding: 20px;
-}
-
-.form-group {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+  padding: 24px 20px;
 }
 
 .form-group label {
+  display: block;
   font-size: 13px;
   font-weight: 600;
-  color: #64748b;
+  color: var(--warm-gray-500);
+  margin-bottom: 8px;
 }
 
 .form-group input {
+  width: 100%;
   padding: 10px 12px;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  outline: none;
-  transition: all 0.2s;
+  border-radius: 6px;
+  border: 1px solid #ddd;
+  font-size: 14px;
+  color: var(--notion-black);
+  transition: all 0.2s ease;
 }
 
 .form-group input:focus {
-  border-color: #3b82f6;
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+  outline: none;
+  border-color: var(--notion-blue);
+  box-shadow: 0 0 0 3px rgba(0,117,222,0.1);
 }
 
 .modal-footer {
   padding: 16px 20px;
-  border-top: 1px solid #f1f5f9;
+  background: var(--warm-white);
+  display: flex;
+  justify-content: flex-end;
 }
 
 .form-actions {
   display: flex;
-  justify-content: flex-end;
   gap: 12px;
 }
 
-.cancel-btn {
-  padding: 8px 16px;
-  border-radius: 8px;
-  border: 1px solid #e2e8f0;
-  background: #fff;
-  color: #64748b;
-  cursor: pointer;
-  font-weight: 500;
-}
-
 .confirm-btn {
-  padding: 8px 16px;
-  border-radius: 8px;
+  background: var(--notion-blue);
+  color: white;
   border: none;
-  background: #3b82f6;
-  color: #fff;
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-weight: 600;
   cursor: pointer;
-  font-weight: 500;
-  display: flex;
-  align-items: center;
-  gap: 6px;
 }
 
-.confirm-btn:hover {
-  background: #2563eb;
+.confirm-btn:hover:not(:disabled) {
+  background: var(--notion-blue-hover);
 }
 
-.confirm-btn:disabled {
-  opacity: 0.7;
-  cursor: not-allowed;
-}
-
-@media (max-width: 1024px) {
-  .content-wrapper {
-    grid-template-columns: 1fr;
-  }
+.cancel-btn {
+  background: white;
+  color: var(--notion-black);
+  border: var(--whisper-border);
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-weight: 600;
+  cursor: pointer;
 }
 
 @media (max-width: 640px) {
