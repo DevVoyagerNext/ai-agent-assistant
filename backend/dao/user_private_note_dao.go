@@ -5,6 +5,8 @@ import (
 	"backend/model"
 	"context"
 	"time"
+
+	"gorm.io/gorm"
 )
 
 type UserPrivateNoteDao struct{}
@@ -94,6 +96,44 @@ func (dao *UserPrivateNoteDao) CreateNote(ctx context.Context, note *model.UserP
 // CreateNoteShare 创建分享记录
 func (dao *UserPrivateNoteDao) CreateNoteShare(ctx context.Context, share *model.NoteShare) error {
 	return global.GVA_DB.WithContext(ctx).Create(share).Error
+}
+
+// GetNoteShareByToken 根据分享 token 查询分享记录
+func (dao *UserPrivateNoteDao) GetNoteShareByToken(ctx context.Context, shareToken string) (model.NoteShare, error) {
+	var share model.NoteShare
+	err := global.GVA_DB.WithContext(ctx).
+		Where("share_token = ?", shareToken).
+		First(&share).Error
+	return share, err
+}
+
+// GetShareInfoByToken 获取分享基础信息（关联用户表和笔记表）
+type ShareInfoResult struct {
+	model.NoteShare
+	AuthorName   string `gorm:"column:author_name"`
+	AuthorAvatar string `gorm:"column:author_avatar"`
+	NoteTitle    string `gorm:"column:note_title"`
+	NoteType     string `gorm:"column:note_type"`
+}
+
+func (dao *UserPrivateNoteDao) GetShareInfoByToken(ctx context.Context, shareToken string) (ShareInfoResult, error) {
+	var result ShareInfoResult
+	err := global.GVA_DB.WithContext(ctx).
+		Table("note_shares ns").
+		Select("ns.*, u.username as author_name, u.avatar_url as author_avatar, upn.title as note_title, upn.type as note_type").
+		Joins("LEFT JOIN users u ON ns.user_id = u.id").
+		Joins("LEFT JOIN user_private_notes upn ON ns.private_note_id = upn.id").
+		Where("ns.share_token = ?", shareToken).
+		First(&result).Error
+	return result, err
+}
+
+// IncreaseNoteShareViewCount 增加分享访问次数
+func (dao *UserPrivateNoteDao) IncreaseNoteShareViewCount(ctx context.Context, shareID uint) error {
+	return global.GVA_DB.WithContext(ctx).
+		Model(&model.NoteShare{}).
+		Where("id = ?", shareID).
+		Update("view_count", gorm.Expr("view_count + ?", 1)).Error
 }
 
 // UpdateNote 更新笔记或文件夹

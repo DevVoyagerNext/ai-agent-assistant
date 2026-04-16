@@ -8,6 +8,17 @@ import (
 
 type UserPrivateNoteRouter struct{}
 
+func (s *UserPrivateNoteRouter) InitUserPrivateNoteRouter(Router *gin.RouterGroup) {
+	privateNoteController := &controller.UserPrivateNoteController{}
+	privateNoteRouter := Router.Group("/user/notes/private")
+	{
+		// 1. 访问分享的私人笔记 (如: POST /v1/user/notes/private/share/access)
+		privateNoteRouter.POST("/share/access", privateNoteController.AccessSharedPrivateNote)
+		// 2. 获取分享基础信息 (如: GET /v1/user/notes/private/share/info?token=xxx)
+		privateNoteRouter.GET("/share/info", privateNoteController.GetShareInfo)
+	}
+}
+
 func (s *UserPrivateNoteRouter) InitAuthUserPrivateNoteRouter(Router *gin.RouterGroup) {
 	privateNoteController := &controller.UserPrivateNoteController{}
 	privateNoteRouter := Router.Group("/user/notes/private")

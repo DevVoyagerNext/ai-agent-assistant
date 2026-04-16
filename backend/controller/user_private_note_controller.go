@@ -243,3 +243,42 @@ func (con *UserPrivateNoteController) SharePrivateNote(c *gin.Context) {
 
 	response.Ok(res, c)
 }
+
+// AccessSharedPrivateNote 访问分享私人笔记接口
+func (con *UserPrivateNoteController) AccessSharedPrivateNote(c *gin.Context) {
+	var req dto.AccessSharedPrivateNoteReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.FailWithMsg(errmsg.CodeError, "参数错误: "+err.Error(), c)
+		return
+	}
+
+	if req.PrivateNoteID <= 0 {
+		response.FailWithMsg(errmsg.CodeError, "private_node_id 参数错误", c)
+		return
+	}
+
+	res, err := con.privateNoteService.AccessSharedPrivateNote(c.Request.Context(), req)
+	if err != nil {
+		response.FailWithMsg(errmsg.CodeError, err.Error(), c)
+		return
+	}
+
+	response.Ok(res, c)
+}
+
+// GetShareInfo 获取分享基础信息接口
+func (con *UserPrivateNoteController) GetShareInfo(c *gin.Context) {
+	token := c.Query("token")
+	if token == "" {
+		response.FailWithMsg(errmsg.CodeError, "token不能为空", c)
+		return
+	}
+
+	res, err := con.privateNoteService.GetShareInfo(c.Request.Context(), token)
+	if err != nil {
+		response.FailWithMsg(errmsg.CodeError, err.Error(), c)
+		return
+	}
+
+	response.Ok(res, c)
+}

@@ -339,3 +339,107 @@ func (s *UserPrivateNoteService) SharePrivateNote(ctx context.Context, userID ui
 		ExpiresAt:  expiresAt.Format("2006-01-02 15:04:05"),
 	}, nil
 }
+
+// GetShareInfo 获取分享基础信息
+func (s *UserPrivateNoteService) GetShareInfo(ctx context.Context, shareToken string) (dto.GetShareInfoRes, error) {
+	if shareToken == "" {
+		return dto.GetShareInfoRes{}, errors.New("分享凭证不能为空")
+	}
+
+	result, err := s.privateNoteDao.GetShareInfoByToken(ctx, shareToken)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return dto.GetShareInfoRes{}, errors.New("分享记录不存在")
+		}
+		return dto.GetShareInfoRes{}, err
+	}
+
+	// 拼装并返回
+	return dto.GetShareInfoRes{
+		AuthorName:   result.AuthorName,
+		AuthorAvatar: result.AuthorAvatar,
+		NoteTitle:    result.NoteTitle,
+		NoteType:     result.NoteType,
+		IsActive:     result.IsActive == 1,
+		IsExpired:    result.ExpiresAt.Before(time.Now()),
+	}, nil
+}
+
+// AccessSharedPrivateNote 访问分享的私人笔记或文件夹
+func (s *UserPrivateNoteService) AccessSharedPrivateNote(ctx context.Context, req dto.AccessSharedPrivateNoteReq) (dto.AccessSharedPrivateNoteRes, error) {
+	share, err := s.privateNoteDao.GetNoteShareByToken(ctx, req.ShareToken)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return dto.AccessSharedPrivateNoteRes{}, errors.New("分享记录不存在")
+		}
+		return dto.AccessSharedPrivateNoteRes{}, err
+	}
+
+	if share.IsActive != 1 {
+		return dto.AccessSharedPrivateNoteRes{}, errors.New("该分享已被取消")
+	}
+	if share.ExpiresAt.Before(time.Now()) {
+		return dto.AccessSharedPrivateNoteRes{}, errors.New("该分享已过期")
+	}
+	if share.ShareCode != req.ShareCode {
+		return dto.AccessSharedPrivateNoteRes{}, errors.New("提取码错误")
+	}
+
+	shareOwnerID := uint(share.UserID)
+	sharedRootNote, err := s.privateNoteDao.GetNoteByID(ctx, shareOwnerID, share.PrivateNoteID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return dto.AccessSharedPrivateNoteRes{}, errors.New("分享内容不存在或已删除")
+		}
+		return dto.AccessSharedPrivateNoteRes{}, err
+	}
+
+	targetNote, err := s.privateNoteDao.GetNoteByID(ctx, shareOwnerID, req.PrivateNoteID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return dto.AccessSharedPrivateNoteRes{}, errors.New("访问的笔记不存在或已删除")
+		}
+		return dto.AccessSharedPrivateNoteRes{}, err
+	}
+
+	if !strings.HasPrefix(targetNote.Path, sharedRootNote.Path) {
+		return dto.AccessSharedPrivateNoteRes{}, errors.New("无权访问该分享节点")
+	}
+
+	if err := s.privateNoteDao.IncreaseNoteShareViewCount(ctx, share.ID); err != nil {
+		return dto.AccessSharedPrivateNoteRes{}, err
+	}
+
+	if targetNote.Type == "folder" {
+		children, _, err := s.privateNoteDao.GetNotesByParent(ctx, shareOwnerID, req.PrivateNoteID, 1, 1000)
+		if err != nil {
+			return dto.AccessSharedPrivateNoteRes{}, err
+		}
+
+		var childItems []dto.PrivateNoteItemRes
+		for _, child := range children {
+			childItems = append(childItems, dto.PrivateNoteItemRes{
+				ID:        child.ID,
+				ParentID:  child.ParentID,
+				Type:      child.Type,
+				Title:     child.Title,
+				IsPublic:  child.IsPublic,
+				UpdatedAt: child.UpdatedAt,
+				CreatedAt: child.CreatedAt,
+			})
+		}
+
+		return dto.AccessSharedPrivateNoteRes{
+			Type:     "folder",
+			Title:    targetNote.Title,
+			Content:  "",
+			Children: childItems,
+		}, nil
+	}
+
+	return dto.AccessSharedPrivateNoteRes{
+		Type:    "markdown",
+		Title:   targetNote.Title,
+		Content: targetNote.Content,
+	}, nil
+}

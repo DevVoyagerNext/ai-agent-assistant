@@ -96,6 +96,15 @@ export interface SharePrivateNoteRes {
   expiresAt: string
 }
 
+export interface ShareBasicInfoRes {
+  authorName: string
+  authorAvatar: string
+  noteTitle: string
+  noteType: string
+  isActive: boolean
+  isExpired: boolean
+}
+
 export interface LearnedSubjectItem {
   subjectId: number
   subjectName: string

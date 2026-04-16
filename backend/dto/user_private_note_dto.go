@@ -71,3 +71,28 @@ type SharePrivateNoteRes struct {
 	ShareCode  string `json:"shareCode"`
 	ExpiresAt  string `json:"expiresAt"`
 }
+
+// AccessSharedPrivateNoteReq 访问分享私人笔记请求
+type AccessSharedPrivateNoteReq struct {
+	ShareToken    string `json:"share_token" binding:"required"`
+	ShareCode     string `json:"share_code" binding:"required,len=4"`
+	PrivateNoteID int    `json:"private_node_id" binding:"required"`
+}
+
+// AccessSharedPrivateNoteRes 访问分享私人笔记返回
+type AccessSharedPrivateNoteRes struct {
+	Type     string               `json:"type"`
+	Title    string               `json:"title"`
+	Content  string               `json:"content"`
+	Children []PrivateNoteItemRes `json:"children,omitempty"`
+}
+
+// GetShareInfoRes 获取分享基础信息返回
+type GetShareInfoRes struct {
+	AuthorName   string `json:"authorName"`
+	AuthorAvatar string `json:"authorAvatar"`
+	NoteTitle    string `json:"noteTitle"`
+	NoteType     string `json:"noteType"`
+	IsActive     bool   `json:"isActive"`  // 分享是否未取消
+	IsExpired    bool   `json:"isExpired"` // 分享是否已过期
+}

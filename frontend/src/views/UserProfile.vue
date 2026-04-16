@@ -393,6 +393,7 @@ const sharing = ref(false)
 const pendingShareNote = ref<any>(null)
 const shareExpiresAt = ref('')
 const shareResult = ref<{ shareToken: string, shareCode: string, expiresAt: string } | null>(null)
+const windowOrigin = computed(() => window.location.origin)
 
 const openShareModal = (note: any) => {
   pendingShareNote.value = note
@@ -950,6 +951,13 @@ const scrollTo = (id: string) => {
                     <span class="label">分享 Token:</span>
                     <div class="copy-box" @click="copyToClipboard(shareResult.shareToken)">
                       <code>{{ shareResult.shareToken }}</code>
+                      <Layers :size="14" />
+                    </div>
+                  </div>
+                  <div class="detail-row">
+                    <span class="label">分享链接:</span>
+                    <div class="copy-box" @click="copyToClipboard(`${windowOrigin}/share/verify?token=${shareResult.shareToken}`)">
+                      <code>{{ `${windowOrigin}/share/verify?token=${shareResult.shareToken}` }}</code>
                       <Layers :size="14" />
                     </div>
                   </div>
