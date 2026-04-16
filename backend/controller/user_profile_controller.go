@@ -89,8 +89,8 @@ func (u *UserController) GetSharedNotes(c *gin.Context) {
 	response.Ok(res, c)
 }
 
-// CancelSharedNote 取消分享接口
-func (u *UserController) CancelSharedNote(c *gin.Context) {
+// UpdateSharedNoteStatus 更新分享状态接口
+func (u *UserController) UpdateSharedNoteStatus(c *gin.Context) {
 	userId, err := u.authService.GetUserID(c)
 	if err != nil {
 		response.FailWithCode(errmsg.UserTokenInvalid, c)
@@ -104,7 +104,13 @@ func (u *UserController) CancelSharedNote(c *gin.Context) {
 		return
 	}
 
-	errCode := u.userService.CancelSharedNote(c.Request.Context(), userId, shareId)
+	var req dto.UpdateSharedNoteStatusReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.FailWithMsg(errmsg.CodeError, "参数错误: "+err.Error(), c)
+		return
+	}
+
+	errCode := u.userService.UpdateSharedNoteStatus(c.Request.Context(), userId, shareId, req.IsActive)
 	if errCode != errmsg.CodeSuccess {
 		response.FailWithCode(errCode, c)
 		return

@@ -74,11 +74,15 @@ export interface PublicPrivateNotesRes {
 export interface SharedNoteItem {
   id: number
   nodeId: number
-  nodeName: string
+  noteTitle: string
+  nodeName?: string
   noteType: string
   shareToken: string
+  share_token?: string
   shareCode: string
+  share_code?: string
   viewCount: number
+  isActive: boolean
   createdAt: string
   expiresAt: string
 }

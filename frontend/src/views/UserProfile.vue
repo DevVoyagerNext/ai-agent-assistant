@@ -14,7 +14,7 @@ import {
   updatePrivateNoteTitle, updatePrivateNotePublic, 
   updateCollectFolderPublic, updateCollectFolderName,
   getSubjectsInFolder, getPrivateNoteDetail, updatePrivateNoteContent,
-  createPrivateNote, sharePrivateNote
+  createPrivateNote, sharePrivateNote, updateShareNoteStatus
 } from '../api/user'
 
 const router = useRouter()
@@ -424,12 +424,31 @@ const handleShare = async () => {
   }
 }
 
-const copyToClipboard = (text: string) => {
+const copyToClipboard = (text: string | undefined) => {
+  if (!text) return
   navigator.clipboard.writeText(text).then(() => {
     showToast('已复制到剪贴板', 'success')
   }).catch(() => {
     showToast('复制失败', 'error')
   })
+}
+
+const handleToggleShareStatus = async (shareId: number, isActive: 0 | 1) => {
+  const actionText = isActive === 1 ? '重新分享' : '取消分享'
+  if (isActive === 0 && !confirm('确定要取消该分享吗？取消后已有链接将失效。')) return
+  
+  try {
+    const res = await updateShareNoteStatus(shareId, isActive)
+    if (res.data?.code === 200) {
+      showToast(`${actionText}成功`, 'success')
+      // 刷新分享列表
+      refreshAll()
+    } else {
+      showToast(res.data?.msg || `${actionText}失败`, 'error')
+    }
+  } catch (err: any) {
+    showToast(err.response?.data?.msg || `${actionText}失败`, 'error')
+  }
 }
 
 // ------------------------------
@@ -801,37 +820,64 @@ const scrollTo = (id: string) => {
             </div>
           </div>
           <div v-else class="note-list">
-            <div v-for="note in sharedNotes" :key="note.id" class="note-item shared">
+            <div 
+              v-for="note in sharedNotes" 
+              :key="note.id" 
+              class="note-item shared"
+              :class="{ 'inactive': !note.isActive }"
+            >
               <div class="note-header">
                 <div class="note-title-line">
                   <Folder v-if="note.noteType === 'folder'" :size="16" class="icon-pink" />
                   <FileText v-else :size="16" class="icon-blue" />
-                  <h4>{{ note.nodeName }}</h4>
+                  <h4>{{ note.noteTitle || note.nodeName }}</h4>
+                  <span v-if="!note.isActive" class="status-badge inactive-badge">已取消</span>
                 </div>
                 <span class="views"><Activity :size="12" class="icon-green" /> {{ note.viewCount }}</span>
               </div>
               <div class="note-meta">
                 <div class="meta-left">
-                  <span>提取码: {{ note.shareCode }}</span>
+                  <span>提取码: {{ note.shareCode || note.share_code }}</span>
                   <span>至: {{ formatDate(note.expiresAt) }}</span>
                 </div>
                 <div class="meta-right">
-                  <button 
-                    class="ghost-btn-mini" 
-                    @click="copyToClipboard(note.shareCode)"
-                    title="复制提取码"
-                  >
-                    <Layers :size="14" />
-                    <span>提取码</span>
-                  </button>
-                  <button 
-                    class="ghost-btn-mini" 
-                    @click="copyToClipboard(`${windowOrigin}/share/verify?token=${note.shareToken}`)"
-                    title="复制分享链接"
-                  >
-                    <Share2 :size="14" />
-                    <span>链接</span>
-                  </button>
+                  <template v-if="note.isActive">
+                    <button 
+                      class="ghost-btn-mini" 
+                      @click="copyToClipboard(note.shareCode || note.share_code)"
+                      title="复制提取码"
+                    >
+                      <Layers :size="14" />
+                      <span>提取码</span>
+                    </button>
+                    <button 
+                      class="ghost-btn-mini" 
+                      @click="copyToClipboard(`${windowOrigin}/share/verify?token=${note.shareToken || note.share_token}`)"
+                      title="复制分享链接"
+                    >
+                      <Share2 :size="14" />
+                      <span>链接</span>
+                    </button>
+                    <button 
+                      class="danger-btn-mini" 
+                      @click="handleToggleShareStatus(note.id, 0)"
+                      title="取消分享"
+                    >
+                      <X :size="14" />
+                      <span>取消分享</span>
+                    </button>
+                  </template>
+                  <template v-else>
+                    <button 
+                      class="ghost-btn-mini" 
+                      @click="handleToggleShareStatus(note.id, 1)"
+                      title="重新分享"
+                      style="color: var(--notion-blue); border-color: rgba(0, 117, 222, 0.2);"
+                    >
+                      <RefreshCcw :size="14" />
+                      <span>重新分享</span>
+                    </button>
+                  </template>
                 </div>
               </div>
             </div>
@@ -949,7 +995,7 @@ const scrollTo = (id: string) => {
           <div class="modal-body">
             <template v-if="!shareResult">
               <div class="share-note-info">
-                <p>分享内容: <strong>{{ pendingShareNote?.title || pendingShareNote?.nodeName }}</strong></p>
+                <p>分享内容: <strong>{{ pendingShareNote?.title || pendingShareNote?.noteTitle || pendingShareNote?.nodeName }}</strong></p>
               </div>
               <div class="form-group">
                 <label>过期时间</label>
@@ -1916,6 +1962,24 @@ const scrollTo = (id: string) => {
   cursor: default;
 }
 
+.note-item.shared.inactive {
+  background: var(--warm-white);
+  border-color: rgba(0,0,0,0.05);
+}
+
+.status-badge {
+  font-size: 12px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-weight: 500;
+  margin-left: 8px;
+}
+
+.inactive-badge {
+  background: rgba(0,0,0,0.05);
+  color: var(--warm-gray-500);
+}
+
 .note-header {
   display: flex;
   justify-content: space-between;
@@ -1974,6 +2038,26 @@ const scrollTo = (id: string) => {
 .ghost-btn-mini:hover {
   background: rgba(0,0,0,0.05);
   color: var(--notion-black);
+}
+
+.danger-btn-mini {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: transparent;
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  color: #ef4444;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+.danger-btn-mini:hover {
+  background: rgba(239, 68, 68, 0.05);
+  border-color: #ef4444;
 }
 
 /* Modal Styles */

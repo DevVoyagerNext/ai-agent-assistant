@@ -136,12 +136,12 @@ func (dao *UserPrivateNoteDao) IncreaseNoteShareViewCount(ctx context.Context, s
 		Update("view_count", gorm.Expr("view_count + ?", 1)).Error
 }
 
-// CancelNoteShare 取消分享
-func (dao *UserPrivateNoteDao) CancelNoteShare(ctx context.Context, userID uint, shareID int) error {
+// UpdateNoteShareStatus 更新分享状态
+func (dao *UserPrivateNoteDao) UpdateNoteShareStatus(ctx context.Context, userID uint, shareID int, isActive int8) error {
 	return global.GVA_DB.WithContext(ctx).
 		Model(&model.NoteShare{}).
 		Where("id = ? AND user_id = ?", shareID, userID).
-		Update("is_active", 0).Error
+		Update("is_active", isActive).Error
 }
 
 // UpdateNote 更新笔记或文件夹

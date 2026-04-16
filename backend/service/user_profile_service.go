@@ -29,10 +29,10 @@ func (u *UserService) GetUserActivitiesCalendar(ctx context.Context, userID uint
 	return errmsg.CodeSuccess, res
 }
 
-// CancelSharedNote 取消分享
-func (u *UserService) CancelSharedNote(ctx context.Context, userID uint, shareID int) int {
+// UpdateSharedNoteStatus 更新分享状态
+func (u *UserService) UpdateSharedNoteStatus(ctx context.Context, userID uint, shareID int, isActive int8) int {
 	var privateNoteDao dao.UserPrivateNoteDao
-	if err := privateNoteDao.CancelNoteShare(ctx, userID, shareID); err != nil {
+	if err := privateNoteDao.UpdateNoteShareStatus(ctx, userID, shareID, isActive); err != nil {
 		return errmsg.CodeError
 	}
 	return errmsg.CodeSuccess
@@ -98,6 +98,7 @@ func (u *UserService) GetSharedNotes(ctx context.Context, userID uint, req dto.S
 			NoteTitle:     note.NoteTitle,
 			NoteType:      note.NoteType,
 			ShareToken:    note.ShareToken,
+			ShareCode:     note.ShareCode,
 			ViewCount:     note.ViewCount,
 			IsActive:      note.IsActive,
 			CreatedAt:     note.CreatedAt,

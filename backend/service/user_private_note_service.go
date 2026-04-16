@@ -340,12 +340,12 @@ func (s *UserPrivateNoteService) SharePrivateNote(ctx context.Context, userID ui
 	}, nil
 }
 
-// CancelShare 取消分享
-func (s *UserPrivateNoteService) CancelShare(ctx context.Context, userID uint, shareID int) error {
+// UpdateShareStatus 更新分享状态
+func (s *UserPrivateNoteService) UpdateShareStatus(ctx context.Context, userID uint, shareID int, isActive int8) error {
 	if userID == 0 {
 		return errors.New("用户未登录")
 	}
-	return s.privateNoteDao.CancelNoteShare(ctx, userID, shareID)
+	return s.privateNoteDao.UpdateNoteShareStatus(ctx, userID, shareID, isActive)
 }
 
 // GetShareInfo 获取分享基础信息

@@ -89,6 +89,11 @@ export const accessShareNote = (data: ShareAccessReq) => {
   return request.post<ApiResponse<ShareAccessRes>>('/user/notes/private/share/access', data)
 }
 
+// 9. 更新分享的私人笔记状态 (取消/重新分享)
+export const updateShareNoteStatus = (shareId: number, isActive: 0 | 1) => {
+  return request.put<ApiResponse<null>>(`/user/notes/shares/${shareId}/status`, { isActive })
+}
+
 // ----------------------------------------------------
 
 export const getSharedNotes = (page = 1, pageSize = 10) => {

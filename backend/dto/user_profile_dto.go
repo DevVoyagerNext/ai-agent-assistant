@@ -64,6 +64,7 @@ type SharedNoteItem struct {
 	NoteTitle     string    `json:"noteTitle"`
 	NoteType      string    `json:"noteType"`
 	ShareToken    string    `json:"shareToken"`
+	ShareCode     string    `json:"shareCode"`
 	ViewCount     int       `json:"viewCount"`
 	IsActive      int8      `json:"isActive"`
 	CreatedAt     time.Time `json:"createdAt"`
@@ -74,4 +75,9 @@ type SharedNoteItem struct {
 type SharedNoteListRes struct {
 	Total int64            `json:"total"`
 	List  []SharedNoteItem `json:"list"`
+}
+
+// UpdateSharedNoteStatusReq 更新分享状态请求
+type UpdateSharedNoteStatusReq struct {
+	IsActive int8 `json:"isActive" binding:"oneof=0 1"`
 }
