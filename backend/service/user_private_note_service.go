@@ -7,6 +7,7 @@ import (
 	"backend/pkg/utils"
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -123,7 +124,8 @@ func (s *UserPrivateNoteService) CreatePrivateNote(ctx context.Context, userID u
 		req.Content = utils.XSSFilter(content)
 	}
 
-	// 3. 校验父文件夹是否存在且类型为 folder
+	// 3. 校验父文件夹是否存在且类型为 folder，并获取其 path
+	var parentPath string = "0/"
 	if req.ParentID != 0 {
 		parent, err := s.privateNoteDao.GetNoteByID(ctx, userID, req.ParentID)
 		if err != nil {
@@ -135,6 +137,7 @@ func (s *UserPrivateNoteService) CreatePrivateNote(ctx context.Context, userID u
 		if parent.Type != "folder" {
 			return errors.New("无法在非文件夹节点下创建")
 		}
+		parentPath = parent.Path
 	}
 
 	// 4. 检查同一文件夹下是否存在同名同类型的文件/文件夹
@@ -157,9 +160,21 @@ func (s *UserPrivateNoteService) CreatePrivateNote(ctx context.Context, userID u
 		Title:    req.Title,
 		Content:  req.Content,
 		IsPublic: req.IsPublic,
+		// 先暂时存父节点的 path，待主键生成后再更新自己
+		Path: parentPath,
 	}
 
-	return s.privateNoteDao.CreateNote(ctx, note)
+	err = s.privateNoteDao.CreateNote(ctx, note)
+	if err != nil {
+		return err
+	}
+
+	// 6. 更新 path 字段，追加自身 ID
+	// 此时 note.ID 已经有值了
+	newPath := fmt.Sprintf("%s%d/", parentPath, note.ID)
+	return s.privateNoteDao.UpdateNote(ctx, userID, int(note.ID), map[string]interface{}{
+		"path": newPath,
+	})
 }
 
 // UpdatePrivateNoteContent 修改笔记内容 (仅限 markdown)
