@@ -4,6 +4,7 @@ import (
 	"backend/dto"
 	"backend/pkg/errmsg"
 	"backend/pkg/utils/response"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 )
@@ -86,4 +87,28 @@ func (u *UserController) GetSharedNotes(c *gin.Context) {
 	}
 
 	response.Ok(res, c)
+}
+
+// CancelSharedNote 取消分享接口
+func (u *UserController) CancelSharedNote(c *gin.Context) {
+	userId, err := u.authService.GetUserID(c)
+	if err != nil {
+		response.FailWithCode(errmsg.UserTokenInvalid, c)
+		return
+	}
+
+	shareIdStr := c.Param("id")
+	shareId, err := strconv.Atoi(shareIdStr)
+	if err != nil || shareId <= 0 {
+		response.FailWithMsg(errmsg.CodeError, "分享ID格式错误", c)
+		return
+	}
+
+	errCode := u.userService.CancelSharedNote(c.Request.Context(), userId, shareId)
+	if errCode != errmsg.CodeSuccess {
+		response.FailWithCode(errCode, c)
+		return
+	}
+
+	response.Ok(nil, c)
 }

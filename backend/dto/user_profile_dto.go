@@ -65,6 +65,7 @@ type SharedNoteItem struct {
 	NoteType      string    `json:"noteType"`
 	ShareToken    string    `json:"shareToken"`
 	ViewCount     int       `json:"viewCount"`
+	IsActive      int8      `json:"isActive"`
 	CreatedAt     time.Time `json:"createdAt"`
 	ExpiresAt     time.Time `json:"expiresAt"`
 }

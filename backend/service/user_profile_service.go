@@ -29,6 +29,15 @@ func (u *UserService) GetUserActivitiesCalendar(ctx context.Context, userID uint
 	return errmsg.CodeSuccess, res
 }
 
+// CancelSharedNote 取消分享
+func (u *UserService) CancelSharedNote(ctx context.Context, userID uint, shareID int) int {
+	var privateNoteDao dao.UserPrivateNoteDao
+	if err := privateNoteDao.CancelNoteShare(ctx, userID, shareID); err != nil {
+		return errmsg.CodeError
+	}
+	return errmsg.CodeSuccess
+}
+
 // GetPublicPrivateNotes 获取公开的私人笔记列表
 func (u *UserService) GetPublicPrivateNotes(ctx context.Context, userID uint, req dto.PublicPrivateNoteListReq) (int, dto.PublicPrivateNoteListRes) {
 	offset := (req.Page - 1) * req.PageSize
@@ -90,6 +99,7 @@ func (u *UserService) GetSharedNotes(ctx context.Context, userID uint, req dto.S
 			NoteType:      note.NoteType,
 			ShareToken:    note.ShareToken,
 			ViewCount:     note.ViewCount,
+			IsActive:      note.IsActive,
 			CreatedAt:     note.CreatedAt,
 			ExpiresAt:     note.ExpiresAt,
 		})

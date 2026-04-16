@@ -804,14 +804,35 @@ const scrollTo = (id: string) => {
             <div v-for="note in sharedNotes" :key="note.id" class="note-item shared">
               <div class="note-header">
                 <div class="note-title-line">
-                  <Share2 :size="16" class="icon-purple" />
+                  <Folder v-if="note.noteType === 'folder'" :size="16" class="icon-pink" />
+                  <FileText v-else :size="16" class="icon-blue" />
                   <h4>{{ note.nodeName }}</h4>
                 </div>
                 <span class="views"><Activity :size="12" class="icon-green" /> {{ note.viewCount }}</span>
               </div>
               <div class="note-meta">
-                <span>Token: {{ note.shareToken }}</span>
-                <span>至: {{ formatDate(note.expiresAt) }}</span>
+                <div class="meta-left">
+                  <span>提取码: {{ note.shareCode }}</span>
+                  <span>至: {{ formatDate(note.expiresAt) }}</span>
+                </div>
+                <div class="meta-right">
+                  <button 
+                    class="ghost-btn-mini" 
+                    @click="copyToClipboard(note.shareCode)"
+                    title="复制提取码"
+                  >
+                    <Layers :size="14" />
+                    <span>提取码</span>
+                  </button>
+                  <button 
+                    class="ghost-btn-mini" 
+                    @click="copyToClipboard(`${windowOrigin}/share/verify?token=${note.shareToken}`)"
+                    title="复制分享链接"
+                  >
+                    <Share2 :size="14" />
+                    <span>链接</span>
+                  </button>
+                </div>
               </div>
             </div>
             <div v-if="!sharedNotes.length" class="empty-state">
@@ -1918,8 +1939,41 @@ const scrollTo = (id: string) => {
 .note-meta {
   display: flex;
   justify-content: space-between;
+  align-items: center;
   font-size: 12px;
   color: var(--warm-gray-300);
+}
+
+.meta-left {
+  display: flex;
+  gap: 16px;
+  color: var(--warm-gray-500);
+  font-size: 13px;
+}
+
+.meta-right {
+  display: flex;
+  gap: 8px;
+}
+
+.ghost-btn-mini {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: transparent;
+  border: 1px solid rgba(0,0,0,0.1);
+  color: var(--warm-gray-500);
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+.ghost-btn-mini:hover {
+  background: rgba(0,0,0,0.05);
+  color: var(--notion-black);
 }
 
 /* Modal Styles */

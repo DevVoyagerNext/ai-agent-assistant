@@ -75,7 +75,9 @@ export interface SharedNoteItem {
   id: number
   nodeId: number
   nodeName: string
+  noteType: string
   shareToken: string
+  shareCode: string
   viewCount: number
   createdAt: string
   expiresAt: string
