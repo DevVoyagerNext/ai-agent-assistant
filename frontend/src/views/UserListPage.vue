@@ -2,7 +2,7 @@
 import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ArrowLeft, BookOpen, Clock, Activity, Loader2, Star, FolderHeart, FileText, Folder, X, ToggleRight, ToggleLeft, ChevronRight } from 'lucide-vue-next'
-import { getUserRecentSubjects, getUserLikedSubjects, getUserCollectFolders, getPrivateNoteDetail, getSubjectsInFolder } from '../api/user'
+import { getUserRecentSubjects, getUserLikedSubjects, getUserCollectFolders, getPrivateNoteDetail, getSubjectsInFolder, updateCollectFolderPublic } from '../api/user'
 
 const route = useRoute()
 const router = useRouter()
@@ -68,6 +68,33 @@ const loadMoreFolderSubjects = () => {
 const handleFolderItemClick = (item: any) => {
   const url = `/subject/${item.id}` + (item.lastNodeId ? `?nodeId=${item.lastNodeId}` : '')
   router.push(url)
+}
+
+const updatingFolderIds = ref<Set<number>>(new Set())
+
+const handleToggleFolderPublic = async (folder: any) => {
+  if (!folder?.id) return
+  if (updatingFolderIds.value.has(folder.id)) return
+
+  updatingFolderIds.value.add(folder.id)
+  updatingFolderIds.value = new Set(updatingFolderIds.value)
+
+  const currentPublic = !!folder.isPublic
+  const nextPublic: 0 | 1 = currentPublic ? 0 : 1
+  const prevValue = folder.isPublic
+  folder.isPublic = nextPublic
+
+  try {
+    const res = await updateCollectFolderPublic(folder.id, nextPublic)
+    if (res.data?.code !== 200) {
+      folder.isPublic = prevValue
+    }
+  } catch (err) {
+    folder.isPublic = prevValue
+  } finally {
+    updatingFolderIds.value.delete(folder.id)
+    updatingFolderIds.value = new Set(updatingFolderIds.value)
+  }
 }
 // ----------------------
 
@@ -238,10 +265,16 @@ onMounted(() => {
             <div class="folder-info">
               <h3>{{ item.name }}</h3>
               <p>{{ item.description || '暂无描述' }}</p>
-              <button class="badge-btn" :class="{ public: item.isPublic }">
-                <ToggleRight v-if="item.isPublic" :size="16" />
+              <button
+                class="badge-btn"
+                :class="{ public: !!item.isPublic }"
+                :disabled="updatingFolderIds.has(item.id)"
+                @click.stop="handleToggleFolderPublic(item)"
+              >
+                <Loader2 v-if="updatingFolderIds.has(item.id)" class="spin" :size="16" />
+                <ToggleRight v-else-if="!!item.isPublic" :size="16" />
                 <ToggleLeft v-else :size="16" />
-                <span>{{ item.isPublic ? '公开' : '私密' }}</span>
+                <span>{{ !!item.isPublic ? '公开' : '私密' }}</span>
               </button>
             </div>
           </div>

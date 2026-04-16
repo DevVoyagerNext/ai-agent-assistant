@@ -80,6 +80,10 @@ type UpdateCollectFolderPublicReq struct {
 	IsPublic int8 `json:"isPublic" binding:"oneof=0 1"`
 }
 
+type RenameCollectFolderReq struct {
+	Name string `json:"name" binding:"required,min=1,max=50"`
+}
+
 func ConvertSubjectToRes(s *model.Subject) SubjectRes {
 	return SubjectRes{
 		ID:           s.ID,

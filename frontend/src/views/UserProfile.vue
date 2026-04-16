@@ -10,7 +10,10 @@ import {
 } from 'lucide-vue-next'
 import { useUserProfile } from '../composables/useUserProfile'
 import ActivityCalendar from '../components/ActivityCalendar.vue'
-import { updatePrivateNoteTitle, updatePrivateNotePublic, updateCollectFolderPublic } from '../api/user'
+import { 
+  updatePrivateNoteTitle, updatePrivateNotePublic, 
+  updateCollectFolderPublic, updateCollectFolderName 
+} from '../api/user'
 
 const router = useRouter()
 const isAuthenticated = computed(() => !!localStorage.getItem('token'))
@@ -104,22 +107,40 @@ const showRenameModal = ref(false)
 const renameTitle = ref('')
 const renaming = ref(false)
 const pendingRenameNote = ref<any>(null)
+const pendingRenameFolder = ref<any>(null)
 
 const openRename = (note: any) => {
   pendingRenameNote.value = note
+  pendingRenameFolder.value = null
   renameTitle.value = note.title
   showRenameModal.value = true
 }
 
+const openRenameFolder = (folder: any) => {
+  pendingRenameFolder.value = folder
+  pendingRenameNote.value = null
+  renameTitle.value = folder.name
+  showRenameModal.value = true
+}
+
 const handleRename = async () => {
-  if (!renameTitle.value.trim() || !pendingRenameNote.value) return
+  if (!renameTitle.value.trim()) return
   renaming.value = true
   try {
-    const res = await updatePrivateNoteTitle(pendingRenameNote.value.id, renameTitle.value)
-    if (res.data?.code === 200) {
-      pendingRenameNote.value.title = renameTitle.value
-      showToast('重命名成功', 'success')
-      showRenameModal.value = false
+    if (pendingRenameNote.value) {
+      const res = await updatePrivateNoteTitle(pendingRenameNote.value.id, renameTitle.value)
+      if (res.data?.code === 200) {
+        pendingRenameNote.value.title = renameTitle.value
+        showToast('重命名成功', 'success')
+        showRenameModal.value = false
+      }
+    } else if (pendingRenameFolder.value) {
+      const res = await updateCollectFolderName(pendingRenameFolder.value.id, renameTitle.value)
+      if (res.data?.code === 200) {
+        pendingRenameFolder.value.name = renameTitle.value
+        showToast('重命名成功', 'success')
+        showRenameModal.value = false
+      }
     }
   } catch (err: any) {
     showToast(err.response?.data?.msg || '重命名失败', 'error')
@@ -150,7 +171,7 @@ const handleToggleCollectionPublic = async (folder: any) => {
   updatingFolderIds.value.add(folder.id)
   updatingFolderIds.value = new Set(updatingFolderIds.value)
 
-  const currentPublic = folder.isPublic === 1 || folder.isPublic === true
+  const currentPublic = !!folder.isPublic
   const newPublic: 0 | 1 = currentPublic ? 0 : 1
 
   try {
@@ -333,21 +354,22 @@ const scrollTo = (id: string) => {
               <div class="note-main-info">
                 <div class="note-title-line">
                   <Folder :size="16" class="note-type-icon folder icon-pink" />
-                  <h4>{{ folder.name }}</h4>
+                  <h4 @click="openRenameFolder(folder)">{{ folder.name }}</h4>
+                  <Edit3 :size="12" class="edit-icon-mini" @click="openRenameFolder(folder)" />
                 </div>
               </div>
               <div class="note-item-actions">
                 <button 
                   class="toggle-public-mini" 
-                  :class="{ isPublic: folder.isPublic === 1 || folder.isPublic === true }"
+                  :class="{ isPublic: !!folder.isPublic }"
                   @click="handleToggleCollectionPublic(folder)"
-                  :title="(folder.isPublic === 1 || folder.isPublic === true) ? '已公开' : '已私密'"
+                  :title="!!folder.isPublic ? '已公开' : '已私密'"
                   :disabled="updatingFolderIds.has(folder.id)"
                 >
                   <Loader2 v-if="updatingFolderIds.has(folder.id)" class="spin" :size="18" />
-                  <ToggleRight v-else-if="folder.isPublic === 1 || folder.isPublic === true" :size="18" />
+                  <ToggleRight v-else-if="!!folder.isPublic" :size="18" />
                   <ToggleLeft v-else :size="18" />
-                  <span>{{ (folder.isPublic === 1 || folder.isPublic === true) ? '公开' : '私密' }}</span>
+                  <span>{{ !!folder.isPublic ? '公开' : '私密' }}</span>
                 </button>
               </div>
             </div>

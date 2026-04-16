@@ -103,6 +103,37 @@ func (con *SubjectController) AddSubjectToFolder(c *gin.Context) {
 	response.Ok(nil, c)
 }
 
+// RenameCollectFolder 重命名收藏夹（需要登录）
+func (con *SubjectController) RenameCollectFolder(c *gin.Context) {
+	userId, err := con.authService.GetUserID(c)
+	if err != nil || userId == 0 {
+		response.FailWithCode(errmsg.UserTokenNotExist, c)
+		return
+	}
+
+	folderIdStr := c.Param("folderId")
+	folderId, err := strconv.Atoi(folderIdStr)
+	if err != nil || folderId <= 0 {
+		response.FailWithCode(errmsg.CodeError, c)
+		return
+	}
+
+	var req dto.RenameCollectFolderReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.FailWithMsg(errmsg.CodeError, "参数格式错误", c)
+		return
+	}
+
+	code := con.subjectService.RenameCollectFolder(c.Request.Context(), userId, folderId, req.Name)
+	if code != errmsg.CodeSuccess {
+		// 这里可以针对重名返回更详细的错误
+		response.FailWithMsg(code, "收藏夹名称已存在或操作失败", c)
+		return
+	}
+
+	response.Ok(nil, c)
+}
+
 // UncollectSubject 取消教材收藏（从所有收藏夹移除）
 func (con *SubjectController) UncollectSubject(c *gin.Context) {
 	userId, err := con.authService.GetUserID(c)

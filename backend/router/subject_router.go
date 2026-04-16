@@ -37,6 +37,7 @@ func (r *SubjectRouter) InitAuthSubjectRouter(Router *gin.RouterGroup) {
 		userSubjectRouter.POST("/folders", subjectController.CreateCollectFolder)                       // 创建收藏夹
 		userSubjectRouter.POST("/folders/:folderId/subjects", subjectController.AddSubjectToFolder)     // 将教材添加到收藏夹
 		userSubjectRouter.PUT("/folders/:folderId/public", subjectController.UpdateCollectFolderPublic) // 修改收藏夹公开状态
+		userSubjectRouter.PUT("/folders/:folderId/name", subjectController.RenameCollectFolder)         // 重命名收藏夹
 		userSubjectRouter.DELETE("/:id/collect", subjectController.UncollectSubject)                    // 取消收藏教材（从所有收藏夹移除）
 	}
 }

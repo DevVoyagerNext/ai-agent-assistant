@@ -227,6 +227,33 @@ func (s *SubjectService) UpdateCollectFolderPublic(ctx context.Context, userId u
 	return errmsg.CodeSuccess
 }
 
+func (s *SubjectService) RenameCollectFolder(ctx context.Context, userId uint, folderId int, name string) int {
+	// 1. 检查收藏夹是否存在且属于该用户
+	_, err := s.subjectDao.GetCollectFolderById(ctx, userId, folderId)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return errmsg.CodeError
+		}
+		return errmsg.CodeError
+	}
+
+	// 2. 检查新名字是否已存在（排除当前收藏夹）
+	exists, err := s.subjectDao.CheckCollectFolderNameExists(ctx, userId, name, folderId)
+	if err != nil {
+		return errmsg.CodeError
+	}
+	if exists {
+		return errmsg.CodeError // 之后可以定义专门的错误码，目前先用通用错误
+	}
+
+	// 3. 更新名称
+	if err := s.subjectDao.UpdateCollectFolderName(ctx, folderId, name); err != nil {
+		return errmsg.CodeError
+	}
+
+	return errmsg.CodeSuccess
+}
+
 func (s *SubjectService) GetUserRecentSubjects(ctx context.Context, userId uint, page int, pageSize int) (dto.RecentSubjectListRes, int) {
 	progresses, total, err := s.subjectDao.GetUserRecentSubjectProgress(ctx, userId, page, pageSize)
 	if err != nil {
