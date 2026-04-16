@@ -30,24 +30,19 @@ export const getPublicPrivateNotes = (page = 1, pageSize = 10) => {
 
 // ---------------- 私人笔记分层管理 API ----------------
 
-// 1. 获取私人笔记内容或子文件夹列表 (noteId 为 0 获取根目录)
-export const getPrivateNoteDetail = (noteId: number, scope: 0 | 1 | 2 = 0, page = 1, pageSize = 20, userId?: number) => {
-  const resolvedUserId = userId ?? Number(localStorage.getItem('userId') || '')
+// 1. 获取私人笔记列表 (分页)
+export const getPrivateNoteDetail = (noteId: number, scope = 2, page = 1, pageSize = 20) => {
   return request.get<ApiResponse<PrivateNoteResponse>>(`/user/notes/private/${noteId}`, {
-    params: { 
-      scope, 
-      userId: Number.isFinite(resolvedUserId) ? resolvedUserId : undefined,
-      page,
-      pageSize
-    }
+    params: { scope, page, pageSize }
   })
 }
 
-// 2. 创建私人文件夹或笔记
-export const createPrivateNote = (data: CreatePrivateNoteReq) => {
+// 创建新的私人笔记或文件夹
+export const createPrivateNote = (data: { parentId: number, type: 'folder' | 'markdown', title: string, isPublic: 0 | 1 }) => {
   return request.post<ApiResponse<null>>('/user/notes/private', data)
 }
 
+// 2. 删除私人笔记 (文件或文件夹)
 export const deletePrivateNote = (noteId: number) => {
   return request.delete<ApiResponse<null>>(`/user/notes/private/${noteId}`)
 }
@@ -55,6 +50,11 @@ export const deletePrivateNote = (noteId: number) => {
 // 3. 修改私人笔记内容 (仅限文件)
 export const updatePrivateNoteContent = (noteId: number, content: string) => {
   return request.put<ApiResponse<null>>(`/user/notes/private/${noteId}/content`, { content })
+}
+
+// 3.5 修改私人笔记标题 (仅限文件)
+export const updatePrivateNoteName = (noteId: number, title: string) => {
+  return request.put<ApiResponse<null>>(`/user/notes/private/${noteId}/title`, { title })
 }
 
 // 4. 修改文件或文件夹标题

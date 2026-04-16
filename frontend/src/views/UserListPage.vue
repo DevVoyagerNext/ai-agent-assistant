@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ArrowLeft, BookOpen, Clock, Activity, Loader2, Star, FolderHeart, FileText, Folder, X, ToggleRight, ToggleLeft, ChevronRight } from 'lucide-vue-next'
-import { getUserRecentSubjects, getUserLikedSubjects, getUserCollectFolders, getPrivateNoteDetail, getSubjectsInFolder, updateCollectFolderPublic } from '../api/user'
+import { ArrowLeft, BookOpen, Clock, Activity, Loader2, Star, FolderHeart, FileText, Folder, X, ToggleRight, ToggleLeft, ChevronRight, Edit3 } from 'lucide-vue-next'
+import { getUserRecentSubjects, getUserLikedSubjects, getUserCollectFolders, getPrivateNoteDetail, getSubjectsInFolder, updateCollectFolderPublic, updateCollectFolderName } from '../api/user'
 
 const route = useRoute()
 const router = useRouter()
@@ -72,6 +72,37 @@ const handleFolderItemClick = (item: any) => {
 
 const updatingFolderIds = ref<Set<number>>(new Set())
 
+// --- 重命名相关 ---
+const showRenameModal = ref(false)
+const renameTitle = ref('')
+const renaming = ref(false)
+const pendingRenameFolder = ref<any>(null)
+
+const openRenameFolder = (folder: any) => {
+  pendingRenameFolder.value = folder
+  renameTitle.value = folder.name
+  showRenameModal.value = true
+}
+
+const handleRename = async () => {
+  if (!renameTitle.value.trim() || !pendingRenameFolder.value) return
+  renaming.value = true
+  try {
+    const res = await updateCollectFolderName(pendingRenameFolder.value.id, renameTitle.value)
+    if (res.data?.code === 200) {
+      pendingRenameFolder.value.name = renameTitle.value
+      showRenameModal.value = false
+    } else {
+      alert(res.data?.msg || '重命名失败')
+    }
+  } catch (err: any) {
+    alert(err.response?.data?.msg || '网络错误，重命名失败')
+  } finally {
+    renaming.value = false
+  }
+}
+// -----------------
+
 const handleToggleFolderPublic = async (folder: any) => {
   if (!folder?.id) return
   if (updatingFolderIds.value.has(folder.id)) return
@@ -88,9 +119,11 @@ const handleToggleFolderPublic = async (folder: any) => {
     const res = await updateCollectFolderPublic(folder.id, nextPublic)
     if (res.data?.code !== 200) {
       folder.isPublic = prevValue
+      alert(res.data?.msg || '修改失败')
     }
-  } catch (err) {
+  } catch (err: any) {
     folder.isPublic = prevValue
+    alert(err.response?.data?.msg || '网络错误，修改失败')
   } finally {
     updatingFolderIds.value.delete(folder.id)
     updatingFolderIds.value = new Set(updatingFolderIds.value)
@@ -263,7 +296,10 @@ onMounted(() => {
               <FolderHeart :size="32" />
             </div>
             <div class="folder-info">
-              <h3>{{ item.name }}</h3>
+              <div class="folder-name-row" @click.stop="openRenameFolder(item)">
+                <h3>{{ item.name }}</h3>
+                <Edit3 :size="14" class="edit-icon-mini" />
+              </div>
               <p>{{ item.description || '暂无描述' }}</p>
               <button
                 class="badge-btn"
@@ -317,7 +353,10 @@ onMounted(() => {
             <div class="header-left">
               <FolderHeart :size="24" class="icon-teal" />
               <div class="header-text">
-                <h3>{{ selectedFolder?.name }}</h3>
+                <div class="modal-title-row" @click="openRenameFolder(selectedFolder)">
+                  <h3>{{ selectedFolder?.name }}</h3>
+                  <Edit3 :size="16" class="edit-icon-mini" />
+                </div>
                 <p>{{ selectedFolder?.description || '收藏夹教材列表' }}</p>
               </div>
             </div>
@@ -360,6 +399,35 @@ onMounted(() => {
               </div>
             </div>
           </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- 重命名弹窗 -->
+    <Teleport to="body">
+      <div v-if="showRenameModal" class="modal-overlay rename-modal-overlay" @click.self="showRenameModal = false">
+        <div class="modal-content small-modal">
+          <header class="modal-header">
+            <h3>重命名收藏夹</h3>
+            <button class="close-btn" @click="showRenameModal = false">
+              <X :size="20" />
+            </button>
+          </header>
+          <div class="modal-body">
+            <div class="form-group">
+              <label>收藏夹名称</label>
+              <input v-model="renameTitle" type="text" placeholder="请输入名称" maxlength="50" @keyup.enter="handleRename" />
+            </div>
+          </div>
+          <footer class="modal-footer">
+            <div class="form-actions">
+              <button class="ghost-btn" @click="showRenameModal = false">取消</button>
+              <button class="primary-btn" :disabled="renaming" @click="handleRename">
+                <Loader2 v-if="renaming" class="spin" :size="16" />
+                <span>确认</span>
+              </button>
+            </div>
+          </footer>
         </div>
       </div>
     </Teleport>
@@ -503,7 +571,7 @@ onMounted(() => {
   min-width: 0;
 }
 
-.subject-info h3, .folder-info h3, .note-info h3 {
+.subject-info h3, .note-info h3 {
   margin: 0 0 8px;
   font-size: 16px;
   font-weight: 700;
@@ -512,6 +580,52 @@ onMounted(() => {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.folder-info h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--notion-black);
+  letter-spacing: -0.2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.folder-name-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  cursor: pointer;
+  width: fit-content;
+  max-width: 100%;
+}
+
+.edit-icon-mini {
+  color: var(--warm-gray-300);
+  opacity: 0;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.folder-name-row:hover .edit-icon-mini,
+.modal-title-row:hover .edit-icon-mini {
+  opacity: 1;
+  color: var(--notion-blue);
+}
+
+.modal-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  width: fit-content;
+}
+
+.modal-title-row h3 {
+  margin: 0;
 }
 
 .folder-info p {
@@ -601,6 +715,19 @@ onMounted(() => {
   z-index: 1000;
 }
 
+.rename-modal-overlay {
+  z-index: 1100; /* 确保在教材列表弹窗之上 */
+}
+
+.modal-content.small-modal {
+  width: 90%;
+  max-width: 400px;
+  background: var(--notion-white);
+  border-radius: 12px;
+  box-shadow: var(--deep-shadow);
+  border: var(--whisper-border);
+}
+
 .modal-content.large-modal {
   width: 90%;
   max-width: 800px;
@@ -615,11 +742,70 @@ onMounted(() => {
 }
 
 .modal-header {
-  padding: 24px;
+  padding: 20px 24px;
   border-bottom: 1px solid rgba(0,0,0,0.1);
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
+  align-items: center;
+}
+
+.modal-header h3 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.modal-footer {
+  padding: 16px 24px;
+  border-top: 1px solid rgba(0,0,0,0.1);
+  display: flex; 
+  justify-content: flex-end;
+}
+
+.form-actions {
+  display: flex;
+  gap: 12px;
+}
+
+.form-group {
+  margin-bottom: 16px;
+}
+
+.form-group label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--warm-gray-500);
+  margin-bottom: 8px;
+}
+
+.form-group input {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 6px;
+  border: 1px solid #ddd;
+  font-size: 14px;
+  color: var(--notion-black);
+  transition: all 0.2s ease;
+}
+
+.form-group input:focus {
+  outline: none;
+  border-color: var(--notion-blue);
+  box-shadow: 0 0 0 3px rgba(0,117,222,0.1);
+}
+
+.ghost-btn, .primary-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-radius: 4px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.1s ease;
+  border: 1px solid transparent;
 }
 
 .header-left {
