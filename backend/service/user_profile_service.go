@@ -84,13 +84,14 @@ func (u *UserService) GetSharedNotes(ctx context.Context, userID uint, req dto.S
 	res.Total = total
 	for _, note := range notes {
 		res.List = append(res.List, dto.SharedNoteItem{
-			ID:         note.ID,
-			NodeID:     note.NodeID,
-			NodeName:   note.NodeName,
-			ShareToken: note.ShareToken,
-			ViewCount:  note.ViewCount,
-			CreatedAt:  note.CreatedAt,
-			ExpiresAt:  note.ExpiresAt,
+			ID:            note.ID,
+			PrivateNoteID: note.PrivateNoteID,
+			NoteTitle:     note.NoteTitle,
+			NoteType:      note.NoteType,
+			ShareToken:    note.ShareToken,
+			ViewCount:     note.ViewCount,
+			CreatedAt:     note.CreatedAt,
+			ExpiresAt:     note.ExpiresAt,
 		})
 	}
 	return errmsg.CodeSuccess, res

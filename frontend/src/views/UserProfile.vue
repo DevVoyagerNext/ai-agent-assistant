@@ -14,7 +14,7 @@ import {
   updatePrivateNoteTitle, updatePrivateNotePublic, 
   updateCollectFolderPublic, updateCollectFolderName,
   getSubjectsInFolder, getPrivateNoteDetail, updatePrivateNoteContent,
-  createPrivateNote
+  createPrivateNote, sharePrivateNote
 } from '../api/user'
 
 const router = useRouter()
@@ -386,6 +386,51 @@ const handleToggleNotePublicInModal = async (customNote?: any) => {
     showToast(err.response?.data?.msg || '修改失败', 'error')
   }
 }
+
+// --- 私人笔记分享相关 ---
+const showShareModal = ref(false)
+const sharing = ref(false)
+const pendingShareNote = ref<any>(null)
+const shareExpiresAt = ref('')
+const shareResult = ref<{ shareToken: string, shareCode: string, expiresAt: string } | null>(null)
+
+const openShareModal = (note: any) => {
+  pendingShareNote.value = note
+  shareExpiresAt.value = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 16) // 默认7天后
+  shareResult.value = null
+  showShareModal.value = true
+}
+
+const handleShare = async () => {
+  if (!pendingShareNote.value?.id || !shareExpiresAt.value) return
+  sharing.value = true
+  try {
+    // 转换日期格式为 API 要求的 "YYYY-MM-DD HH:mm:ss"
+    const formattedDate = shareExpiresAt.value.replace('T', ' ') + ':00'
+    const res = await sharePrivateNote(pendingShareNote.value.id, formattedDate)
+    if (res.data?.code === 200 && res.data.data) {
+      shareResult.value = res.data.data
+      showToast('分享链接已生成', 'success')
+      // 刷新分享列表
+      refreshAll()
+    } else {
+      showToast(res.data?.msg || '分享失败', 'error')
+    }
+  } catch (err: any) {
+    showToast(err.response?.data?.msg || '分享失败', 'error')
+  } finally {
+    sharing.value = false
+  }
+}
+
+const copyToClipboard = (text: string) => {
+  navigator.clipboard.writeText(text).then(() => {
+    showToast('已复制到剪贴板', 'success')
+  }).catch(() => {
+    showToast('复制失败', 'error')
+  })
+}
+
 // ------------------------------
 
 const handleToggleCollectionPublic = async (folder: any) => {
@@ -711,6 +756,13 @@ const scrollTo = (id: string) => {
               </div>
               <div class="note-item-actions">
                 <button 
+                  class="share-btn-mini"
+                  @click.stop="openShareModal(note)"
+                  title="分享笔记"
+                >
+                  <Share2 :size="18" />
+                </button>
+                <button 
                   class="toggle-public-mini" 
                   :class="{ isPublic: note.isPublic === 1 }"
                   @click.stop="handleTogglePublic(note)"
@@ -859,6 +911,76 @@ const scrollTo = (id: string) => {
       </div>
     </Teleport>
 
+    <!-- 分享笔记弹窗 -->
+    <Teleport to="body">
+      <div v-if="showShareModal" class="modal-overlay share-modal-overlay" @click.self="showShareModal = false">
+        <div class="modal-content small-modal">
+          <header class="modal-header">
+            <div class="header-left">
+              <Share2 :size="20" class="icon-purple" />
+              <h3>分享笔记</h3>
+            </div>
+            <button class="close-btn" @click="showShareModal = false">
+              <X :size="20" />
+            </button>
+          </header>
+          <div class="modal-body">
+            <template v-if="!shareResult">
+              <div class="share-note-info">
+                <p>分享内容: <strong>{{ pendingShareNote?.title || pendingShareNote?.nodeName }}</strong></p>
+              </div>
+              <div class="form-group">
+                <label>过期时间</label>
+                <input 
+                  v-model="shareExpiresAt" 
+                  type="datetime-local" 
+                  required
+                />
+                <p class="form-tip">过期后分享链接将失效</p>
+              </div>
+            </template>
+            <template v-else>
+              <div class="share-success">
+                <div class="success-icon">
+                  <Share2 :size="48" class="icon-purple" />
+                </div>
+                <h4>分享链接已生成</h4>
+                <div class="share-details">
+                  <div class="detail-row">
+                    <span class="label">分享 Token:</span>
+                    <div class="copy-box" @click="copyToClipboard(shareResult.shareToken)">
+                      <code>{{ shareResult.shareToken }}</code>
+                      <Layers :size="14" />
+                    </div>
+                  </div>
+                  <div class="detail-row">
+                    <span class="label">提取码:</span>
+                    <div class="copy-box" @click="copyToClipboard(shareResult.shareCode)">
+                      <code class="share-code">{{ shareResult.shareCode }}</code>
+                      <Layers :size="14" />
+                    </div>
+                  </div>
+                  <div class="detail-row">
+                    <span class="label">有效期至:</span>
+                    <span class="value">{{ formatDate(shareResult.expiresAt) }}</span>
+                  </div>
+                </div>
+              </div>
+            </template>
+          </div>
+          <footer class="modal-footer">
+            <div class="form-actions">
+              <button class="cancel-btn" @click="showShareModal = false">{{ shareResult ? '关闭' : '取消' }}</button>
+              <button v-if="!shareResult" class="confirm-btn purple-btn" :disabled="sharing || !shareExpiresAt" @click="handleShare">
+                <Loader2 v-if="sharing" class="spin" :size="16" />
+                <span>生成分享链接</span>
+              </button>
+            </div>
+          </footer>
+        </div>
+      </div>
+    </Teleport>
+
     <!-- 收藏夹教材列表弹窗 -->
     <Teleport to="body">
       <div v-if="showFolderModal" class="modal-overlay folder-modal-overlay" @click.self="showFolderModal = false">
@@ -949,6 +1071,14 @@ const scrollTo = (id: string) => {
             </div>
             <div class="header-right-actions">
               <button 
+                v-if="noteDetail"
+                class="icon-btn share-btn-header" 
+                @click="openShareModal(noteDetail.content || noteDetail)"
+                title="分享笔记"
+              >
+                <Share2 :size="20" />
+              </button>
+              <button 
                 v-if="noteDetail?.type === 'folder'"
                 class="icon-btn create-btn-header" 
                 @click="openCreateNote('folder')"
@@ -991,6 +1121,14 @@ const scrollTo = (id: string) => {
                   </div>
                 </div>
                 <div class="subject-row-meta">
+                  <!-- 子项列表中的分享按钮 -->
+                  <button 
+                    class="share-btn-mini"
+                    @click.stop="openShareModal(child)"
+                    title="分享笔记"
+                  >
+                    <Share2 :size="16" />
+                  </button>
                   <!-- 子项列表中的公开按钮 -->
                   <button 
                     class="toggle-public-mini" 
@@ -1093,6 +1231,126 @@ const scrollTo = (id: string) => {
   border-color: var(--notion-blue);
   color: var(--notion-blue);
   background: rgba(0, 117, 222, 0.05);
+}
+
+/* 分享相关样式 */
+.share-btn-mini {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
+  border: none;
+  background: transparent;
+  color: var(--warm-gray-500);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.share-btn-mini:hover {
+  background: rgba(139, 92, 246, 0.1);
+  color: #8b5cf6;
+}
+
+.share-btn-header {
+  color: #8b5cf6 !important;
+}
+
+.share-btn-header:hover {
+  background: rgba(139, 92, 246, 0.1) !important;
+}
+
+.purple-btn {
+  background: #8b5cf6 !important;
+  color: white !important;
+}
+
+.purple-btn:hover {
+  background: #7c3aed !important;
+}
+
+.share-note-info {
+  margin-bottom: 16px;
+  padding: 12px;
+  background: var(--warm-white);
+  border-radius: 8px;
+  font-size: 14px;
+}
+
+.share-success {
+  text-align: center;
+  padding: 16px 0;
+}
+
+.success-icon {
+  margin-bottom: 16px;
+}
+
+.share-success h4 {
+  font-size: 18px;
+  margin-bottom: 24px;
+  color: var(--warm-dark);
+}
+
+.share-details {
+  background: var(--warm-white);
+  padding: 16px;
+  border-radius: 12px;
+  text-align: left;
+}
+
+.detail-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.detail-row:last-child {
+  margin-bottom: 0;
+}
+
+.detail-row .label {
+  font-size: 12px;
+  color: var(--warm-gray-500);
+  font-weight: 500;
+}
+
+.copy-box {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  background: white;
+  border: 1px solid rgba(0,0,0,0.1);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.copy-box:hover {
+  border-color: #8b5cf6;
+  background: rgba(139, 92, 246, 0.02);
+}
+
+.copy-box code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 13px;
+  color: var(--warm-dark);
+  word-break: break-all;
+}
+
+.copy-box .share-code {
+  font-size: 18px;
+  font-weight: bold;
+  letter-spacing: 2px;
+  color: #8b5cf6;
+}
+
+.detail-row .value {
+  font-size: 14px;
+  color: var(--warm-dark);
 }
 
 .form-tip {

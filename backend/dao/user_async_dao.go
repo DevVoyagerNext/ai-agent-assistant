@@ -81,7 +81,7 @@ func GetTotalNodeCountBySubject(ctx context.Context, subjectID uint) (int64, err
 // GetSharedNotes 获取已分享笔记列表
 type SharedNoteResult struct {
 	model.NoteShare
-	NodeName string `gorm:"column:node_name"`
+	NoteTitle string `gorm:"column:note_title"`
 }
 
 func GetSharedNotes(ctx context.Context, userID uint, offset, limit int) (int64, []SharedNoteResult, error) {
@@ -90,7 +90,7 @@ func GetSharedNotes(ctx context.Context, userID uint, offset, limit int) (int64,
 
 	db := global.GVA_DB.WithContext(ctx).
 		Table("note_shares ns").
-		Joins("JOIN knowledge_nodes kn ON ns.node_id = kn.id").
+		Joins("JOIN user_private_notes upn ON ns.private_note_id = upn.id").
 		Where("ns.user_id = ?", userID)
 
 	err := db.Count(&total).Error
@@ -98,7 +98,7 @@ func GetSharedNotes(ctx context.Context, userID uint, offset, limit int) (int64,
 		return 0, nil, err
 	}
 
-	err = db.Select("ns.*, kn.name as node_name").
+	err = db.Select("ns.*, upn.title as note_title").
 		Order("ns.created_at DESC").
 		Offset(offset).Limit(limit).
 		Find(&notes).Error

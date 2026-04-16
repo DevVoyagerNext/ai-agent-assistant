@@ -91,6 +91,11 @@ func (dao *UserPrivateNoteDao) CreateNote(ctx context.Context, note *model.UserP
 	return global.GVA_DB.WithContext(ctx).Create(note).Error
 }
 
+// CreateNoteShare 创建分享记录
+func (dao *UserPrivateNoteDao) CreateNoteShare(ctx context.Context, share *model.NoteShare) error {
+	return global.GVA_DB.WithContext(ctx).Create(share).Error
+}
+
 // UpdateNote 更新笔记或文件夹
 func (dao *UserPrivateNoteDao) UpdateNote(ctx context.Context, userID uint, noteID int, updates map[string]interface{}) error {
 	return global.GVA_DB.WithContext(ctx).

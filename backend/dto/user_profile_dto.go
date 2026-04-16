@@ -59,13 +59,14 @@ type SharedNoteListReq struct {
 
 // SharedNoteItem 已分享笔记项
 type SharedNoteItem struct {
-	ID         uint      `json:"id"`
-	NodeID     int       `json:"nodeId"`
-	NodeName   string    `json:"nodeName"`
-	ShareToken string    `json:"shareToken"`
-	ViewCount  int       `json:"viewCount"`
-	CreatedAt  time.Time `json:"createdAt"`
-	ExpiresAt  time.Time `json:"expiresAt"`
+	ID            uint      `json:"id"`
+	PrivateNoteID int       `json:"privateNoteId"`
+	NoteTitle     string    `json:"noteTitle"`
+	NoteType      string    `json:"noteType"`
+	ShareToken    string    `json:"shareToken"`
+	ViewCount     int       `json:"viewCount"`
+	CreatedAt     time.Time `json:"createdAt"`
+	ExpiresAt     time.Time `json:"expiresAt"`
 }
 
 // SharedNoteListRes 已分享笔记列表响应

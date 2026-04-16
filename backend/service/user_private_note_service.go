@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"time"
 
 	"gorm.io/gorm"
 )
@@ -269,30 +270,57 @@ func (s *UserPrivateNoteService) collectDescendantIDs(ctx context.Context, userI
 	return nil
 }
 
-// DeletePrivateNote 删除私人笔记或文件夹（文件夹递归删除所有子节点）
+// DeletePrivateNote 逻辑删除私人笔记/文件夹
 func (s *UserPrivateNoteService) DeletePrivateNote(ctx context.Context, userID uint, noteID int) error {
-	if userID == 0 {
-		return errors.New("用户未登录")
-	}
-	if noteID <= 0 {
-		return errors.New("笔记ID格式错误")
-	}
+	return s.privateNoteDao.UpdateNote(ctx, userID, noteID, map[string]interface{}{
+		"is_deleted": 1,
+		"deleted_at": time.Now(),
+	})
+}
 
+// SharePrivateNote 分享私人笔记
+func (s *UserPrivateNoteService) SharePrivateNote(ctx context.Context, userID uint, noteID int, req dto.SharePrivateNoteReq) (dto.SharePrivateNoteRes, error) {
+	// 1. 查询笔记是否存在且属于该用户
 	note, err := s.privateNoteDao.GetNoteByID(ctx, userID, noteID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return errors.New("笔记不存在")
+			return dto.SharePrivateNoteRes{}, errors.New("笔记不存在或已删除")
 		}
-		return err
+		return dto.SharePrivateNoteRes{}, err
 	}
 
-	var ids []int
-	ids = append(ids, noteID)
-	if note.Type == "folder" {
-		if err := s.collectDescendantIDs(ctx, userID, noteID, &ids); err != nil {
-			return err
-		}
+	// 2. 解析过期时间
+	expiresAt, err := time.ParseInLocation("2006-01-02 15:04:05", req.ExpiresAt, time.Local)
+	if err != nil {
+		return dto.SharePrivateNoteRes{}, errors.New("过期时间格式错误，应为 2006-01-02 15:04:05")
+	}
+	if expiresAt.Before(time.Now()) {
+		return dto.SharePrivateNoteRes{}, errors.New("过期时间不能早于当前时间")
 	}
 
-	return s.privateNoteDao.DeleteNotesByIDs(ctx, userID, ids)
+	// 3. 生成凭证
+	shareToken := utils.GenerateRandomCode(64)
+	shareCode := utils.GenerateRandomCode(4)
+
+	// 4. 保存分享记录
+	share := &model.NoteShare{
+		UserID:        int(userID),
+		PrivateNoteID: int(note.ID),
+		NoteType:      note.Type,
+		ShareToken:    shareToken,
+		ShareCode:     shareCode,
+		ExpiresAt:     expiresAt,
+		IsActive:      1,
+	}
+
+	err = s.privateNoteDao.CreateNoteShare(ctx, share)
+	if err != nil {
+		return dto.SharePrivateNoteRes{}, err
+	}
+
+	return dto.SharePrivateNoteRes{
+		ShareToken: shareToken,
+		ShareCode:  shareCode,
+		ExpiresAt:  expiresAt.Format("2006-01-02 15:04:05"),
+	}, nil
 }

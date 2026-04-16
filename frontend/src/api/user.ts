@@ -11,7 +11,9 @@ import type {
   UserSubjectProgressRes,
   RecentSubjectListRes,
   PrivateNoteResponse,
-  CreatePrivateNoteReq
+  CreatePrivateNoteReq,
+  SharePrivateNoteReq,
+  SharePrivateNoteRes
 } from '../types/user'
 
 export const getUserInfo = () => {
@@ -65,6 +67,11 @@ export const updatePrivateNoteTitle = (noteId: number, title: string) => {
 // 5. 修改文件或文件夹公开状态
 export const updatePrivateNotePublic = (noteId: number, isPublic: 0 | 1) => {
   return request.put<ApiResponse<null>>(`/user/notes/private/${noteId}/public`, { isPublic })
+}
+
+// 6. 分享私人笔记
+export const sharePrivateNote = (noteId: number, expiresAt: string) => {
+  return request.post<ApiResponse<SharePrivateNoteRes>>(`/user/notes/private/${noteId}/share`, { expiresAt })
 }
 
 // ----------------------------------------------------

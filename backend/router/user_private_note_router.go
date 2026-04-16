@@ -24,5 +24,7 @@ func (s *UserPrivateNoteRouter) InitAuthUserPrivateNoteRouter(Router *gin.Router
 		privateNoteRouter.PUT("/:noteId/public", privateNoteController.UpdatePrivateNotePublic)
 		// 6. 删除私人文件/文件夹 (如: DELETE /v1/user/notes/private/12)
 		privateNoteRouter.DELETE("/:noteId", privateNoteController.DeletePrivateNote)
+		// 7. 分享私人笔记 (如: POST /v1/user/notes/private/12/share)
+		privateNoteRouter.POST("/:noteId/share", privateNoteController.SharePrivateNote)
 	}
 }

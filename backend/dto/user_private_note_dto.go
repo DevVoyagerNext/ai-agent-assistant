@@ -59,3 +59,15 @@ type PrivateNoteResponse struct {
 	Children []PrivateNoteItemRes  `json:"children,omitempty"` // 当 type 为 folder 时有值
 	Content  *PrivateNoteDetailRes `json:"content,omitempty"`  // 当 type 为 markdown 时有值
 }
+
+// SharePrivateNoteReq 分享私人笔记请求
+type SharePrivateNoteReq struct {
+	ExpiresAt string `json:"expiresAt" binding:"required"` // 过期时间，格式如 "2006-01-02 15:04:05"
+}
+
+// SharePrivateNoteRes 分享私人笔记返回
+type SharePrivateNoteRes struct {
+	ShareToken string `json:"shareToken"`
+	ShareCode  string `json:"shareCode"`
+	ExpiresAt  string `json:"expiresAt"`
+}

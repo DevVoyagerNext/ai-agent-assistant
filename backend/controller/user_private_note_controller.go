@@ -190,7 +190,7 @@ func (con *UserPrivateNoteController) UpdatePrivateNotePublic(c *gin.Context) {
 	response.Ok(nil, c)
 }
 
-// DeletePrivateNote 删除私人文件/文件夹（文件夹递归删除）
+// DeletePrivateNote 删除私人笔记或文件夹
 func (con *UserPrivateNoteController) DeletePrivateNote(c *gin.Context) {
 	noteIdStr := c.Param("noteId")
 	noteId, err := strconv.Atoi(noteIdStr)
@@ -205,10 +205,41 @@ func (con *UserPrivateNoteController) DeletePrivateNote(c *gin.Context) {
 		return
 	}
 
-	if err := con.privateNoteService.DeletePrivateNote(c.Request.Context(), userId, noteId); err != nil {
+	err = con.privateNoteService.DeletePrivateNote(c.Request.Context(), userId, noteId)
+	if err != nil {
 		response.FailWithMsg(errmsg.CodeError, err.Error(), c)
 		return
 	}
 
 	response.Ok(nil, c)
+}
+
+// SharePrivateNote 分享私人笔记接口
+func (con *UserPrivateNoteController) SharePrivateNote(c *gin.Context) {
+	noteIdStr := c.Param("noteId")
+	noteId, err := strconv.Atoi(noteIdStr)
+	if err != nil || noteId <= 0 {
+		response.FailWithMsg(errmsg.CodeError, "笔记ID格式错误", c)
+		return
+	}
+
+	var req dto.SharePrivateNoteReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.FailWithMsg(errmsg.CodeError, "参数错误: "+err.Error(), c)
+		return
+	}
+
+	userId, err := con.authService.GetUserID(c)
+	if err != nil || userId == 0 {
+		response.FailWithCode(errmsg.UserTokenNotExist, c) // 必须登录
+		return
+	}
+
+	res, err := con.privateNoteService.SharePrivateNote(c.Request.Context(), userId, noteId, req)
+	if err != nil {
+		response.FailWithMsg(errmsg.CodeError, err.Error(), c)
+		return
+	}
+
+	response.Ok(res, c)
 }

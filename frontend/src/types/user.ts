@@ -86,6 +86,16 @@ export interface SharedNotesRes {
   list: SharedNoteItem[]
 }
 
+export interface SharePrivateNoteReq {
+  expiresAt: string
+}
+
+export interface SharePrivateNoteRes {
+  shareToken: string
+  shareCode: string
+  expiresAt: string
+}
+
 export interface LearnedSubjectItem {
   subjectId: number
   subjectName: string
