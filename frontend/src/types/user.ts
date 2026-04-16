@@ -78,9 +78,7 @@ export interface SharedNoteItem {
   nodeName?: string
   noteType: string
   shareToken: string
-  share_token?: string
   shareCode: string
-  share_code?: string
   viewCount: number
   isActive: boolean
   createdAt: string
@@ -113,9 +111,9 @@ export interface ShareBasicInfoRes {
 }
 
 export interface ShareAccessReq {
-  share_token: string
-  share_code: string
-  private_node_id: number
+  shareToken: string
+  shareCode: string
+  privateNoteId?: number
 }
 
 export interface ShareAccessRes {

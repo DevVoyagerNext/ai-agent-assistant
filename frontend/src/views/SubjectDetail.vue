@@ -666,7 +666,6 @@ const handleCreatePrivate = async () => {
       parentId: currentFolderId.value,
       type: createPrivateType.value,
       title: createPrivateTitle.value,
-      content: createPrivateType.value === 'markdown' ? createPrivateContent.value : undefined,
       isPublic: createPrivateIsPublic.value ? 1 : 0
     })
     

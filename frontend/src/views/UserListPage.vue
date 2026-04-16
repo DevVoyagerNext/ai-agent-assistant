@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ArrowLeft, BookOpen, Clock, Activity, Loader2, Star, FolderHeart, FileText, Folder, X, ToggleRight, ToggleLeft, ChevronRight, Edit3 } from 'lucide-vue-next'
-import { getUserRecentSubjects, getUserLikedSubjects, getUserCollectFolders, getPrivateNoteDetail, getSubjectsInFolder, updateCollectFolderPublic, updateCollectFolderName } from '../api/user'
+import { ArrowLeft, BookOpen, Clock, Activity, Loader2, FolderHeart, FileText, Folder, X, ToggleRight, ToggleLeft, ChevronRight, Edit3 } from 'lucide-vue-next'
+import { getUserRecentSubjects, getUserLikedSubjects, getUserCollectFolders, getPrivateNoteDetail, getSubjectsInFolder, updateCollectFolderPublic, updateCollectFolderName, updatePrivateNotePublic, updatePrivateNoteTitle } from '../api/user'
 
 const route = useRoute()
 const router = useRouter()
@@ -72,28 +72,85 @@ const handleFolderItemClick = (item: any) => {
 
 const updatingFolderIds = ref<Set<number>>(new Set())
 
+// --- 私人笔记相关状态 ---
+const privateNoteStack = ref<{ id: number; title: string }[]>([{ id: 0, title: '私人笔记' }])
+const updatingNoteIds = ref<Set<number>>(new Set())
+const showPrivateNoteModal = ref(false)
+const selectedPrivateNote = ref<any>(null)
+const loadingPrivateNote = ref(false)
+const renderedPrivateNoteContent = computed(() => {
+  if (!selectedPrivateNote.value?.content?.content) return ''
+  return selectedPrivateNote.value.content.content.replace(/\n/g, '<br>')
+})
+
+const handlePrivateNoteBack = () => {
+  if (privateNoteStack.value.length > 1) {
+    privateNoteStack.value.pop()
+    page.value = 1
+    fetchList()
+  }
+}
+
+const handleToggleNotePublic = async (note: any) => {
+  if (!note?.id || updatingNoteIds.value.has(note.id)) return
+
+  updatingNoteIds.value.add(note.id)
+  updatingNoteIds.value = new Set(updatingNoteIds.value)
+
+  const nextPublic: 0 | 1 = note.isPublic ? 0 : 1
+  const prevValue = note.isPublic
+  note.isPublic = nextPublic
+
+  try {
+    const res = await updatePrivateNotePublic(note.id, nextPublic)
+    if (res.data?.code !== 200) {
+      note.isPublic = prevValue
+      alert(res.data?.msg || '修改失败')
+    }
+  } catch (err: any) {
+    note.isPublic = prevValue
+    alert(err.response?.data?.msg || '网络错误，修改失败')
+  } finally {
+    updatingNoteIds.value.delete(note.id)
+    updatingNoteIds.value = new Set(updatingNoteIds.value)
+  }
+}
+// -----------------
+
 // --- 重命名相关 ---
 const showRenameModal = ref(false)
 const renameTitle = ref('')
 const renaming = ref(false)
-const pendingRenameFolder = ref<any>(null)
+const pendingRenameItem = ref<any>(null)
+const renameType = ref<'folder' | 'privateNote'>('folder')
 
-const openRenameFolder = (folder: any) => {
-  pendingRenameFolder.value = folder
-  renameTitle.value = folder.name
+const openRenameModal = (item: any, type: 'folder' | 'privateNote') => {
+  pendingRenameItem.value = item
+  renameType.value = type
+  renameTitle.value = type === 'folder' ? item.name : item.title
   showRenameModal.value = true
 }
 
 const handleRename = async () => {
-  if (!renameTitle.value.trim() || !pendingRenameFolder.value) return
+  if (!renameTitle.value.trim() || !pendingRenameItem.value) return
   renaming.value = true
   try {
-    const res = await updateCollectFolderName(pendingRenameFolder.value.id, renameTitle.value)
-    if (res.data?.code === 200) {
-      pendingRenameFolder.value.name = renameTitle.value
-      showRenameModal.value = false
-    } else {
-      alert(res.data?.msg || '重命名失败')
+    if (renameType.value === 'folder') {
+      const res = await updateCollectFolderName(pendingRenameItem.value.id, renameTitle.value.trim())
+      if (res.data?.code === 200) {
+        pendingRenameItem.value.name = renameTitle.value.trim()
+        showRenameModal.value = false
+      } else {
+        alert(res.data?.msg || '重命名失败')
+      }
+    } else if (renameType.value === 'privateNote') {
+      const res = await updatePrivateNoteTitle(pendingRenameItem.value.id, renameTitle.value.trim())
+      if (res.data?.code === 200) {
+        pendingRenameItem.value.title = renameTitle.value.trim()
+        showRenameModal.value = false
+      } else {
+        alert(res.data?.msg || '重命名失败')
+      }
     }
   } catch (err: any) {
     alert(err.response?.data?.msg || '网络错误，重命名失败')
@@ -137,8 +194,6 @@ const titleMap: Record<string, string> = {
   'collections': '我的收藏夹',
   'private-notes': '私人笔记'
 }
-
-const pageTitle = computed(() => titleMap[type.value] || '列表')
 
 const formatDate = (dateStr: string) => {
   if (!dateStr) return '未知时间'
@@ -202,7 +257,8 @@ const fetchList = async (isLoadMore = false) => {
         total.value = list.value.length
       }
     } else if (type.value === 'private-notes') {
-      const res = await getPrivateNoteDetail(0, 2, page.value, pageSize.value)
+      const currentFolderId = privateNoteStack.value[privateNoteStack.value.length - 1].id
+      const res = await getPrivateNoteDetail(currentFolderId, 2, page.value, pageSize.value)
       if (res.data?.code === 200 && res.data.data) {
         const data = res.data.data
         if (data.type === 'folder') {
@@ -225,14 +281,42 @@ const loadMore = () => {
   fetchList(true)
 }
 
-const handleItemClick = (item: any) => {
+const handleItemClick = async (item: any) => {
   if (type.value === 'recent-learning' || type.value === 'liked-subjects') {
     const url = `/subject/${item.id}` + (item.lastNodeId ? `?nodeId=${item.lastNodeId}` : '')
     router.push(url)
   } else if (type.value === 'collections') {
     openFolderModal(item)
+  } else if (type.value === 'private-notes') {
+    if (item.type === 'folder') {
+      privateNoteStack.value.push({ id: item.id, title: item.title })
+      page.value = 1
+      fetchList()
+    } else {
+      // 这是一个文件，弹出展示框
+      selectedPrivateNote.value = item
+      showPrivateNoteModal.value = true
+      loadingPrivateNote.value = true
+      try {
+        const res = await getPrivateNoteDetail(item.id, 2)
+        if (res.data?.code === 200 && res.data.data) {
+          selectedPrivateNote.value = res.data.data
+        }
+      } catch (err) {
+        console.error('Fetch private note detail failed:', err)
+      } finally {
+        loadingPrivateNote.value = false
+      }
+    }
   }
 }
+
+const pageTitle = computed(() => {
+  if (type.value === 'private-notes' && privateNoteStack.value.length > 0) {
+    return privateNoteStack.value[privateNoteStack.value.length - 1].title
+  }
+  return titleMap[type.value] || '列表'
+})
 
 onMounted(() => {
   fetchList()
@@ -242,7 +326,11 @@ onMounted(() => {
 <template>
   <div class="list-page">
     <div class="topbar">
-      <button class="ghost-btn" @click="router.push('/me')">
+      <button class="ghost-btn" v-if="type === 'private-notes' && privateNoteStack.length > 1" @click="handlePrivateNoteBack">
+        <ArrowLeft :size="18" />
+        返回上一级
+      </button>
+      <button class="ghost-btn" v-else @click="router.push('/me')">
         <ArrowLeft :size="18" />
         返回个人主页
       </button>
@@ -296,7 +384,7 @@ onMounted(() => {
               <FolderHeart :size="32" />
             </div>
             <div class="folder-info">
-              <div class="folder-name-row" @click.stop="openRenameFolder(item)">
+              <div class="folder-name-row" @click.stop="openRenameModal(item, 'folder')">
                 <h3>{{ item.name }}</h3>
                 <Edit3 :size="14" class="edit-icon-mini" />
               </div>
@@ -318,16 +406,29 @@ onMounted(() => {
 
         <!-- 私人笔记样式 -->
         <template v-else-if="type === 'private-notes'">
-          <div v-for="item in list" :key="item.id" class="note-card">
+          <div v-for="item in list" :key="item.id" class="note-card" @click="handleItemClick(item)">
             <div class="note-icon" :class="item.type">
               <Folder v-if="item.type === 'folder'" :size="24" />
               <FileText v-else :size="24" />
             </div>
             <div class="note-info">
-              <h3>{{ item.title }}</h3>
+              <div class="note-name-row" @click.stop="openRenameModal(item, 'privateNote')">
+                <h3>{{ item.title }}</h3>
+                <Edit3 :size="14" class="edit-icon-mini" />
+              </div>
               <div class="meta">
                 <span>{{ formatDate(item.updatedAt) }}</span>
-                <span class="badge" :class="{ public: item.isPublic }">{{ item.isPublic ? '公开' : '私密' }}</span>
+                <button
+                  class="badge-btn"
+                  :class="{ public: !!item.isPublic }"
+                  :disabled="updatingNoteIds.has(item.id)"
+                  @click.stop="handleToggleNotePublic(item)"
+                >
+                  <Loader2 v-if="updatingNoteIds.has(item.id)" class="spin" :size="16" />
+                  <ToggleRight v-else-if="!!item.isPublic" :size="16" />
+                  <ToggleLeft v-else :size="16" />
+                  <span>{{ !!item.isPublic ? '公开' : '私密' }}</span>
+                </button>
               </div>
             </div>
           </div>
@@ -353,7 +454,7 @@ onMounted(() => {
             <div class="header-left">
               <FolderHeart :size="24" class="icon-teal" />
               <div class="header-text">
-                <div class="modal-title-row" @click="openRenameFolder(selectedFolder)">
+                <div class="modal-title-row" @click="openRenameModal(selectedFolder, 'folder')">
                   <h3>{{ selectedFolder?.name }}</h3>
                   <Edit3 :size="16" class="edit-icon-mini" />
                 </div>
@@ -408,14 +509,14 @@ onMounted(() => {
       <div v-if="showRenameModal" class="modal-overlay rename-modal-overlay" @click.self="showRenameModal = false">
         <div class="modal-content small-modal">
           <header class="modal-header">
-            <h3>重命名收藏夹</h3>
+            <h3>{{ renameType === 'folder' ? '重命名收藏夹' : '重命名私人笔记' }}</h3>
             <button class="close-btn" @click="showRenameModal = false">
               <X :size="20" />
             </button>
           </header>
           <div class="modal-body">
             <div class="form-group">
-              <label>收藏夹名称</label>
+              <label>名称</label>
               <input v-model="renameTitle" type="text" placeholder="请输入名称" maxlength="50" @keyup.enter="handleRename" />
             </div>
           </div>
@@ -428,6 +529,31 @@ onMounted(() => {
               </button>
             </div>
           </footer>
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- 私人笔记展示弹窗 -->
+    <Teleport to="body">
+      <div v-if="showPrivateNoteModal" class="modal-overlay note-modal-overlay" @click.self="showPrivateNoteModal = false">
+        <div class="modal-content large-modal">
+          <header class="modal-header">
+            <div class="header-left">
+              <h3>{{ selectedPrivateNote?.title }}</h3>
+            </div>
+            <button class="close-btn" @click="showPrivateNoteModal = false">
+              <X :size="24" />
+            </button>
+          </header>
+          <div class="modal-body">
+            <div v-if="loadingPrivateNote" class="modal-loading">
+              <Loader2 class="spin" :size="32" />
+              <p>加载中...</p>
+            </div>
+            <div v-else class="markdown-view">
+              <div class="markdown-content" v-html="renderedPrivateNoteContent"></div>
+            </div>
+          </div>
         </div>
       </div>
     </Teleport>
@@ -593,7 +719,7 @@ onMounted(() => {
   text-overflow: ellipsis;
 }
 
-.folder-name-row {
+.folder-name-row, .note-name-row {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -611,6 +737,7 @@ onMounted(() => {
 }
 
 .folder-name-row:hover .edit-icon-mini,
+.note-name-row:hover .edit-icon-mini,
 .modal-title-row:hover .edit-icon-mini {
   opacity: 1;
   color: var(--notion-blue);

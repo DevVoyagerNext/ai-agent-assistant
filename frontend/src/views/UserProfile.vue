@@ -5,8 +5,8 @@ import Toast from '../components/Toast.vue'
 import Skeleton from '../components/Skeleton.vue'
 import { 
   ArrowLeft, LogOut, RefreshCcw, 
-  Activity, BookOpen, Share2, Book, Users, Star, Layers, FolderHeart, Bookmark,
-  Folder, FileText, ToggleRight, ToggleLeft, Edit3, X, Loader2, ChevronRight, ChevronLeft, Clock, Save, Plus, FolderPlus, FilePlus
+  Activity, BookOpen, Share2, Book, Users, Star, Layers, FolderHeart,
+  Folder, FileText, ToggleRight, ToggleLeft, Edit3, X, Loader2, ChevronRight, ChevronLeft, Clock, Save, FolderPlus, FilePlus
 } from 'lucide-vue-next'
 import { useUserProfile } from '../composables/useUserProfile'
 import ActivityCalendar from '../components/ActivityCalendar.vue'
@@ -456,14 +456,24 @@ const showUpdateExpireModal = ref(false)
 const updatingExpire = ref(false)
 const pendingUpdateShareId = ref<number | null>(null)
 const updateExpireMode = ref<'minutes' | 'date'>('minutes')
-const selectedMinutes = ref<number>(43200) // 默认 1个月
+const selectedMinutes = ref<number | 'custom'>(43200) // 默认 1个月，或者 'custom'
+const customDurationValue = ref<number>(1)
+const customDurationUnit = ref<number>(1440) // 默认单位为 天 (1440分钟)
 const selectedExpireDate = ref('')
 
-const quickTimeOptions = [
+const quickTimeOptions: { label: string; value: number | 'custom' }[] = [
   { label: '1 小时', value: 60 },
   { label: '1 天', value: 1440 },
   { label: '7 天', value: 10080 },
-  { label: '30 天', value: 43200 }
+  { label: '30 天', value: 43200 },
+  { label: '自定义', value: 'custom' }
+]
+
+const customUnitOptions = [
+  { label: '分钟', value: 1 },
+  { label: '小时', value: 60 },
+  { label: '天', value: 1440 },
+  { label: '个月(30天)', value: 43200 }
 ]
 
 const openUpdateExpireModal = (shareId: number) => {
@@ -483,7 +493,16 @@ const handleUpdateExpire = async () => {
     let expireAt = undefined
     
     if (updateExpireMode.value === 'minutes') {
-      expireMinutes = selectedMinutes.value
+      if (selectedMinutes.value === 'custom') {
+        if (!customDurationValue.value || customDurationValue.value <= 0) {
+          showToast('请输入有效的自定义时长', 'error')
+          updatingExpire.value = false
+          return
+        }
+        expireMinutes = customDurationValue.value * customDurationUnit.value
+      } else {
+        expireMinutes = selectedMinutes.value as number
+      }
     } else {
       // 日期模式
       if (!selectedExpireDate.value) {
@@ -883,6 +902,8 @@ const scrollTo = (id: string) => {
               :key="note.id" 
               class="note-item shared"
               :class="{ 'inactive': !note.isActive }"
+              @click="openPrivateNoteModal({ id: note.nodeId, title: note.noteTitle || note.nodeName, type: note.noteType })"
+              style="cursor: pointer;"
             >
               <div class="note-header">
                 <div class="note-title-line">
@@ -895,14 +916,14 @@ const scrollTo = (id: string) => {
               </div>
               <div class="note-meta">
                 <div class="meta-left">
-                  <span>提取码: {{ note.shareCode || note.share_code }}</span>
+                  <span>提取码: {{ note.shareCode }}</span>
                   <span>至: {{ formatDate(note.expiresAt) }}</span>
                 </div>
                 <div class="meta-right">
                   <template v-if="note.isActive">
                     <button 
                       class="ghost-btn-mini" 
-                      @click="copyToClipboard(note.shareCode || note.share_code)"
+                      @click.stop="copyToClipboard(note.shareCode)"
                       title="复制提取码"
                     >
                       <Layers :size="14" />
@@ -910,7 +931,7 @@ const scrollTo = (id: string) => {
                     </button>
                     <button 
                       class="ghost-btn-mini" 
-                      @click="copyToClipboard(`${windowOrigin}/share/verify?token=${note.shareToken || note.share_token}`)"
+                      @click.stop="copyToClipboard(`${windowOrigin}/share/verify?token=${note.shareToken}`)"
                       title="复制分享链接"
                     >
                       <Share2 :size="14" />
@@ -918,7 +939,7 @@ const scrollTo = (id: string) => {
                     </button>
                     <button 
                       class="ghost-btn-mini" 
-                      @click="openUpdateExpireModal(note.id)"
+                      @click.stop="openUpdateExpireModal(note.id)"
                       title="修改过期时间"
                     >
                       <Clock :size="14" />
@@ -926,7 +947,7 @@ const scrollTo = (id: string) => {
                     </button>
                     <button 
                       class="danger-btn-mini" 
-                      @click="handleToggleShareStatus(note.id, 0)"
+                      @click.stop="handleToggleShareStatus(note.id, 0)"
                       title="取消分享"
                     >
                       <X :size="14" />
@@ -936,7 +957,7 @@ const scrollTo = (id: string) => {
                   <template v-else>
                     <button 
                       class="ghost-btn-mini" 
-                      @click="handleToggleShareStatus(note.id, 1)"
+                      @click.stop="handleToggleShareStatus(note.id, 1)"
                       title="重新分享"
                       style="color: var(--notion-blue); border-color: rgba(0, 117, 222, 0.2);"
                     >
@@ -1165,6 +1186,24 @@ const scrollTo = (id: string) => {
                 >
                   {{ opt.label }}
                 </button>
+              </div>
+
+              <!-- 自定义时长输入 -->
+              <div v-if="selectedMinutes === 'custom'" class="custom-duration-input" style="margin-top: 16px;">
+                <div class="input-with-select">
+                  <input 
+                    type="number" 
+                    v-model="customDurationValue" 
+                    min="1" 
+                    class="number-input"
+                    placeholder="请输入时长"
+                  />
+                  <select v-model="customDurationUnit" class="unit-select">
+                    <option v-for="unit in customUnitOptions" :key="unit.value" :value="unit.value">
+                      {{ unit.label }}
+                    </option>
+                  </select>
+                </div>
               </div>
             </div>
 
@@ -1613,6 +1652,41 @@ const scrollTo = (id: string) => {
   background: rgba(139, 92, 246, 0.1);
   border-color: #8b5cf6;
   color: #8b5cf6;
+}
+
+.input-with-select {
+  display: flex;
+  align-items: center;
+  border: 1px solid rgba(0,0,0,0.1);
+  border-radius: 8px;
+  overflow: hidden;
+  background: white;
+}
+
+.number-input {
+  flex: 1;
+  padding: 12px 16px;
+  border: none;
+  font-size: 14px;
+  outline: none;
+  background: transparent;
+  color: var(--notion-black);
+}
+
+.unit-select {
+  padding: 12px 16px;
+  border: none;
+  border-left: 1px solid rgba(0,0,0,0.1);
+  background: var(--warm-white);
+  color: var(--warm-gray-500);
+  font-size: 14px;
+  font-weight: 500;
+  outline: none;
+  cursor: pointer;
+}
+
+.unit-select:focus {
+  background: white;
 }
 
 .detail-row .value {

@@ -1,6 +1,5 @@
 import request from '../utils/request'
 import type { ApiResponse } from '../types'
-import type { Subject } from '../types/subject'
 import type { 
   UserInfoRes, 
   ActivityCalendarRes, 
@@ -8,11 +7,8 @@ import type {
   SharedNotesRes, 
   LearnedSubjectsRes,
   CollectFolderRes,
-  UserSubjectProgressRes,
   RecentSubjectListRes,
   PrivateNoteResponse,
-  CreatePrivateNoteReq,
-  SharePrivateNoteReq,
   SharePrivateNoteRes,
   ShareBasicInfoRes,
   ShareAccessReq,

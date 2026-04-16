@@ -61,6 +61,24 @@ export const useUserProfile = () => {
       lastStudyTime: item?.lastStudyTime ?? subject?.lastStudyTime ?? ''
     } as UserSubjectProgressRes
   }
+
+  const normalizeSharedNoteItem = (item: any): SharedNoteItem => {
+    const raw = item ?? {}
+    return {
+      ...raw,
+      id: raw.id,
+      nodeId: raw.nodeId ?? 0,
+      noteTitle: raw.noteTitle ?? raw.nodeName ?? '',
+      nodeName: raw.nodeName ?? raw.noteTitle ?? '',
+      noteType: raw.noteType ?? 'markdown',
+      shareToken: raw.shareToken ?? '',
+      shareCode: raw.shareCode ?? '',
+      viewCount: raw.viewCount ?? 0,
+      isActive: raw.isActive ?? true,
+      createdAt: raw.createdAt ?? '',
+      expiresAt: raw.expiresAt ?? ''
+    } as SharedNoteItem
+  }
   
   // Fetchers
   const fetchUserInfo = async () => {
@@ -157,7 +175,7 @@ export const useUserProfile = () => {
     try {
       const res = await getSharedNotes(1, 10)
       if (res.data?.code === 200 && res.data.data) {
-        sharedNotes.value = res.data.data.list || []
+        sharedNotes.value = (res.data.data.list || []).map(normalizeSharedNoteItem)
       }
     } catch (err) {
       console.error(err)

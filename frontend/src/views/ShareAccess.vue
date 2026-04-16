@@ -4,7 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { accessShareNote } from '../api/user'
 import type { ShareAccessRes } from '../types/user'
 import Toast from '../components/Toast.vue'
-import { Loader2, ArrowLeft, Folder, FileText, File, MoreHorizontal, Download } from 'lucide-vue-next'
+import { Loader2, ArrowLeft, Folder, FileText } from 'lucide-vue-next'
 
 const route = useRoute()
 const router = useRouter()
@@ -23,18 +23,14 @@ const toast = ref({
   type: 'error' as 'success' | 'error'
 })
 
-const showToast = (message: string, type: 'success' | 'error' = 'error') => {
-  toast.value = { show: true, message, type }
-}
-
 const fetchNote = async (nodeId?: number) => {
   loading.value = true
   errorMsg.value = ''
   try {
     const payload = {
-      share_token: shareToken,
-      share_code: shareCode,
-      private_node_id: nodeId || 0 
+      shareToken,
+      shareCode,
+      privateNoteId: nodeId || 0
     }
     const res = await accessShareNote(payload)
     if (res.data?.code === 200 && res.data.data) {
