@@ -118,3 +118,40 @@ func (u *UserController) UpdateSharedNoteStatus(c *gin.Context) {
 
 	response.Ok(nil, c)
 }
+
+// UpdateSharedNoteExpire 更新分享过期时间接口
+func (u *UserController) UpdateSharedNoteExpire(c *gin.Context) {
+	userId, err := u.authService.GetUserID(c)
+	if err != nil {
+		response.FailWithCode(errmsg.UserTokenInvalid, c)
+		return
+	}
+
+	shareIdStr := c.Param("id")
+	shareId, err := strconv.Atoi(shareIdStr)
+	if err != nil || shareId <= 0 {
+		response.FailWithMsg(errmsg.CodeError, "分享ID格式错误", c)
+		return
+	}
+
+	var req dto.UpdateSharedNoteExpireReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.FailWithMsg(errmsg.CodeError, "参数错误: "+err.Error(), c)
+		return
+	}
+
+	if req.ExpireMinutes <= 0 && req.ExpireAt == "" {
+		response.FailWithMsg(errmsg.CodeError, "至少需要传递延长分钟数或具体过期时间之一", c)
+		return
+	}
+
+	errCode := u.userService.UpdateSharedNoteExpire(c.Request.Context(), userId, shareId, req)
+	if errCode != errmsg.CodeSuccess {
+		// 为了给前端更友好的提示，如果是因为时间解析或过去时间导致的错误，这里也可以细化
+		// 但基于你之前的代码结构，我们统一抛出 CodeError
+		response.FailWithMsg(errCode, "更新过期时间失败，请检查时间格式是否为 2006-01-02 15:04:05 且时间必须在未来", c)
+		return
+	}
+
+	response.Ok(nil, c)
+}

@@ -144,6 +144,14 @@ func (dao *UserPrivateNoteDao) UpdateNoteShareStatus(ctx context.Context, userID
 		Update("is_active", isActive).Error
 }
 
+// UpdateNoteShareExpire 更新分享过期时间
+func (dao *UserPrivateNoteDao) UpdateNoteShareExpire(ctx context.Context, userID uint, shareID int, expireAt time.Time) error {
+	return global.GVA_DB.WithContext(ctx).
+		Model(&model.NoteShare{}).
+		Where("id = ? AND user_id = ?", shareID, userID).
+		Update("expires_at", expireAt).Error
+}
+
 // UpdateNote 更新笔记或文件夹
 func (dao *UserPrivateNoteDao) UpdateNote(ctx context.Context, userID uint, noteID int, updates map[string]interface{}) error {
 	return global.GVA_DB.WithContext(ctx).

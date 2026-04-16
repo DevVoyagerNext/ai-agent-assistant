@@ -38,6 +38,36 @@ func (u *UserService) UpdateSharedNoteStatus(ctx context.Context, userID uint, s
 	return errmsg.CodeSuccess
 }
 
+// UpdateSharedNoteExpire 更新分享过期时间
+func (u *UserService) UpdateSharedNoteExpire(ctx context.Context, userID uint, shareID int, req dto.UpdateSharedNoteExpireReq) int {
+	var privateNoteDao dao.UserPrivateNoteDao
+	var expireAt time.Time
+
+	if req.ExpireMinutes > 0 {
+		// 优先使用传递的分钟数，以当前时间为基准向后延长
+		expireAt = time.Now().Add(time.Duration(req.ExpireMinutes) * time.Minute)
+	} else if req.ExpireAt != "" {
+		// 其次解析传递的具体时间
+		parsedTime, err := time.ParseInLocation("2006-01-02 15:04:05", req.ExpireAt, time.Local)
+		if err != nil {
+			return errmsg.CodeError // 或者你可以定义一个更具体的错误码，如时间格式错误
+		}
+		if parsedTime.Before(time.Now()) {
+			return errmsg.CodeError // 不能设置为过去的时间
+		}
+		expireAt = parsedTime
+	} else {
+		// 都没传，直接返回错误
+		return errmsg.CodeError
+	}
+
+	if err := privateNoteDao.UpdateNoteShareExpire(ctx, userID, shareID, expireAt); err != nil {
+		return errmsg.CodeError
+	}
+
+	return errmsg.CodeSuccess
+}
+
 // GetPublicPrivateNotes 获取公开的私人笔记列表
 func (u *UserService) GetPublicPrivateNotes(ctx context.Context, userID uint, req dto.PublicPrivateNoteListReq) (int, dto.PublicPrivateNoteListRes) {
 	offset := (req.Page - 1) * req.PageSize

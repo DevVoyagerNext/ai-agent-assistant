@@ -81,3 +81,9 @@ type SharedNoteListRes struct {
 type UpdateSharedNoteStatusReq struct {
 	IsActive int8 `json:"isActive" binding:"oneof=0 1"`
 }
+
+// UpdateSharedNoteExpireReq 更新分享过期时间请求
+type UpdateSharedNoteExpireReq struct {
+	ExpireMinutes int    `json:"expireMinutes"` // 延长多少分钟，如果传了优先使用这个
+	ExpireAt      string `json:"expireAt"`      // 过期的具体时间，如 2006-01-02 15:04:05
+}

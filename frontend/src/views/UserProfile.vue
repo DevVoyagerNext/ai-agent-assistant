@@ -14,7 +14,7 @@ import {
   updatePrivateNoteTitle, updatePrivateNotePublic, 
   updateCollectFolderPublic, updateCollectFolderName,
   getSubjectsInFolder, getPrivateNoteDetail, updatePrivateNoteContent,
-  createPrivateNote, sharePrivateNote, updateShareNoteStatus
+  createPrivateNote, sharePrivateNote, updateShareNoteStatus, updateShareNoteExpire
 } from '../api/user'
 
 const router = useRouter()
@@ -451,6 +451,64 @@ const handleToggleShareStatus = async (shareId: number, isActive: 0 | 1) => {
   }
 }
 
+// --- 修改分享时间相关 ---
+const showUpdateExpireModal = ref(false)
+const updatingExpire = ref(false)
+const pendingUpdateShareId = ref<number | null>(null)
+const updateExpireMode = ref<'minutes' | 'date'>('minutes')
+const selectedMinutes = ref<number>(43200) // 默认 1个月
+const selectedExpireDate = ref('')
+
+const quickTimeOptions = [
+  { label: '1 小时', value: 60 },
+  { label: '1 天', value: 1440 },
+  { label: '7 天', value: 10080 },
+  { label: '30 天', value: 43200 }
+]
+
+const openUpdateExpireModal = (shareId: number) => {
+  pendingUpdateShareId.value = shareId
+  updateExpireMode.value = 'minutes'
+  selectedMinutes.value = 43200
+  selectedExpireDate.value = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 16)
+  showUpdateExpireModal.value = true
+}
+
+const handleUpdateExpire = async () => {
+  if (!pendingUpdateShareId.value) return
+  updatingExpire.value = true
+  
+  try {
+    let expireMinutes = 0
+    let expireAt = undefined
+    
+    if (updateExpireMode.value === 'minutes') {
+      expireMinutes = selectedMinutes.value
+    } else {
+      // 日期模式
+      if (!selectedExpireDate.value) {
+        showToast('请选择过期时间', 'error')
+        updatingExpire.value = false
+        return
+      }
+      expireAt = selectedExpireDate.value.replace('T', ' ') + ':00'
+    }
+    
+    const res = await updateShareNoteExpire(pendingUpdateShareId.value, expireMinutes, expireAt)
+    if (res.data?.code === 200) {
+      showToast('修改时间成功', 'success')
+      showUpdateExpireModal.value = false
+      refreshAll()
+    } else {
+      showToast(res.data?.msg || '修改时间失败', 'error')
+    }
+  } catch (err: any) {
+    showToast(err.response?.data?.msg || '修改时间失败', 'error')
+  } finally {
+    updatingExpire.value = false
+  }
+}
+
 // ------------------------------
 
 const handleToggleCollectionPublic = async (folder: any) => {
@@ -859,6 +917,14 @@ const scrollTo = (id: string) => {
                       <span>链接</span>
                     </button>
                     <button 
+                      class="ghost-btn-mini" 
+                      @click="openUpdateExpireModal(note.id)"
+                      title="修改过期时间"
+                    >
+                      <Clock :size="14" />
+                      <span>改日期</span>
+                    </button>
+                    <button 
                       class="danger-btn-mini" 
                       @click="handleToggleShareStatus(note.id, 0)"
                       title="取消分享"
@@ -1049,6 +1115,76 @@ const scrollTo = (id: string) => {
               <button v-if="!shareResult" class="confirm-btn purple-btn" :disabled="sharing || !shareExpiresAt" @click="handleShare">
                 <Loader2 v-if="sharing" class="spin" :size="16" />
                 <span>生成分享链接</span>
+              </button>
+            </div>
+          </footer>
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- 修改分享时间弹窗 -->
+    <Teleport to="body">
+      <div v-if="showUpdateExpireModal" class="modal-overlay share-modal-overlay" @click.self="showUpdateExpireModal = false">
+        <div class="modal-content small-modal">
+          <header class="modal-header">
+            <div class="header-left">
+              <Clock :size="20" class="icon-purple" />
+              <h3>修改分享过期时间</h3>
+            </div>
+            <button class="close-btn" @click="showUpdateExpireModal = false">
+              <X :size="20" />
+            </button>
+          </header>
+          <div class="modal-body">
+            <div class="form-group">
+              <label>过期模式</label>
+              <div class="toggle-group">
+                <button 
+                  class="toggle-btn" 
+                  :class="{ active: updateExpireMode === 'minutes' }" 
+                  @click="updateExpireMode = 'minutes'"
+                >按时长</button>
+                <button 
+                  class="toggle-btn" 
+                  :class="{ active: updateExpireMode === 'date' }" 
+                  @click="updateExpireMode = 'date'"
+                >按日期</button>
+              </div>
+            </div>
+
+            <!-- 按时长模式 -->
+            <div v-if="updateExpireMode === 'minutes'" class="form-group">
+              <label>选择分享时长</label>
+              <div class="quick-options-grid">
+                <button 
+                  v-for="opt in quickTimeOptions" 
+                  :key="opt.value"
+                  class="quick-option-btn"
+                  :class="{ active: selectedMinutes === opt.value }"
+                  @click="selectedMinutes = opt.value"
+                >
+                  {{ opt.label }}
+                </button>
+              </div>
+            </div>
+
+            <!-- 按日期模式 -->
+            <div v-else class="form-group">
+              <label>选择过期日期</label>
+              <input 
+                v-model="selectedExpireDate" 
+                type="datetime-local" 
+                required
+              />
+              <p class="form-tip">精确到具体的过期时间点</p>
+            </div>
+          </div>
+          <footer class="modal-footer">
+            <div class="form-actions">
+              <button class="cancel-btn" @click="showUpdateExpireModal = false">取消</button>
+              <button class="confirm-btn purple-btn" :disabled="updatingExpire" @click="handleUpdateExpire">
+                <Loader2 v-if="updatingExpire" class="spin" :size="16" />
+                <span>保存修改</span>
               </button>
             </div>
           </footer>
@@ -1420,6 +1556,62 @@ const scrollTo = (id: string) => {
   font-size: 18px;
   font-weight: bold;
   letter-spacing: 2px;
+  color: #8b5cf6;
+}
+
+.toggle-group {
+  display: flex;
+  background: var(--warm-white);
+  padding: 4px;
+  border-radius: 8px;
+  margin-bottom: 16px;
+}
+
+.toggle-btn {
+  flex: 1;
+  padding: 8px;
+  border: none;
+  background: transparent;
+  color: var(--warm-gray-500);
+  font-size: 14px;
+  font-weight: 500;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.toggle-btn.active {
+  background: white;
+  color: var(--notion-black);
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+.quick-options-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+}
+
+.quick-option-btn {
+  padding: 12px;
+  border: 1px solid rgba(0,0,0,0.1);
+  background: white;
+  border-radius: 8px;
+  color: var(--warm-gray-500);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.quick-option-btn:hover {
+  background: rgba(139, 92, 246, 0.05);
+  border-color: #c4b5fd;
+}
+
+.quick-option-btn.active {
+  background: rgba(139, 92, 246, 0.1);
+  border-color: #8b5cf6;
   color: #8b5cf6;
 }
 

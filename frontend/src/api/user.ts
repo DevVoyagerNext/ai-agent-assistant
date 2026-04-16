@@ -94,6 +94,11 @@ export const updateShareNoteStatus = (shareId: number, isActive: 0 | 1) => {
   return request.put<ApiResponse<null>>(`/user/notes/shares/${shareId}/status`, { isActive })
 }
 
+// 10. 更新分享的过期时间
+export const updateShareNoteExpire = (shareId: number, expireMinutes: number, expireAt?: string) => {
+  return request.put<ApiResponse<null>>(`/user/notes/shares/${shareId}/expire`, { expireMinutes, expireAt })
+}
+
 // ----------------------------------------------------
 
 export const getSharedNotes = (page = 1, pageSize = 10) => {
