@@ -117,7 +117,7 @@ func (s *KnowledgeNodeService) GetChildNodes(ctx context.Context, parentID int, 
 	return s.enrichNodes(nodes, userID)
 }
 
-// GetPathNodes 根据 nodeId 查询路径，并返回路径上中间节点的子节点列表
+// GetPathNodes 根据 nodeId 查询路径，并返回路径各层级的同级节点列表
 func (s *KnowledgeNodeService) GetPathNodes(ctx context.Context, nodeID int, userID uint) ([]dto.KnowledgeNodeSimpleRes, error) {
 	// 1. 获取当前节点获取路径
 	node, err := s.nodeDao.GetNodeByID(nodeID)
@@ -129,7 +129,7 @@ func (s *KnowledgeNodeService) GetPathNodes(ctx context.Context, nodeID int, use
 	}
 
 	// 2. 解析路径，例如 "0/127/128/129/130/"
-	// path 不包含自身ID，例如：0/127/128/129/
+	// path 包含自身ID，例如：0/127/128/129/130/
 	trimmedPath := strings.Trim(node.Path, "/")
 	if trimmedPath == "" {
 		return []dto.KnowledgeNodeSimpleRes{}, nil
@@ -144,10 +144,13 @@ func (s *KnowledgeNodeService) GetPathNodes(ctx context.Context, nodeID int, use
 		return []dto.KnowledgeNodeSimpleRes{}, nil
 	}
 
-	ancestorIDs := pathParts[start:]
+	pathNodeIDs := pathParts[start:]
 	var parentIDs []int
 	seen := make(map[int]struct{})
-	for _, idStr := range ancestorIDs {
+	parentIDs = append(parentIDs, 0)
+	seen[0] = struct{}{}
+	for i := 0; i < len(pathNodeIDs)-1; i++ {
+		idStr := pathNodeIDs[i]
 		id, _ := strconv.Atoi(idStr)
 		if id <= 0 {
 			continue
@@ -165,9 +168,19 @@ func (s *KnowledgeNodeService) GetPathNodes(ctx context.Context, nodeID int, use
 		return nil, err
 	}
 
+	// 按路径层级顺序重新排序，避免数据库按 parent_id 数值排序打乱层级展示。
+	nodesByParentID := make(map[int][]model.KnowledgeNode)
+	for _, item := range nodes {
+		nodesByParentID[item.ParentID] = append(nodesByParentID[item.ParentID], item)
+	}
+	var orderedNodes []model.KnowledgeNode
+	for _, parentID := range parentIDs {
+		orderedNodes = append(orderedNodes, nodesByParentID[parentID]...)
+	}
+
 	// 4. 获取用户在这些节点上的学习进度
 	var nodeIDs []uint
-	for _, n := range nodes {
+	for _, n := range orderedNodes {
 		nodeIDs = append(nodeIDs, n.ID)
 	}
 
@@ -184,7 +197,7 @@ func (s *KnowledgeNodeService) GetPathNodes(ctx context.Context, nodeID int, use
 
 	// 5. 组装返回数据
 	var result []dto.KnowledgeNodeSimpleRes
-	for _, n := range nodes {
+	for _, n := range orderedNodes {
 		// 默认进度为 unstarted
 		progress := "unstarted"
 		if st, ok := statusMap[n.ID]; ok {

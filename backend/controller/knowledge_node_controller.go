@@ -55,7 +55,7 @@ func (con *KnowledgeNodeController) GetChildNodes(c *gin.Context) {
 	response.Ok(nodes, c)
 }
 
-// GetPathNodes 获取某个知识点的路径节点列表（所有祖先节点的同级节点列表）
+// GetPathNodes 获取某个知识点路径各层级的同级节点列表
 func (con *KnowledgeNodeController) GetPathNodes(c *gin.Context) {
 	nodeIdStr := c.Query("nodeId")
 	nodeId, err := strconv.Atoi(nodeIdStr)

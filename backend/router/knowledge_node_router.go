@@ -14,7 +14,7 @@ func (s *KnowledgeNodeRouter) InitKnowledgeNodeRouter(Router *gin.RouterGroup) {
 	{
 		// 1. 获取该教材下的顶级知识点 (如: /v1/nodes/top?subjectId=1)
 		nodeRouter.GET("/top", nodeController.GetTopLevelNodes)
-		// 2. 获取该知识点的层级路径上的所有子节点 (如: /v1/nodes/path?nodeId=130)
+		// 2. 获取该知识点路径各层级的同级节点列表 (如: /v1/nodes/path?nodeId=130)
 		nodeRouter.GET("/path", nodeController.GetPathNodes)
 		// 3. 获取某个知识点下的最近一级子知识点 (如: /v1/nodes/12/children)
 		nodeRouter.GET("/:nodeId/children", nodeController.GetChildNodes)
