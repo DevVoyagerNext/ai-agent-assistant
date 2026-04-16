@@ -252,11 +252,6 @@ func (con *UserPrivateNoteController) AccessSharedPrivateNote(c *gin.Context) {
 		return
 	}
 
-	if req.PrivateNoteID <= 0 {
-		response.FailWithMsg(errmsg.CodeError, "private_node_id 参数错误", c)
-		return
-	}
-
 	res, err := con.privateNoteService.AccessSharedPrivateNote(c.Request.Context(), req)
 	if err != nil {
 		response.FailWithMsg(errmsg.CodeError, err.Error(), c)

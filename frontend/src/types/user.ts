@@ -103,6 +103,21 @@ export interface ShareBasicInfoRes {
   noteType: string
   isActive: boolean
   isExpired: boolean
+  noteId?: number
+}
+
+export interface ShareAccessReq {
+  share_token: string
+  share_code: string
+  private_node_id: number
+}
+
+export interface ShareAccessRes {
+  type: 'folder' | 'markdown'
+  title: string
+  content: string
+  children: PrivateNoteBase[] | null
+  parent: PrivateNoteBase | null
 }
 
 export interface LearnedSubjectItem {

@@ -49,6 +49,11 @@ const routes = [
     path: '/share/verify',
     name: 'ShareVerify',
     component: () => import('../views/ShareVerify.vue')
+  },
+  {
+    path: '/share/access',
+    name: 'ShareAccess',
+    component: () => import('../views/ShareAccess.vue')
   }
 ]
 

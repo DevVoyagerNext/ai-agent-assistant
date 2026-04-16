@@ -14,7 +14,9 @@ import type {
   CreatePrivateNoteReq,
   SharePrivateNoteReq,
   SharePrivateNoteRes,
-  ShareBasicInfoRes
+  ShareBasicInfoRes,
+  ShareAccessReq,
+  ShareAccessRes
 } from '../types/user'
 
 export const getUserInfo = () => {
@@ -80,6 +82,11 @@ export const getShareBasicInfo = (token: string) => {
   return request.get<ApiResponse<ShareBasicInfoRes>>('/user/notes/private/share/info', {
     params: { token }
   })
+}
+
+// 8. 访问分享的私人笔记
+export const accessShareNote = (data: ShareAccessReq) => {
+  return request.post<ApiResponse<ShareAccessRes>>('/user/notes/private/share/access', data)
 }
 
 // ----------------------------------------------------

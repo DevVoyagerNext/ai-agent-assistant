@@ -59,13 +59,22 @@ const handleVerify = async () => {
   }
 
   verifying.value = true
-  // 这里后续可以扩展调用验证提取码并获取真实笔记内容的逻辑
-  // 暂时模拟验证过程或跳转到具体展示页面
+  
+  // 在此处我们直接跳转到访问页，并将 token 和 code 传递过去
+  // 因为分享的根节点访问通常可以依赖 token 和 code（无需特定的 nodeId 或者传 0）
+  // 具体的权限校验在 accessShareNote 接口中进行
   setTimeout(() => {
     verifying.value = false
     showToast('提取码验证成功，即将加载内容...', 'success')
-    // TODO: 调用验证接口并跳转
-  }, 1000)
+    router.push({
+      path: '/share/access',
+      query: {
+        token: shareToken,
+        code: shareCode.value,
+        nodeId: shareInfo.value?.noteId?.toString() || '0'
+      }
+    })
+  }, 800)
 }
 </script>
 

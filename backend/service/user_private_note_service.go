@@ -385,6 +385,11 @@ func (s *UserPrivateNoteService) AccessSharedPrivateNote(ctx context.Context, re
 		return dto.AccessSharedPrivateNoteRes{}, errors.New("提取码错误")
 	}
 
+	// 如果前端传 0，则默认访问分享的根节点
+	if req.PrivateNoteID == 0 {
+		req.PrivateNoteID = share.PrivateNoteID
+	}
+
 	shareOwnerID := uint(share.UserID)
 	sharedRootNote, err := s.privateNoteDao.GetNoteByID(ctx, shareOwnerID, share.PrivateNoteID)
 	if err != nil {
@@ -408,6 +413,25 @@ func (s *UserPrivateNoteService) AccessSharedPrivateNote(ctx context.Context, re
 
 	if err := s.privateNoteDao.IncreaseNoteShareViewCount(ctx, share.ID); err != nil {
 		return dto.AccessSharedPrivateNoteRes{}, err
+	}
+
+	var parentNode *dto.PrivateNoteItemRes
+	if targetNote.ParentID > 0 {
+		parent, err := s.privateNoteDao.GetNoteByID(ctx, shareOwnerID, targetNote.ParentID)
+		if err == nil {
+			// 如果父节点是分享记录节点本身或者其子节点（即有权限），则返回父节点信息
+			if strings.HasPrefix(parent.Path, sharedRootNote.Path) {
+				parentNode = &dto.PrivateNoteItemRes{
+					ID:        parent.ID,
+					ParentID:  parent.ParentID,
+					Type:      parent.Type,
+					Title:     parent.Title,
+					IsPublic:  parent.IsPublic,
+					UpdatedAt: parent.UpdatedAt,
+					CreatedAt: parent.CreatedAt,
+				}
+			}
+		}
 	}
 
 	if targetNote.Type == "folder" {
@@ -434,6 +458,7 @@ func (s *UserPrivateNoteService) AccessSharedPrivateNote(ctx context.Context, re
 			Title:    targetNote.Title,
 			Content:  "",
 			Children: childItems,
+			Parent:   parentNode,
 		}, nil
 	}
 
@@ -441,5 +466,6 @@ func (s *UserPrivateNoteService) AccessSharedPrivateNote(ctx context.Context, re
 		Type:    "markdown",
 		Title:   targetNote.Title,
 		Content: targetNote.Content,
+		Parent:  parentNode,
 	}, nil
 }

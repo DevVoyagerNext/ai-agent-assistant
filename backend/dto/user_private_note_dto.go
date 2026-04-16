@@ -76,7 +76,7 @@ type SharePrivateNoteRes struct {
 type AccessSharedPrivateNoteReq struct {
 	ShareToken    string `json:"share_token" binding:"required"`
 	ShareCode     string `json:"share_code" binding:"required,len=4"`
-	PrivateNoteID int    `json:"private_node_id" binding:"required"`
+	PrivateNoteID int    `json:"private_node_id"` // 当为0时，后端需要自动查出根节点ID
 }
 
 // AccessSharedPrivateNoteRes 访问分享私人笔记返回
@@ -85,6 +85,7 @@ type AccessSharedPrivateNoteRes struct {
 	Title    string               `json:"title"`
 	Content  string               `json:"content"`
 	Children []PrivateNoteItemRes `json:"children,omitempty"`
+	Parent   *PrivateNoteItemRes  `json:"parent,omitempty"`
 }
 
 // GetShareInfoRes 获取分享基础信息返回
