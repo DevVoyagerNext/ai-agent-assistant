@@ -76,6 +76,10 @@ type AddSubjectToFolderReq struct {
 	SubjectID int `json:"subjectId" binding:"required,gt=0"`
 }
 
+type UpdateCollectFolderPublicReq struct {
+	IsPublic int8 `json:"isPublic" binding:"oneof=0 1"`
+}
+
 func ConvertSubjectToRes(s *model.Subject) SubjectRes {
 	return SubjectRes{
 		ID:           s.ID,

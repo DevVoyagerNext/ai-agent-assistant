@@ -209,6 +209,24 @@ func (s *SubjectService) GetUserCollectedSubjectsByFolder(ctx context.Context, u
 	return res, total, nil
 }
 
+func (s *SubjectService) UpdateCollectFolderPublic(ctx context.Context, userId uint, folderId int, isPublic int8) int {
+	// 1. 检查收藏夹是否存在且属于该用户
+	_, err := s.subjectDao.GetCollectFolderById(ctx, userId, folderId)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return errmsg.CodeError
+		}
+		return errmsg.CodeError
+	}
+
+	// 2. 更新状态
+	if err := s.subjectDao.UpdateCollectFolderPublic(ctx, folderId, isPublic); err != nil {
+		return errmsg.CodeError
+	}
+
+	return errmsg.CodeSuccess
+}
+
 func (s *SubjectService) GetUserRecentSubjects(ctx context.Context, userId uint, page int, pageSize int) (dto.RecentSubjectListRes, int) {
 	progresses, total, err := s.subjectDao.GetUserRecentSubjectProgress(ctx, userId, page, pageSize)
 	if err != nil {

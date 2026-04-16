@@ -126,6 +126,11 @@ export const getSubjectsInFolder = (folderId: number, page = 1, pageSize = 20) =
   })
 }
 
+// 8. 修改收藏夹公开状态
+export const updateCollectFolderPublic = (folderId: number, isPublic: 0 | 1) => {
+  return request.put<ApiResponse<null>>(`/user/subjects/folders/${folderId}/public`, { isPublic })
+}
+
 // 6. 点赞或取消点赞教材
 export const likeSubject = (id: number) => {
   return request.post<ApiResponse<{ isLiked: boolean }>>(`/user/subjects/${id}/like`)

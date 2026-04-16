@@ -10,7 +10,7 @@ import {
 } from 'lucide-vue-next'
 import { useUserProfile } from '../composables/useUserProfile'
 import ActivityCalendar from '../components/ActivityCalendar.vue'
-import { updatePrivateNoteTitle, updatePrivateNotePublic } from '../api/user'
+import { updatePrivateNoteTitle, updatePrivateNotePublic, updateCollectFolderPublic } from '../api/user'
 
 const router = useRouter()
 const isAuthenticated = computed(() => !!localStorage.getItem('token'))
@@ -141,9 +141,32 @@ const handleTogglePublic = async (note: any) => {
   }
 }
 
-const handleToggleCollectionPublic = (folder: any) => {
-  // 由于接口可能未提供收藏夹公开状态修改，这里仅做 UI 演示或提示
-  showToast('该功能暂未开放', 'error')
+const updatingFolderIds = ref<Set<number>>(new Set())
+
+const handleToggleCollectionPublic = async (folder: any) => {
+  if (!folder?.id) return
+  if (updatingFolderIds.value.has(folder.id)) return
+
+  updatingFolderIds.value.add(folder.id)
+  updatingFolderIds.value = new Set(updatingFolderIds.value)
+
+  const currentPublic = folder.isPublic === 1 || folder.isPublic === true
+  const newPublic: 0 | 1 = currentPublic ? 0 : 1
+
+  try {
+    const res = await updateCollectFolderPublic(folder.id, newPublic)
+    if (res.data?.code === 200) {
+      folder.isPublic = newPublic
+      showToast(newPublic === 1 ? '已设为公开' : '已设为私密', 'success')
+    } else {
+      showToast(res.data?.msg || '修改失败', 'error')
+    }
+  } catch (err: any) {
+    showToast(err.response?.data?.msg || '修改失败', 'error')
+  } finally {
+    updatingFolderIds.value.delete(folder.id)
+    updatingFolderIds.value = new Set(updatingFolderIds.value)
+  }
 }
 
 const getCoverStyle = (id: number) => {
@@ -316,13 +339,15 @@ const scrollTo = (id: string) => {
               <div class="note-item-actions">
                 <button 
                   class="toggle-public-mini" 
-                  :class="{ isPublic: folder.isPublic }"
+                  :class="{ isPublic: folder.isPublic === 1 || folder.isPublic === true }"
                   @click="handleToggleCollectionPublic(folder)"
-                  :title="folder.isPublic ? '已公开' : '已私密'"
+                  :title="(folder.isPublic === 1 || folder.isPublic === true) ? '已公开' : '已私密'"
+                  :disabled="updatingFolderIds.has(folder.id)"
                 >
-                  <ToggleRight v-if="folder.isPublic" :size="18" />
+                  <Loader2 v-if="updatingFolderIds.has(folder.id)" class="spin" :size="18" />
+                  <ToggleRight v-else-if="folder.isPublic === 1 || folder.isPublic === true" :size="18" />
                   <ToggleLeft v-else :size="18" />
-                  <span>{{ folder.isPublic ? '公开' : '私密' }}</span>
+                  <span>{{ (folder.isPublic === 1 || folder.isPublic === true) ? '公开' : '私密' }}</span>
                 </button>
               </div>
             </div>

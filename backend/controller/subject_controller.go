@@ -236,6 +236,36 @@ func (con *SubjectController) GetUserCollectedSubjects(c *gin.Context) {
 	}, c)
 }
 
+// UpdateCollectFolderPublic 修改收藏夹公开状态（需要登录）
+func (con *SubjectController) UpdateCollectFolderPublic(c *gin.Context) {
+	userId, err := con.authService.GetUserID(c)
+	if err != nil || userId == 0 {
+		response.FailWithCode(errmsg.UserTokenNotExist, c)
+		return
+	}
+
+	folderIdStr := c.Param("folderId")
+	folderId, err := strconv.Atoi(folderIdStr)
+	if err != nil || folderId <= 0 {
+		response.FailWithCode(errmsg.CodeError, c)
+		return
+	}
+
+	var req dto.UpdateCollectFolderPublicReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.FailWithMsg(errmsg.CodeError, "参数格式错误", c)
+		return
+	}
+
+	code := con.subjectService.UpdateCollectFolderPublic(c.Request.Context(), userId, folderId, req.IsPublic)
+	if code != errmsg.CodeSuccess {
+		response.FailWithCode(code, c)
+		return
+	}
+
+	response.Ok(nil, c)
+}
+
 // GetUserLikedSubjects 获取该用户点赞的教材（需要登录）
 func (con *SubjectController) GetUserLikedSubjects(c *gin.Context) {
 	var pagination dto.UserPaginationReq

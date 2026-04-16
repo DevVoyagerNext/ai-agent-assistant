@@ -281,6 +281,10 @@ func (d *SubjectDao) CreateCollectFolder(ctx context.Context, userId uint, name,
 	return folder, err
 }
 
+func (d *SubjectDao) UpdateCollectFolderPublic(ctx context.Context, folderID int, isPublic int8) error {
+	return global.GVA_DB.WithContext(ctx).Model(&model.UserCollectFolder{}).Where("id = ?", folderID).Update("is_public", isPublic).Error
+}
+
 func (d *SubjectDao) GetCollectFolderById(ctx context.Context, userId uint, folderId int) (*model.UserCollectFolder, error) {
 	var folder model.UserCollectFolder
 	err := global.GVA_DB.WithContext(ctx).Where("id = ? AND user_id = ?", folderId, userId).First(&folder).Error
