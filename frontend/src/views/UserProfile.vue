@@ -6,7 +6,7 @@ import Skeleton from '../components/Skeleton.vue'
 import { 
   ArrowLeft, LogOut, RefreshCcw, 
   Activity, BookOpen, Share2, Book, Users, Star, Layers, FolderHeart,
-  Folder, FileText, ToggleRight, ToggleLeft, Edit3, X, Loader2, ChevronRight, ChevronLeft, Clock, Save, FolderPlus, FilePlus, Trash2
+  Folder, FileText, ToggleRight, ToggleLeft, Edit3, X, Loader2, ChevronRight, ChevronLeft, Clock, Save, FolderPlus, FilePlus, Trash2, Bot
 } from 'lucide-vue-next'
 import { useUserProfile } from '../composables/useUserProfile'
 import ActivityCalendar from '../components/ActivityCalendar.vue'
@@ -610,6 +610,10 @@ const scrollTo = (id: string) => {
       </button>
 
       <div class="topbar-actions">
+        <button class="primary-btn" @click="router.push('/ai-chat')" style="background-color: #8b5cf6;">
+          <Bot :size="18" />
+          AI 助手
+        </button>
         <button class="ghost-btn" :disabled="isGlobalLoading" @click="handleRefresh">
           <RefreshCcw :size="18" :class="{ 'spin': isGlobalLoading }" />
           刷新

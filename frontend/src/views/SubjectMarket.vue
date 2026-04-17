@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch, onBeforeUnmount } from 'vue'
-import { Search, BookOpen, Star, ArrowRight, User, Compass, Bookmark } from 'lucide-vue-next'
+import { Search, BookOpen, Star, ArrowRight, User, Compass, Bookmark, Bot } from 'lucide-vue-next'
 import { useRouter } from 'vue-router'
 import { getSubjectCategories, getAllSubjects, getSubjectsByCategory, searchSubjects } from '../api/subject'
 import type { Subject, SubjectCategory } from '../types/subject'
@@ -262,6 +262,10 @@ const handleUserAction = () => {
         <span class="brand-name">AI 学海大厅</span>
       </div>
       <div class="nav-actions">
+        <button class="login-btn ai-btn" @click="router.push('/ai-chat')">
+          <Bot :size="18" />
+          <span>AI 助手</span>
+        </button>
         <button class="login-btn" @click="handleUserAction">
           <User :size="18" />
           <span>{{ isLoggedIn ? '个人中心' : '登录 / 注册' }}</span>
@@ -431,6 +435,11 @@ const handleUserAction = () => {
   -webkit-text-fill-color: transparent;
 }
 
+.nav-actions {
+  display: flex;
+  gap: 12px;
+}
+
 .login-btn {
   display: flex;
   align-items: center;
@@ -450,6 +459,18 @@ const handleUserAction = () => {
   background: #f1f5f9;
   border-color: #cbd5e1;
   color: #0f172a;
+}
+
+.ai-btn {
+  background: linear-gradient(135deg, #eff6ff, #e0e7ff);
+  border-color: #bfdbfe;
+  color: #3b82f6;
+}
+
+.ai-btn:hover {
+  background: linear-gradient(135deg, #dbeafe, #c7d2fe);
+  border-color: #93c5fd;
+  color: #2563eb;
 }
 
 /* Hero 区域 */

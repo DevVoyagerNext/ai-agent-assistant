@@ -30,6 +30,11 @@ const routes = [
     ]
   },
   {
+    path: '/ai-chat',
+    name: 'AIChat',
+    component: () => import('../views/AIChat.vue')
+  },
+  {
     path: '/auth',
     component: () => import('../layouts/AuthLayout.vue'),
     children: [
