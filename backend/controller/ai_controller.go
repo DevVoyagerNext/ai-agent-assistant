@@ -64,13 +64,35 @@ func (con *AIController) Chat(c *gin.Context) {
 		return
 	}
 
-	res, err := con.aiService.Chat(c.Request.Context(), userId, req, fileContents)
+	streamChan, sessionId, messageId, err := con.aiService.Chat(c.Request.Context(), userId, req, fileContents)
 	if err != nil {
 		response.FailWithMsg(errmsg.CodeError, err.Error(), c)
 		return
 	}
 
-	response.Ok(res, c)
+	// 设置 Server-Sent Events 响应头
+	c.Writer.Header().Set("Content-Type", "text/event-stream")
+	c.Writer.Header().Set("Cache-Control", "no-cache")
+	c.Writer.Header().Set("Connection", "keep-alive")
+	c.Writer.Header().Set("Transfer-Encoding", "chunked")
+
+	// 首先发送包含会话和消息ID的元数据事件
+	c.SSEvent("meta", gin.H{
+		"sessionId": sessionId,
+		"messageId": messageId,
+	})
+	c.Writer.Flush()
+
+	// 流式监听并向客户端发送 chunk 数据
+	c.Stream(func(w io.Writer) bool {
+		if msg, ok := <-streamChan; ok {
+			c.SSEvent("message", msg)
+			return true
+		}
+		// 通道关闭，发送结束标记
+		c.SSEvent("done", "[DONE]")
+		return false
+	})
 }
 
 // UpdateSessionTitle 修改用户会话标题

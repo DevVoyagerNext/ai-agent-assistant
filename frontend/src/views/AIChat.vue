@@ -1,8 +1,11 @@
 <script setup lang="ts">
 import { ref, onMounted, nextTick, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
+import MarkdownIt from 'markdown-it'
+import hljs from 'highlight.js'
+import 'highlight.js/styles/github.css'
+import { fetchEventSource } from '@microsoft/fetch-event-source'
 import { 
-  sendAIChat, 
   getAISessions, 
   getAISessionMessages, 
   updateAISessionTitle 
@@ -15,6 +18,24 @@ import {
 
 const router = useRouter()
 const route = useRoute()
+
+const md = new MarkdownIt({
+  breaks: true,
+  linkify: true,
+  highlight: function (str: string, lang: string, _attrs: string) {
+    if (lang && hljs.getLanguage(lang)) {
+      try {
+        return '<pre class="hljs"><code>' + hljs.highlight(str, { language: lang, ignoreIllegals: true }).value + '</code></pre>'
+      } catch (__) {}
+    }
+    return '<pre class="hljs"><code>' + md.utils.escapeHtml(str) + '</code></pre>'
+  }
+})
+
+const renderMarkdown = (content: string) => {
+  if (!content) return ''
+  return md.render(content)
+}
 
 // ===== Sidebar / Sessions State =====
 const sessions = ref<AIChatSession[]>([])
@@ -221,48 +242,82 @@ const sendMessage = async () => {
   
   messages.value.push(userMsg)
   
-  const reqData = {
-    prompt,
-    sessionId: currentSessionId.value || undefined,
-    parentId: parentId || undefined,
-    files: selectedFiles.value.length > 0 ? selectedFiles.value : undefined
+  const reqData = new FormData()
+  reqData.append('prompt', prompt)
+  if (currentSessionId.value) {
+    reqData.append('sessionId', currentSessionId.value.toString())
+  }
+  if (parentId) {
+    reqData.append('parentId', parentId.toString())
+  }
+  if (selectedFiles.value.length > 0) {
+    selectedFiles.value.forEach(file => {
+      reqData.append('files', file)
+    })
   }
   
   inputContent.value = ''
   selectedFiles.value = []
   isSending.value = true
+  
+  // Create an empty assistant message for streaming
+  const assistantMsgId = Date.now() + 1
+  const assistantMsg: AIChatMessage = {
+    id: assistantMsgId,
+    sessionId: currentSessionId.value || 0,
+    parentId: tempId,
+    role: 'assistant',
+    content: '',
+    status: 'active',
+    createdAt: new Date().toISOString()
+  }
+  messages.value.push(assistantMsg)
+  
   scrollToBottom()
 
   try {
-    const res = await sendAIChat(reqData)
-    if (res.data?.code === 200 && res.data.data) {
-      const data = res.data.data
-      
-      // Update session if it was a new chat
-      if (!currentSessionId.value) {
-        currentSessionId.value = data.sessionId
-        router.replace({ query: { sessionId: data.sessionId } })
-        // Refresh session list
-        await loadSessions(true)
+    const token = localStorage.getItem('token') || ''
+    
+    await fetchEventSource('http://localhost:8080/v1/ai/chat', {
+      method: 'POST',
+      headers: {
+        'x-token': token
+      },
+      body: reqData,
+      onmessage(ev) {
+        if (ev.event === 'meta') {
+          try {
+            const data = JSON.parse(ev.data)
+            assistantMsg.sessionId = data.sessionId
+            assistantMsg.id = data.messageId
+            
+            if (!currentSessionId.value) {
+              currentSessionId.value = data.sessionId
+              router.replace({ query: { sessionId: data.sessionId } })
+              loadSessions(true) // refresh sidebar
+            }
+          } catch (e) {
+            console.error('Failed to parse meta:', e)
+          }
+        } else if (ev.event === 'message') {
+          assistantMsg.content += ev.data
+          scrollToBottom()
+        } else if (ev.event === 'done') {
+          isSending.value = false
+        }
+      },
+      onerror(err) {
+        console.error('EventSource error:', err)
+        isSending.value = false
+        throw err // trigger catch
+      },
+      onclose() {
+        isSending.value = false
       }
-      
-      const assistantMsg: AIChatMessage = {
-        id: data.messageId,
-        sessionId: data.sessionId,
-        parentId: tempId, // actual parentId from backend might differ, but this is for UI
-        role: 'assistant',
-        content: data.reply,
-        status: 'active',
-        createdAt: new Date().toISOString()
-      }
-      messages.value.push(assistantMsg)
-      scrollToBottom()
-    } else {
-      alert(res.data?.msg || '发送失败')
-    }
+    })
   } catch (error: any) {
     console.error('发送失败', error)
-    alert(error?.response?.data?.msg || '发送失败')
+    alert('发送失败或连接断开')
   } finally {
     isSending.value = false
   }
@@ -371,13 +426,14 @@ const currentSessionTitle = computed(() => {
               </div>
             </div>
             
-            <div class="message-bubble">
-              <span class="msg-text">{{ msg.content }}</span>
+            <div class="message-bubble" :class="{ 'markdown-body': msg.role === 'assistant' }" v-show="msg.content !== ''">
+              <div v-if="msg.role === 'assistant'" v-html="renderMarkdown(msg.content)" class="md-content"></div>
+              <span v-else class="msg-text">{{ msg.content }}</span>
             </div>
           </div>
         </div>
         
-        <div v-if="isSending" class="message-row assistant">
+        <div v-if="isSending && messages[messages.length - 1]?.content === ''" class="message-row assistant">
           <div class="avatar-wrap">
             <Bot :size="24" class="bot-avatar" />
           </div>
@@ -723,6 +779,76 @@ const currentSessionTitle = computed(() => {
   background: #f4f4f5;
   white-space: pre-wrap;
   word-break: break-word;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.message-bubble.markdown-body {
+  white-space: normal;
+}
+
+/* Markdown 样式 */
+:deep(.md-content p) {
+  margin: 0 0 12px 0;
+}
+:deep(.md-content p:last-child) {
+  margin-bottom: 0;
+}
+:deep(.md-content pre) {
+  background-color: #f6f8fa;
+  border-radius: 6px;
+  padding: 12px;
+  overflow: auto;
+  margin: 12px 0;
+  font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace;
+  font-size: 13px;
+  line-height: 1.45;
+}
+:deep(.md-content code) {
+  background-color: rgba(175, 184, 193, 0.2);
+  padding: 0.2em 0.4em;
+  border-radius: 6px;
+  font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace;
+  font-size: 13px;
+}
+:deep(.md-content pre code) {
+  background-color: transparent;
+  padding: 0;
+  border-radius: 0;
+}
+:deep(.md-content ul), :deep(.md-content ol) {
+  padding-left: 24px;
+  margin-top: 0;
+  margin-bottom: 12px;
+}
+:deep(.md-content li) {
+  margin-bottom: 4px;
+}
+:deep(.md-content h1), :deep(.md-content h2), :deep(.md-content h3), :deep(.md-content h4), :deep(.md-content h5), :deep(.md-content h6) {
+  margin-top: 24px;
+  margin-bottom: 12px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+:deep(.md-content table) {
+  border-spacing: 0;
+  border-collapse: collapse;
+  margin-bottom: 12px;
+  width: 100%;
+}
+:deep(.md-content table th), :deep(.md-content table td) {
+  padding: 6px 13px;
+  border: 1px solid #d0d7de;
+}
+:deep(.md-content table tr:nth-child(2n)) {
+  background-color: #f6f8fa;
+}
+:deep(.md-content a) {
+  color: #0969da;
+  text-decoration: none;
+}
+:deep(.md-content a:hover) {
+  text-decoration: underline;
 }
 
 .message-row.user .message-bubble {

@@ -2,7 +2,7 @@ import axios, { AxiosHeaders } from 'axios'
 
 const request = axios.create({
   baseURL: 'http://localhost:8080/v1',
-  timeout: 10000
+  timeout: 60000 // 修改为 60 秒，防止 AI 大模型等请求超时导致 context canceled
 })
 
 // 是否正在刷新 Token 的标记

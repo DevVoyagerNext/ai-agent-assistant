@@ -26,7 +26,7 @@ export const sendAIChat = (data: AIChatReq) => {
     })
   }
 
-  return request.post<ApiResponse<AIChatRes>>('/v1/ai/chat', formData, {
+  return request.post<ApiResponse<AIChatRes>>('/ai/chat', formData, {
     headers: {
       'Content-Type': 'multipart/form-data'
     }
@@ -35,7 +35,7 @@ export const sendAIChat = (data: AIChatReq) => {
 
 // 2. 获取用户的历史会话列表 (游标分页)
 export const getAISessions = (lastId?: number) => {
-  return request.get<ApiResponse<AISessionListRes>>('/v1/ai/sessions', {
+  return request.get<ApiResponse<AISessionListRes>>('/ai/sessions', {
     params: {
       lastId
     }
@@ -44,7 +44,7 @@ export const getAISessions = (lastId?: number) => {
 
 // 3. 获取具体会话的消息列表 (游标分页，向上拉取)
 export const getAISessionMessages = (sessionId: number, lastId?: number) => {
-  return request.get<ApiResponse<AIMessageListRes>>(`/v1/ai/sessions/${sessionId}/messages`, {
+  return request.get<ApiResponse<AIMessageListRes>>(`/ai/sessions/${sessionId}/messages`, {
     params: {
       lastId
     }
@@ -53,5 +53,5 @@ export const getAISessionMessages = (sessionId: number, lastId?: number) => {
 
 // 4. 修改会话标题
 export const updateAISessionTitle = (sessionId: number, data: AIUpdateTitleReq) => {
-  return request.put<ApiResponse<null>>(`/v1/ai/sessions/${sessionId}/title`, data)
+  return request.put<ApiResponse<null>>(`/ai/sessions/${sessionId}/title`, data)
 }

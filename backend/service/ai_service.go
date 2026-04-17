@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"time"
 
 	"github.com/sashabaranov/go-openai"
@@ -131,12 +132,12 @@ func (s *AIService) GetSessionMessages(ctx context.Context, userId uint, session
 	}, nil
 }
 
-// Chat 处理与 AI 模型的单次对话
-func (s *AIService) Chat(ctx context.Context, userId uint, req dto.AIChatReq, fileContents []string) (dto.AIChatRes, error) {
+// Chat 处理与 AI 模型的单次对话（流式）
+func (s *AIService) Chat(ctx context.Context, userId uint, req dto.AIChatReq, fileContents []string) (<-chan string, int64, int64, error) {
 	aiConfig := global.GVA_CONFIG.AI
 	if aiConfig.APIKey == "" || aiConfig.BaseURL == "" {
 		global.GVA_LOG.Error("AI config is missing")
-		return dto.AIChatRes{}, errors.New("AI 服务未配置")
+		return nil, 0, 0, errors.New("AI 服务未配置")
 	}
 
 	config := openai.DefaultConfig(aiConfig.APIKey)
@@ -158,15 +159,15 @@ func (s *AIService) Chat(ctx context.Context, userId uint, req dto.AIChatReq, fi
 		}
 		if err := db.Create(&session).Error; err != nil {
 			global.GVA_LOG.Error("Failed to create AI session", zap.Error(err))
-			return dto.AIChatRes{}, errors.New("创建会话失败")
+			return nil, 0, 0, errors.New("创建会话失败")
 		}
 	} else {
 		// 2. 有 sessionId 时查找会话
 		if err := db.Where("id = ? AND user_id = ?", req.SessionID, userId).First(&session).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return dto.AIChatRes{}, errors.New("会话不存在或无权访问")
+				return nil, 0, 0, errors.New("会话不存在或无权访问")
 			}
-			return dto.AIChatRes{}, errors.New("查询会话失败")
+			return nil, 0, 0, errors.New("查询会话失败")
 		}
 	}
 
@@ -237,112 +238,134 @@ func (s *AIService) Chat(ctx context.Context, userId uint, req dto.AIChatReq, fi
 	}
 	db.Create(&userMsg)
 
-	// 调用 AI
-	resp, err := client.CreateChatCompletion(
-		ctx,
-		openai.ChatCompletionRequest{
-			Model:    aiConfig.Model,
-			Messages: messages,
-		},
-	)
-
-	if err != nil {
-		global.GVA_LOG.Error("AI API call failed", zap.Error(err))
-		return dto.AIChatRes{}, errors.New("AI 服务调用失败")
-	}
-
-	if len(resp.Choices) == 0 {
-		return dto.AIChatRes{}, errors.New("AI 返回结果为空")
-	}
-
-	replyContent := resp.Choices[0].Message.Content
-
-	// 保存 AI 回复消息
+	// 保存 AI 回复消息占位符
 	aiMsg := model.Message{
 		SessionID: session.ID,
 		ParentID:  &userMsg.ID,
 		Role:      openai.ChatMessageRoleAssistant,
-		Content:   replyContent,
+		Content:   "", // 留空，流式输出完成后再更新
 	}
 	db.Create(&aiMsg)
 
-	// 异步任务处理：新会话生成标题，老会话检查是否需要生成摘要
-	if isNewSession {
-		go func(sId int64, prompt string) {
-			titleCtx := context.Background()
-			titlePrompt := fmt.Sprintf("请根据以下用户的提问，生成一个简短的对话标题（不超过15个字），不要包含任何标点符号：\n\n%s", prompt)
-			titleResp, err := client.CreateChatCompletion(
-				titleCtx,
-				openai.ChatCompletionRequest{
-					Model: aiConfig.Model,
-					Messages: []openai.ChatCompletionMessage{
-						{Role: openai.ChatMessageRoleUser, Content: titlePrompt},
-					},
-				},
-			)
-			if err == nil && len(titleResp.Choices) > 0 {
-				title := titleResp.Choices[0].Message.Content
-				global.GVA_DB.Model(&model.Session{}).Where("id = ?", sId).Update("title", title)
+	// 调用 AI (流式)
+	reqStream := openai.ChatCompletionRequest{
+		Model:    aiConfig.Model,
+		Messages: messages,
+		Stream:   true,
+	}
+
+	stream, err := client.CreateChatCompletionStream(ctx, reqStream)
+	if err != nil {
+		global.GVA_LOG.Error("AI API stream call failed", zap.Error(err))
+		return nil, session.ID, aiMsg.ID, errors.New("AI 服务调用失败")
+	}
+
+	msgChan := make(chan string)
+
+	go func() {
+		defer stream.Close()
+		defer close(msgChan)
+
+		var fullReply string
+		for {
+			response, err := stream.Recv()
+			if errors.Is(err, io.EOF) {
+				break
 			}
-		}(session.ID, req.Prompt)
-	} else {
-		// 检查是否需要生成摘要 (经过每4轮对话)
-		var count int64
-		query := db.Model(&model.Message{}).Where("session_id = ? AND role = ?", session.ID, openai.ChatMessageRoleUser)
-		if session.LastSummaryMessageID > 0 {
-			query = query.Where("id > ?", session.LastSummaryMessageID)
+			if err != nil {
+				// 即使出错（比如 context canceled），也保存已经生成的部分内容
+				global.GVA_LOG.Warn("AI stream interrupted", zap.Error(err))
+				break
+			}
+
+			if len(response.Choices) > 0 {
+				chunk := response.Choices[0].Delta.Content
+				if chunk != "" {
+					fullReply += chunk
+					msgChan <- chunk
+				}
+			}
 		}
-		query.Count(&count)
 
-		if count >= 4 {
-			// 触发摘要总结
-			go func(s model.Session, c *openai.Client, latestUserMsgId int64) {
-				summaryCtx := context.Background()
-				// 获取自上次总结以来的新对话
-				var msgsToSummarize []model.Message
-				q := global.GVA_DB.Where("session_id = ? AND status = 'active'", s.ID)
-				if s.LastSummaryMessageID > 0 {
-					q = q.Where("id > ?", s.LastSummaryMessageID)
-				}
-				q.Order("created_at asc").Find(&msgsToSummarize)
+		// 流式结束或异常中断后，更新完整内容到数据库
+		if fullReply != "" {
+			global.GVA_DB.Model(&model.Message{}).Where("id = ?", aiMsg.ID).Update("content", fullReply)
+		}
 
-				contentToSummarize := ""
-				if s.Summary != "" {
-					contentToSummarize += fmt.Sprintf("【之前的对话背景摘要】\n%s\n\n", s.Summary)
-				}
-				contentToSummarize += "【最新的对话记录】\n"
-				for _, m := range msgsToSummarize {
-					roleName := "用户"
-					if m.Role == openai.ChatMessageRoleAssistant {
-						roleName = "AI"
-					}
-					contentToSummarize += fmt.Sprintf("[%s]: %s\n", roleName, m.Content)
-				}
-				contentToSummarize += "\n请结合【之前的对话背景摘要】和【最新的对话记录】，重新生成一份全局的简明摘要。提取核心背景、用户意图和关键结论，以便作为后续对话的上下文。注意：总结字数请严格控制在500字以内！"
-
-				summaryResp, err := c.CreateChatCompletion(
-					summaryCtx,
+		// 异步任务处理：新会话生成标题，老会话检查是否需要生成摘要
+		if isNewSession {
+			go func(sId int64, prompt string) {
+				titleCtx := context.Background()
+				titlePrompt := fmt.Sprintf("请根据以下用户的提问，生成一个简短的对话标题（不超过15个字），不要包含任何标点符号：\n\n%s", prompt)
+				titleResp, err := client.CreateChatCompletion(
+					titleCtx,
 					openai.ChatCompletionRequest{
 						Model: aiConfig.Model,
 						Messages: []openai.ChatCompletionMessage{
-							{Role: openai.ChatMessageRoleUser, Content: contentToSummarize},
+							{Role: openai.ChatMessageRoleUser, Content: titlePrompt},
 						},
 					},
 				)
-				if err == nil && len(summaryResp.Choices) > 0 {
-					newSummary := summaryResp.Choices[0].Message.Content
-					global.GVA_DB.Model(&model.Session{}).Where("id = ?", s.ID).Updates(map[string]interface{}{
-						"summary":                 newSummary,
-						"last_summary_message_id": latestUserMsgId,
-					})
+				if err == nil && len(titleResp.Choices) > 0 {
+					title := titleResp.Choices[0].Message.Content
+					global.GVA_DB.Model(&model.Session{}).Where("id = ?", sId).Update("title", title)
 				}
-			}(session, client, userMsg.ID)
-		}
-	}
+			}(session.ID, req.Prompt)
+		} else {
+			// 检查是否需要生成摘要 (经过每4轮对话)
+			var count int64
+			query := db.Model(&model.Message{}).Where("session_id = ? AND role = ?", session.ID, openai.ChatMessageRoleUser)
+			if session.LastSummaryMessageID > 0 {
+				query = query.Where("id > ?", session.LastSummaryMessageID)
+			}
+			query.Count(&count)
 
-	return dto.AIChatRes{
-		Reply:     replyContent,
-		SessionID: session.ID,
-		MessageID: aiMsg.ID,
-	}, nil
+			if count >= 4 {
+				// 触发摘要总结
+				go func(s model.Session, c *openai.Client, latestUserMsgId int64) {
+					summaryCtx := context.Background()
+					// 获取自上次总结以来的新对话
+					var msgsToSummarize []model.Message
+					q := global.GVA_DB.Where("session_id = ? AND status = 'active'", s.ID)
+					if s.LastSummaryMessageID > 0 {
+						q = q.Where("id > ?", s.LastSummaryMessageID)
+					}
+					q.Order("created_at asc").Find(&msgsToSummarize)
+
+					contentToSummarize := ""
+					if s.Summary != "" {
+						contentToSummarize += fmt.Sprintf("【之前的对话背景摘要】\n%s\n\n", s.Summary)
+					}
+					contentToSummarize += "【最新的对话记录】\n"
+					for _, m := range msgsToSummarize {
+						roleName := "用户"
+						if m.Role == openai.ChatMessageRoleAssistant {
+							roleName = "AI"
+						}
+						contentToSummarize += fmt.Sprintf("[%s]: %s\n", roleName, m.Content)
+					}
+					contentToSummarize += "\n请结合【之前的对话背景摘要】和【最新的对话记录】，重新生成一份全局的简明摘要。提取核心背景、用户意图和关键结论，以便作为后续对话的上下文。注意：总结字数请严格控制在500字以内！"
+
+					summaryResp, err := c.CreateChatCompletion(
+						summaryCtx,
+						openai.ChatCompletionRequest{
+							Model: aiConfig.Model,
+							Messages: []openai.ChatCompletionMessage{
+								{Role: openai.ChatMessageRoleUser, Content: contentToSummarize},
+							},
+						},
+					)
+					if err == nil && len(summaryResp.Choices) > 0 {
+						newSummary := summaryResp.Choices[0].Message.Content
+						global.GVA_DB.Model(&model.Session{}).Where("id = ?", s.ID).Updates(map[string]interface{}{
+							"summary":                 newSummary,
+							"last_summary_message_id": latestUserMsgId,
+						})
+					}
+				}(session, client, userMsg.ID)
+			}
+		}
+	}()
+
+	return msgChan, session.ID, aiMsg.ID, nil
 }
