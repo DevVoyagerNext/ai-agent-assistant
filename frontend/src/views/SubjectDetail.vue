@@ -2,6 +2,7 @@
 import { ref, onMounted, computed, reactive, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import markdownit from 'markdown-it'
+import mathjax3 from 'markdown-it-mathjax3'
 import hljs from 'highlight.js'
 import 'highlight.js/styles/github.css' // 切换回浅色主题，适合灰色背景
 import { 
@@ -391,6 +392,8 @@ const md = markdownit({
     return ''; // 使用默认转义
   }
 })
+
+md.use(mathjax3)
 
 // 统一包装代码块，应用自定义样式
 md.renderer.rules.fence = (tokens, idx, options, _env, _slf) => {
@@ -857,7 +860,23 @@ const copyPrivateNote = () => {
 const renderedMarkdown = computed(() => {
   if (!nodeDetail.value?.content) return ''
   // 渲染前先解码可能存在的乱码实体
-  const decodedContent = decodeEntities(nodeDetail.value.content)
+  let decodedContent = decodeEntities(nodeDetail.value.content)
+  
+  // 1. 支持 ```math 和 ```latex 代码块自动转换为 LaTeX 块级公式
+  decodedContent = decodedContent.replace(/```(?:math|latex)\n([\s\S]*?)```/g, '$$\n$1\n$$')
+  
+  // 2. 剥离行内代码块中的数学公式 (例如 `$u_1$` -> $u_1$)
+  decodedContent = decodedContent.replace(/`(\$[^`]+?\$)`/g, '$1')
+  
+  // 3. 针对常见的算法题输入格式（如果没有被正确包裹）进行智能转换
+  decodedContent = decodedContent.replace(/(输入格式.*?)\n+```(?:text)?\n([\s\S]*?)```/g, (match, prefix, code) => {
+    if (/[a-zA-Z]_[a-zA-Z0-9{}]/.test(code) && !/[;=")(]/.test(code)) {
+      const matrix = code.trim().split('\n').map((line: string) => line.trim().replace(/\s+/g, ' & ')).join(' \\\\\n')
+      return `${prefix}\n$$\n\\begin{matrix}\n${matrix}\n\\end{matrix}\n$$`
+    }
+    return match
+  })
+
   return md.render(decodedContent)
 })
 

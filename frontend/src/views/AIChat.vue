@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { ref, onMounted, nextTick, computed } from 'vue'
+import { ref, reactive, onMounted, nextTick, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import markdownit from 'markdown-it'
+import mathjax3 from 'markdown-it-mathjax3'
 import hljs from 'highlight.js'
 import 'highlight.js/styles/github.css'
-import { fetchEventSource } from '@microsoft/fetch-event-source'
 import { 
   getAISessions, 
   getAISessionMessages, 
@@ -32,6 +32,8 @@ const md = markdownit({
   }
 })
 
+md.use(mathjax3)
+
 // Custom fence rule to wrap in hljs classes, consistent with SubjectDetail.vue
 md.renderer.rules.fence = (tokens, idx, options, _env, _slf) => {
   const token = tokens[idx]
@@ -50,9 +52,64 @@ md.renderer.rules.fence = (tokens, idx, options, _env, _slf) => {
   return `<pre class="hljs"><code>${highlighted}</code></pre>\n`
 }
 
-const renderMarkdown = (content: string) => {
+const stabilizeMarkdownForStreaming = (content: string) => {
+  let processed = content
+
+  // 未闭合的代码块会让 markdown-it 在流式阶段无法正确高亮，先临时补齐。
+  const fenceMatches = processed.match(/```/g)
+  if (fenceMatches && fenceMatches.length % 2 !== 0) {
+    processed += '\n```\n'
+  }
+
+  // 补齐未闭合的行内代码，避免整段后续文本都被当成 code span。
+  const inlineCodeSegments = processed.replace(/```[\s\S]*?```/g, '')
+  const backtickMatches = inlineCodeSegments.match(/`/g)
+  if (backtickMatches && backtickMatches.length % 2 !== 0) {
+    processed += '`'
+  }
+
+  // 补齐未闭合的加粗标记，提升流式阶段的可读性。
+  const boldMatches = processed.match(/\*\*/g)
+  if (boldMatches && boldMatches.length % 2 !== 0) {
+    processed += '**'
+  }
+
+  return processed
+}
+
+const renderMarkdown = (content: string, isStreaming = false) => {
   if (!content) return ''
-  return md.render(content)
+  
+  let processed = content
+  
+  // 1. 支持 ```math 和 ```latex 代码块自动转换为 LaTeX 块级公式
+  processed = processed.replace(/```(?:math|latex)\n([\s\S]*?)```/g, '$$\n$1\n$$')
+  
+  // 2. 剥离行内代码块中的数学公式 (例如 `$u_1$` -> $u_1$)
+  processed = processed.replace(/`(\$[^`]+?\$)`/g, '$1')
+  
+  // 3. 针对常见的算法题输入格式（如果没有被正确包裹）进行智能转换
+  // 检测紧跟在【输入格式】或输入格式等字眼后面的纯文本代码块
+  processed = processed.replace(/(输入格式.*?)\n+```(?:text)?\n([\s\S]*?)```/g, (match, prefix, code) => {
+    if (/[a-zA-Z]_[a-zA-Z0-9{}]/.test(code) && !/[;=")(]/.test(code)) {
+      const matrix = code.trim().split('\n').map((line: string) => line.trim().replace(/\s+/g, ' & ')).join(' \\\\\n')
+      return `${prefix}\n$$\n\\begin{matrix}\n${matrix}\n\\end{matrix}\n$$`
+    }
+    return match
+  })
+
+  // 4. 替换非代码块中可能遗漏的下标情况 (仅在确认为公式结构时，但这较危险，暂不全局替换)
+  if (isStreaming) {
+    processed = stabilizeMarkdownForStreaming(processed)
+  }
+
+  return md.render(processed)
+}
+
+const isStreamingAssistantMessage = (msg: AIChatMessage) => {
+  if (!isSending.value || msg.role !== 'assistant') return false
+  const lastMessage = messages.value[messages.value.length - 1]
+  return lastMessage?.id === msg.id
 }
 
 // ===== Sidebar / Sessions State =====
@@ -69,6 +126,7 @@ const inputContent = ref('')
 const selectedFiles = ref<File[]>([])
 const isSending = ref(false)
 const messagesContainer = ref<HTMLElement | null>(null)
+let activeChatAbortController: AbortController | null = null
 
 // ===== Rename State =====
 const renamingSessionId = ref<number | null>(null)
@@ -238,6 +296,67 @@ const removeFile = (index: number) => {
   selectedFiles.value.splice(index, 1)
 }
 
+const parseSSEJson = <T>(data: string): T | null => {
+  try {
+    return JSON.parse(data) as T
+  } catch (error) {
+    console.error('SSE JSON 解析失败', error, data)
+    return null
+  }
+}
+
+const normalizeMessageChunk = (chunk: string) => {
+  const trimmed = chunk.trim()
+
+  // gin 在 SSE 中可能把字符串序列化为 JSON string，这里统一还原。
+  if (trimmed.startsWith('"') && trimmed.endsWith('"')) {
+    const parsed = parseSSEJson<string>(trimmed)
+    if (typeof parsed === 'string') {
+      return parsed
+    }
+  }
+
+  return chunk
+}
+
+type SSEEvent = {
+  event: string
+  data: string
+}
+
+const extractSSEEvents = (buffer: string) => {
+  const events: SSEEvent[] = []
+  let rest = buffer
+
+  while (true) {
+    const delimiterIndex = rest.indexOf('\n\n')
+    if (delimiterIndex === -1) break
+
+    const rawEvent = rest.slice(0, delimiterIndex).trim()
+    rest = rest.slice(delimiterIndex + 2)
+
+    if (!rawEvent) continue
+
+    let eventName = 'message'
+    const dataLines: string[] = []
+
+    rawEvent.split('\n').forEach((line) => {
+      if (line.startsWith('event:')) {
+        eventName = line.slice(6).trim()
+      } else if (line.startsWith('data:')) {
+        dataLines.push(line.slice(5).trimStart())
+      }
+    })
+
+    events.push({
+      event: eventName,
+      data: dataLines.join('\n')
+    })
+  }
+
+  return { events, rest }
+}
+
 const sendMessage = async () => {
   const prompt = inputContent.value.trim()
   if (!prompt && selectedFiles.value.length === 0) return
@@ -247,7 +366,7 @@ const sendMessage = async () => {
   const tempId = Date.now()
   const parentId = messages.value.length > 0 ? messages.value[messages.value.length - 1].id : 0
   
-  const userMsg: AIChatMessage = {
+  const userMsg = reactive<AIChatMessage>({
     id: tempId,
     sessionId: currentSessionId.value || 0,
     parentId: parentId || null,
@@ -256,7 +375,7 @@ const sendMessage = async () => {
     status: 'active',
     createdAt: new Date().toISOString(),
     files: [...selectedFiles.value]
-  }
+  })
   
   messages.value.push(userMsg)
   
@@ -280,7 +399,7 @@ const sendMessage = async () => {
   
   // Create an empty assistant message for streaming
   const assistantMsgId = Date.now() + 1
-  const assistantMsg: AIChatMessage = {
+  const assistantMsg = reactive<AIChatMessage>({
     id: assistantMsgId,
     sessionId: currentSessionId.value || 0,
     parentId: tempId,
@@ -288,55 +407,91 @@ const sendMessage = async () => {
     content: '',
     status: 'active',
     createdAt: new Date().toISOString()
-  }
+  })
   messages.value.push(assistantMsg)
   
   scrollToBottom()
 
+  activeChatAbortController?.abort()
+  const abortController = new AbortController()
+  activeChatAbortController = abortController
+  let streamFinished = false
+
   try {
     const token = localStorage.getItem('token') || ''
-    
-    await fetchEventSource('http://localhost:8080/v1/ai/chat', {
+
+    const response = await fetch('http://localhost:8080/v1/ai/chat', {
       method: 'POST',
       headers: {
         'x-token': token
       },
       body: reqData,
-      onmessage(ev) {
-        if (ev.event === 'meta') {
-          try {
-            const data = JSON.parse(ev.data)
-            assistantMsg.sessionId = data.sessionId
-            assistantMsg.id = data.messageId
-            
-            if (!currentSessionId.value) {
-              currentSessionId.value = data.sessionId
-              router.replace({ query: { sessionId: data.sessionId } })
-              loadSessions(true) // refresh sidebar
-            }
-          } catch (e) {
-            console.error('Failed to parse meta:', e)
-          }
-        } else if (ev.event === 'message') {
-          assistantMsg.content += ev.data
-          scrollToBottom()
-        } else if (ev.event === 'done') {
-          isSending.value = false
-        }
-      },
-      onerror(err) {
-        console.error('EventSource error:', err)
-        isSending.value = false
-        throw err // trigger catch
-      },
-      onclose() {
-        isSending.value = false
-      }
+      signal: abortController.signal
     })
+
+    const contentType = response.headers.get('content-type') || ''
+    if (!response.ok) {
+      throw new Error(`请求失败: ${response.status}`)
+    }
+    if (!contentType.includes('text/event-stream')) {
+      throw new Error(`接口未返回流式内容: ${contentType || 'unknown'}`)
+    }
+    if (!response.body) {
+      throw new Error('流式响应体为空')
+    }
+
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder('utf-8')
+    let sseBuffer = ''
+
+    while (true) {
+      const { value, done } = await reader.read()
+      if (done) break
+
+      sseBuffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+      const { events, rest } = extractSSEEvents(sseBuffer)
+      sseBuffer = rest
+
+      for (const event of events) {
+        if (event.event === 'meta') {
+          const data = parseSSEJson<{ sessionId: number; messageId: number }>(event.data)
+          if (!data) {
+            continue
+          }
+
+          assistantMsg.sessionId = data.sessionId
+          assistantMsg.id = data.messageId
+          userMsg.sessionId = data.sessionId
+          currentSessionId.value = data.sessionId
+
+          if (route.query.sessionId !== String(data.sessionId)) {
+            router.replace({ query: { sessionId: data.sessionId } })
+          }
+          void loadSessions(true)
+        } else if (event.event === 'message') {
+          assistantMsg.content += normalizeMessageChunk(event.data)
+          scrollToBottom()
+        } else if (event.event === 'done') {
+          streamFinished = true
+          isSending.value = false
+          abortController.abort()
+          return
+        }
+      }
+    }
+
+    if (!streamFinished && !abortController.signal.aborted) {
+      throw new Error('流式连接意外关闭')
+    }
   } catch (error: any) {
-    console.error('发送失败', error)
-    alert('发送失败或连接断开')
+    if (!abortController.signal.aborted || !streamFinished) {
+      console.error('发送失败', error)
+      alert('发送失败或连接断开')
+    }
   } finally {
+    if (activeChatAbortController === abortController) {
+      activeChatAbortController = null
+    }
     isSending.value = false
   }
 }
@@ -444,20 +599,18 @@ const currentSessionTitle = computed(() => {
               </div>
             </div>
             
-            <div class="message-bubble" :class="{ 'markdown-body': msg.role === 'assistant' }" v-show="msg.content !== ''">
-              <div v-if="msg.role === 'assistant'" v-html="renderMarkdown(msg.content)" class="md-content"></div>
+            <div class="message-bubble" :class="{ 'markdown-body': msg.role === 'assistant' }">
+              <!-- Typing Indicator for Assistant when content is empty -->
+              <div v-if="msg.role === 'assistant' && msg.content === '' && isSending" class="typing">
+                <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+              </div>
+              <!-- Normal Content -->
+              <div
+                v-else-if="msg.role === 'assistant'"
+                v-html="renderMarkdown(msg.content, isStreamingAssistantMessage(msg))"
+                class="md-content"
+              ></div>
               <span v-else class="msg-text">{{ msg.content }}</span>
-            </div>
-          </div>
-        </div>
-        
-        <div v-if="isSending && messages[messages.length - 1]?.content === ''" class="message-row assistant">
-          <div class="avatar-wrap">
-            <Bot :size="24" class="bot-avatar" />
-          </div>
-          <div class="message-content-wrap">
-            <div class="message-bubble typing">
-              <span class="dot"></span><span class="dot"></span><span class="dot"></span>
             </div>
           </div>
         </div>
@@ -884,6 +1037,8 @@ const currentSessionTitle = computed(() => {
   align-items: center;
   gap: 4px;
   height: 24px;
+  overflow: hidden; /* 防止点溢出导致滚动条 */
+  padding: 0 4px;
 }
 
 .dot {
