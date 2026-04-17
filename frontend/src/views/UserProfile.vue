@@ -863,9 +863,9 @@ const scrollTo = (id: string) => {
                   <Folder v-if="note.type === 'folder'" :size="16" class="note-type-icon folder icon-pink" />
                   <FileText v-else :size="16" class="note-type-icon file icon-blue" />
                   <h4 @click.stop="openRename(note)">{{ note.title }}</h4>
-                  <span v-if="note.isShared" class="status-badge" style="margin-left: 8px;">已分享</span>
                   <Edit3 :size="12" class="edit-icon-mini" @click.stop="openRename(note)" />
-                  <span class="date">{{ formatDate(note.updatedAt) }}</span>
+                  <span v-if="note.isShared" class="status-badge" style="margin-left: auto;">已分享</span>
+                  <span class="date" :style="note.isShared ? 'margin-left: 12px;' : 'margin-left: auto;'">{{ formatDate(note.updatedAt) }}</span>
                 </div>
               </div>
               <div class="note-item-actions">
@@ -1404,8 +1404,8 @@ const scrollTo = (id: string) => {
                 <div class="subject-row-info">
                   <div class="note-title-line">
                     <h4 @click.stop="openRename(child)">{{ child.title }}</h4>
-                    <span v-if="child.isShared" class="status-badge" style="margin-left: 8px;">已分享</span>
                     <Edit3 :size="12" class="edit-icon-mini" @click.stop="openRename(child)" />
+                    <span v-if="child.isShared" class="status-badge" style="margin-left: auto; margin-right: 16px;">已分享</span>
                   </div>
                 </div>
                 <div class="subject-row-meta">
