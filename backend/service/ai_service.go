@@ -77,8 +77,8 @@ func (s *AIService) GetUserSessions(ctx context.Context, userId uint, lastId int
 	}, nil
 }
 
-// GetSessionMessages 获取指定会话的消息列表
-func (s *AIService) GetSessionMessages(ctx context.Context, userId uint, sessionId int64) (dto.MessageListRes, error) {
+// GetSessionMessages 获取指定会话的消息列表（游标分页）
+func (s *AIService) GetSessionMessages(ctx context.Context, userId uint, sessionId int64, lastId int64) (dto.MessageListRes, error) {
 	db := global.GVA_DB.WithContext(ctx)
 
 	// 校验会话所属权
@@ -88,8 +88,28 @@ func (s *AIService) GetSessionMessages(ctx context.Context, userId uint, session
 	}
 
 	var messages []model.Message
-	if err := db.Where("session_id = ? AND status = 'active'", sessionId).Order("created_at asc").Find(&messages).Error; err != nil {
+	limit := 10
+
+	query := db.Where("session_id = ? AND status = 'active'", sessionId)
+	if lastId > 0 {
+		query = query.Where("id < ?", lastId)
+	}
+
+	// 取最新的 10 条（按 ID 降序），多查一条用于判断 hasMore
+	if err := query.Order("id desc").Limit(limit + 1).Find(&messages).Error; err != nil {
 		return dto.MessageListRes{}, err
+	}
+
+	hasMore := false
+	if len(messages) > limit {
+		hasMore = true
+		messages = messages[:limit]
+	}
+
+	// 此时 messages 是按照 id 降序排列的，为了让前端展示时顺序正常，需要反转为正序
+	for i := len(messages)/2 - 1; i >= 0; i-- {
+		opp := len(messages) - 1 - i
+		messages[i], messages[opp] = messages[opp], messages[i]
 	}
 
 	var list []dto.MessageItemRes
@@ -106,8 +126,8 @@ func (s *AIService) GetSessionMessages(ctx context.Context, userId uint, session
 	}
 
 	return dto.MessageListRes{
-		Total: int64(len(list)),
-		List:  list,
+		List:    list,
+		HasMore: hasMore,
 	}, nil
 }
 

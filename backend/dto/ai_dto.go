@@ -45,8 +45,8 @@ type MessageItemRes struct {
 	CreatedAt string `json:"createdAt"`
 }
 
-// MessageListRes 消息列表响应
+// MessageListRes 消息列表响应（游标分页）
 type MessageListRes struct {
-	Total int64            `json:"total"`
-	List  []MessageItemRes `json:"list"`
+	List    []MessageItemRes `json:"list"`
+	HasMore bool             `json:"hasMore"`
 }

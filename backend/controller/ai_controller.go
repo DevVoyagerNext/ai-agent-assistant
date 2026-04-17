@@ -128,7 +128,7 @@ func (con *AIController) GetUserSessions(c *gin.Context) {
 	response.Ok(res, c)
 }
 
-// GetSessionMessages 获取具体会话的消息列表
+// GetSessionMessages 获取具体会话的消息列表（游标分页向上拉取）
 func (con *AIController) GetSessionMessages(c *gin.Context) {
 	sessionIdStr := c.Param("id")
 	sessionId, err := strconv.ParseInt(sessionIdStr, 10, 64)
@@ -143,7 +143,16 @@ func (con *AIController) GetSessionMessages(c *gin.Context) {
 		return
 	}
 
-	res, err := con.aiService.GetSessionMessages(c.Request.Context(), userId, sessionId)
+	lastIdStr := c.Query("lastId")
+	var lastId int64 = 0
+	if lastIdStr != "" {
+		parsedId, err := strconv.ParseInt(lastIdStr, 10, 64)
+		if err == nil && parsedId > 0 {
+			lastId = parsedId
+		}
+	}
+
+	res, err := con.aiService.GetSessionMessages(c.Request.Context(), userId, sessionId, lastId)
 	if err != nil {
 		response.FailWithMsg(errmsg.CodeError, err.Error(), c)
 		return
