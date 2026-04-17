@@ -306,17 +306,29 @@ const parseSSEJson = <T>(data: string): T | null => {
 }
 
 const normalizeMessageChunk = (chunk: string) => {
-  const trimmed = chunk.trim()
+  let trimmed = chunk.trim()
 
   // gin 在 SSE 中可能把字符串序列化为 JSON string，这里统一还原。
   if (trimmed.startsWith('"') && trimmed.endsWith('"')) {
     const parsed = parseSSEJson<string>(trimmed)
     if (typeof parsed === 'string') {
-      return parsed
+      trimmed = parsed
     }
   }
 
-  return chunk
+  // 后端现已将消息内容改为 Base64 编码传输，在此处进行解码
+  try {
+    // 浏览器 atob 解码 Base64 后得到的是 binary string，需要转换回正确的 UTF-8 字符
+    const binaryString = atob(trimmed)
+    const bytes = new Uint8Array(binaryString.length)
+    for (let i = 0; i < binaryString.length; i++) {
+      bytes[i] = binaryString.charCodeAt(i)
+    }
+    return new TextDecoder('utf-8').decode(bytes)
+  } catch (error) {
+    // 如果不是合法的 base64，或者解码失败，降级返回原字符串
+    return trimmed
+  }
 }
 
 type SSEEvent = {

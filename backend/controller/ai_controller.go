@@ -5,6 +5,7 @@ import (
 	"backend/pkg/errmsg"
 	"backend/pkg/utils/response"
 	"backend/service"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"strconv"
@@ -86,8 +87,9 @@ func (con *AIController) Chat(c *gin.Context) {
 	// 流式监听并向客户端发送 chunk 数据
 	c.Stream(func(w io.Writer) bool {
 		if msg, ok := <-streamChan; ok {
-			// 将字符串包装在 JSON 中发送，防止前置后置空格或换行符在传输中被截断
-			c.SSEvent("message", gin.H{"text": msg})
+			// 将字符串转换为 Base64 编码发送，既能完美保留空格和换行，又无需 JSON 序列化的开销
+			encodedMsg := base64.StdEncoding.EncodeToString([]byte(msg))
+			c.SSEvent("message", encodedMsg)
 			return true
 		}
 		// 通道关闭，发送结束标记
