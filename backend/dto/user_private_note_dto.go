@@ -38,6 +38,7 @@ type PrivateNoteItemRes struct {
 	IsPublic  int8      `json:"isPublic"`
 	UpdatedAt time.Time `json:"updatedAt"`
 	CreatedAt time.Time `json:"createdAt"`
+	IsShared  bool      `json:"isShared"`
 }
 
 // PrivateNoteDetailRes 私人笔记详情
@@ -50,6 +51,7 @@ type PrivateNoteDetailRes struct {
 	IsPublic  int8      `json:"isPublic"`
 	UpdatedAt time.Time `json:"updatedAt"`
 	CreatedAt time.Time `json:"createdAt"`
+	IsShared  bool      `json:"isShared"`
 }
 
 // PrivateNoteResponse 获取内容的响应结构，根据类型可能是列表或详情

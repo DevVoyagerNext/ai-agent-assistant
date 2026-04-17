@@ -31,6 +31,7 @@ func (r *UserRouter) InitAuthUserRouter(Router *gin.RouterGroup) {
 		userRouter.GET("/notes/shares", userController.GetSharedNotes)                     // 异步接口：已分享笔记
 		userRouter.PUT("/notes/shares/:id/status", userController.UpdateSharedNoteStatus)  // 更新分享状态（取消/重新分享）
 		userRouter.PUT("/notes/shares/:id/expire", userController.UpdateSharedNoteExpire)  // 更新分享过期时间
+		userRouter.DELETE("/notes/shares/:id", userController.DeleteSharedNote)            // 删除分享记录
 		userRouter.GET("/subjects/learned", userController.GetLearnedSubjects)             // 异步接口：已学/在学教材
 	}
 }

@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, onBeforeUnmount, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ArrowLeft, BookOpen, Clock, Activity, Loader2, FolderHeart, FileText, Folder, X, ToggleRight, ToggleLeft, ChevronRight, Edit3 } from 'lucide-vue-next'
-import { getUserRecentSubjects, getUserLikedSubjects, getUserCollectFolders, getPrivateNoteDetail, getSubjectsInFolder, updateCollectFolderPublic, updateCollectFolderName, updatePrivateNotePublic, updatePrivateNoteTitle } from '../api/user'
+import { getUserRecentSubjects, getUserLikedSubjects, getUserCollectFolders, getPrivateNoteDetail, getSubjectsInFolder, updateCollectFolderPublic, updateCollectFolderName, updatePrivateNotePublic, updatePrivateNoteTitle, updatePrivateNoteContent } from '../api/user'
 
 const route = useRoute()
 const router = useRouter()
@@ -78,10 +78,132 @@ const updatingNoteIds = ref<Set<number>>(new Set())
 const showPrivateNoteModal = ref(false)
 const selectedPrivateNote = ref<any>(null)
 const loadingPrivateNote = ref(false)
-const renderedPrivateNoteContent = computed(() => {
-  if (!selectedPrivateNote.value?.content?.content) return ''
-  return selectedPrivateNote.value.content.content.replace(/\n/g, '<br>')
+const selectedPrivateNoteTitle = computed(() => {
+  return selectedPrivateNote.value?.content?.title || selectedPrivateNote.value?.title || '未命名文件'
 })
+const editPrivateNoteContent = ref('')
+const savingPrivateNote = ref(false)
+const privateNoteSyncStatus = ref<'idle' | 'saving' | 'saved' | 'error'>('idle')
+const privateNoteSyncMessage = ref('请输入笔记内容...')
+
+const AUTO_SAVE_DEBOUNCE_MS = 800
+const AUTO_SAVE_THROTTLE_MS = 2000
+
+let autoSaveDebounceTimer: ReturnType<typeof setTimeout> | null = null
+let autoSaveThrottleTimer: ReturnType<typeof setTimeout> | null = null
+let lastSavedPrivateNoteContent = ''
+let lastPrivateNoteSaveAt = 0
+
+const clearPrivateNoteSaveTimers = () => {
+  if (autoSaveDebounceTimer) {
+    clearTimeout(autoSaveDebounceTimer)
+    autoSaveDebounceTimer = null
+  }
+  if (autoSaveThrottleTimer) {
+    clearTimeout(autoSaveThrottleTimer)
+    autoSaveThrottleTimer = null
+  }
+}
+
+const resetPrivateNoteEditorState = () => {
+  clearPrivateNoteSaveTimers()
+  editPrivateNoteContent.value = ''
+  savingPrivateNote.value = false
+  privateNoteSyncStatus.value = 'idle'
+  privateNoteSyncMessage.value = '请输入笔记内容...'
+  lastSavedPrivateNoteContent = ''
+  lastPrivateNoteSaveAt = 0
+}
+
+const setPrivateNoteEditorContent = (content: string) => {
+  editPrivateNoteContent.value = content
+  lastSavedPrivateNoteContent = content
+  privateNoteSyncStatus.value = 'saved'
+  privateNoteSyncMessage.value = '同步成功'
+}
+
+const flushPrivateNoteSave = async (force = false) => {
+  const noteId = selectedPrivateNote.value?.content?.id
+  if (!noteId) return
+
+  const nextContent = editPrivateNoteContent.value
+  if (nextContent === lastSavedPrivateNoteContent) {
+    privateNoteSyncStatus.value = 'saved'
+    privateNoteSyncMessage.value = '同步成功'
+    return
+  }
+
+  if (!force) {
+    const elapsed = Date.now() - lastPrivateNoteSaveAt
+    if (elapsed < AUTO_SAVE_THROTTLE_MS) {
+      if (autoSaveThrottleTimer) {
+        clearTimeout(autoSaveThrottleTimer)
+      }
+      autoSaveThrottleTimer = setTimeout(() => {
+        autoSaveThrottleTimer = null
+        void flushPrivateNoteSave()
+      }, AUTO_SAVE_THROTTLE_MS - elapsed)
+      return
+    }
+  }
+
+  if (savingPrivateNote.value) return
+
+  savingPrivateNote.value = true
+  privateNoteSyncStatus.value = 'saving'
+  privateNoteSyncMessage.value = '同步中...'
+
+  try {
+    const res = await updatePrivateNoteContent(noteId, nextContent)
+    if (res.data?.code === 200) {
+      lastSavedPrivateNoteContent = nextContent
+      lastPrivateNoteSaveAt = Date.now()
+      if (selectedPrivateNote.value?.content) {
+        selectedPrivateNote.value.content.content = nextContent
+      }
+      privateNoteSyncStatus.value = 'saved'
+      privateNoteSyncMessage.value = '同步成功'
+    } else {
+      privateNoteSyncStatus.value = 'error'
+      privateNoteSyncMessage.value = res.data?.msg || '同步失败，请稍后重试'
+    }
+  } catch (err: any) {
+    privateNoteSyncStatus.value = 'error'
+    privateNoteSyncMessage.value = err.response?.data?.msg || '同步失败，请稍后重试'
+  } finally {
+    savingPrivateNote.value = false
+    if (editPrivateNoteContent.value !== lastSavedPrivateNoteContent) {
+      void flushPrivateNoteSave()
+    }
+  }
+}
+
+const handlePrivateNoteContentInput = () => {
+  privateNoteSyncStatus.value = 'saving'
+  privateNoteSyncMessage.value = '等待同步...'
+
+  if (autoSaveDebounceTimer) {
+    clearTimeout(autoSaveDebounceTimer)
+  }
+  autoSaveDebounceTimer = setTimeout(() => {
+    autoSaveDebounceTimer = null
+    void flushPrivateNoteSave()
+  }, AUTO_SAVE_DEBOUNCE_MS)
+}
+
+const handleClosePrivateNoteModal = () => {
+  clearPrivateNoteSaveTimers()
+  if (editPrivateNoteContent.value !== lastSavedPrivateNoteContent) {
+    void flushPrivateNoteSave(true)
+  }
+  showPrivateNoteModal.value = false
+}
+
+const openSelectedPrivateNoteRenameModal = () => {
+  const note = selectedPrivateNote.value?.content
+  if (!note?.id) return
+  openRenameModal(note, 'privateNote')
+}
 
 const handlePrivateNoteBack = () => {
   if (privateNoteStack.value.length > 1) {
@@ -147,6 +269,16 @@ const handleRename = async () => {
       const res = await updatePrivateNoteTitle(pendingRenameItem.value.id, renameTitle.value.trim())
       if (res.data?.code === 200) {
         pendingRenameItem.value.title = renameTitle.value.trim()
+        const matchedListItem = list.value.find(item => item.id === pendingRenameItem.value.id)
+        if (matchedListItem) {
+          matchedListItem.title = renameTitle.value.trim()
+        }
+        if (selectedPrivateNote.value?.content?.id === pendingRenameItem.value.id) {
+          selectedPrivateNote.value.content.title = renameTitle.value.trim()
+        }
+        if (selectedPrivateNote.value?.id === pendingRenameItem.value.id) {
+          selectedPrivateNote.value.title = renameTitle.value.trim()
+        }
         showRenameModal.value = false
       } else {
         alert(res.data?.msg || '重命名失败')
@@ -294,6 +426,7 @@ const handleItemClick = async (item: any) => {
       fetchList()
     } else {
       // 这是一个文件，弹出展示框
+      resetPrivateNoteEditorState()
       selectedPrivateNote.value = item
       showPrivateNoteModal.value = true
       loadingPrivateNote.value = true
@@ -301,9 +434,14 @@ const handleItemClick = async (item: any) => {
         const res = await getPrivateNoteDetail(item.id, 2)
         if (res.data?.code === 200 && res.data.data) {
           selectedPrivateNote.value = res.data.data
+          if (res.data.data.type === 'markdown') {
+            setPrivateNoteEditorContent(res.data.data.content.content || '')
+          }
         }
       } catch (err) {
         console.error('Fetch private note detail failed:', err)
+        privateNoteSyncStatus.value = 'error'
+        privateNoteSyncMessage.value = '加载失败，请稍后重试'
       } finally {
         loadingPrivateNote.value = false
       }
@@ -320,6 +458,10 @@ const pageTitle = computed(() => {
 
 onMounted(() => {
   fetchList()
+})
+
+onBeforeUnmount(() => {
+  clearPrivateNoteSaveTimers()
 })
 </script>
 
@@ -535,13 +677,17 @@ onMounted(() => {
 
     <!-- 私人笔记展示弹窗 -->
     <Teleport to="body">
-      <div v-if="showPrivateNoteModal" class="modal-overlay note-modal-overlay" @click.self="showPrivateNoteModal = false">
+      <div v-if="showPrivateNoteModal" class="modal-overlay note-modal-overlay" @click.self="handleClosePrivateNoteModal">
         <div class="modal-content large-modal">
           <header class="modal-header">
             <div class="header-left">
-              <h3>{{ selectedPrivateNote?.title }}</h3>
+              <div class="modal-title-row private-note-title-row" @click="openSelectedPrivateNoteRenameModal">
+                <FileText :size="20" class="private-note-title-icon" />
+                <h3>{{ selectedPrivateNoteTitle }}</h3>
+                <Edit3 :size="16" class="edit-icon-mini" />
+              </div>
             </div>
-            <button class="close-btn" @click="showPrivateNoteModal = false">
+            <button class="close-btn" @click="handleClosePrivateNoteModal">
               <X :size="24" />
             </button>
           </header>
@@ -550,10 +696,26 @@ onMounted(() => {
               <Loader2 class="spin" :size="32" />
               <p>加载中...</p>
             </div>
-            <div v-else class="markdown-view">
-              <div class="markdown-content" v-html="renderedPrivateNoteContent"></div>
+            <div v-else class="markdown-editor">
+              <textarea
+                v-model="editPrivateNoteContent"
+                class="private-note-textarea"
+                maxlength="1000"
+                placeholder="请输入笔记内容..."
+                @input="handlePrivateNoteContentInput"
+              ></textarea>
+              <div class="editor-meta">
+                <span>{{ editPrivateNoteContent.length }} / 1000</span>
+              </div>
             </div>
           </div>
+          <footer v-if="!loadingPrivateNote" class="modal-footer note-modal-footer">
+            <div class="sync-status-bar" :class="privateNoteSyncStatus">
+              <Loader2 v-if="privateNoteSyncStatus === 'saving'" class="spin" :size="14" />
+              <span>{{ privateNoteSyncMessage }}</span>
+            </div>
+            <button class="ghost-btn" @click="handleClosePrivateNoteModal">关闭</button>
+          </footer>
         </div>
       </div>
     </Teleport>
@@ -751,6 +913,18 @@ onMounted(() => {
   width: fit-content;
 }
 
+.private-note-title-row h3 {
+  max-width: 520px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.private-note-title-icon {
+  color: var(--notion-blue);
+  flex-shrink: 0;
+}
+
 .modal-title-row h3 {
   margin: 0;
 }
@@ -889,6 +1063,33 @@ onMounted(() => {
   justify-content: flex-end;
 }
 
+.note-modal-footer {
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.sync-status-bar {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--warm-gray-500);
+}
+
+.sync-status-bar.saving {
+  color: var(--notion-blue);
+}
+
+.sync-status-bar.saved {
+  color: #1aae39;
+}
+
+.sync-status-bar.error {
+  color: #eb5757;
+}
+
 .form-actions {
   display: flex;
   gap: 12px;
@@ -973,6 +1174,39 @@ onMounted(() => {
   flex: 1;
   overflow-y: auto;
   padding: 24px;
+}
+
+.markdown-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  height: 100%;
+}
+
+.private-note-textarea {
+  width: 100%;
+  min-height: 360px;
+  border: 1px solid rgba(0,0,0,0.1);
+  border-radius: 12px;
+  padding: 16px;
+  font-size: 15px;
+  line-height: 1.7;
+  color: var(--notion-black);
+  resize: vertical;
+  outline: none;
+  transition: all 0.2s ease;
+}
+
+.private-note-textarea:focus {
+  border-color: var(--notion-blue);
+  box-shadow: 0 0 0 3px rgba(0,117,222,0.1);
+}
+
+.editor-meta {
+  display: flex;
+  justify-content: flex-end;
+  font-size: 12px;
+  color: var(--warm-gray-300);
 }
 
 .modal-loading, .modal-empty {

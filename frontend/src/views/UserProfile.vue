@@ -6,7 +6,7 @@ import Skeleton from '../components/Skeleton.vue'
 import { 
   ArrowLeft, LogOut, RefreshCcw, 
   Activity, BookOpen, Share2, Book, Users, Star, Layers, FolderHeart,
-  Folder, FileText, ToggleRight, ToggleLeft, Edit3, X, Loader2, ChevronRight, ChevronLeft, Clock, Save, FolderPlus, FilePlus
+  Folder, FileText, ToggleRight, ToggleLeft, Edit3, X, Loader2, ChevronRight, ChevronLeft, Clock, Save, FolderPlus, FilePlus, Trash2
 } from 'lucide-vue-next'
 import { useUserProfile } from '../composables/useUserProfile'
 import ActivityCalendar from '../components/ActivityCalendar.vue'
@@ -14,7 +14,7 @@ import {
   updatePrivateNoteTitle, updatePrivateNotePublic, 
   updateCollectFolderPublic, updateCollectFolderName,
   getSubjectsInFolder, getPrivateNoteDetail, updatePrivateNoteContent,
-  createPrivateNote, sharePrivateNote, updateShareNoteStatus, updateShareNoteExpire
+  createPrivateNote, sharePrivateNote, updateShareNoteStatus, updateShareNoteExpire, deleteSharedNote
 } from '../api/user'
 
 const router = useRouter()
@@ -448,6 +448,22 @@ const handleToggleShareStatus = async (shareId: number, isActive: 0 | 1) => {
     }
   } catch (err: any) {
     showToast(err.response?.data?.msg || `${actionText}失败`, 'error')
+  }
+}
+
+const handleDeleteSharedNote = async (shareId: number) => {
+  if (!confirm('确定要删除该分享记录吗？删除后不可恢复。')) return
+  
+  try {
+    const res = await deleteSharedNote(shareId)
+    if (res.data?.code === 200) {
+      showToast('删除分享成功', 'success')
+      refreshAll()
+    } else {
+      showToast(res.data?.msg || '删除分享失败', 'error')
+    }
+  } catch (err: any) {
+    showToast(err.response?.data?.msg || '删除分享失败', 'error')
   }
 }
 
@@ -953,6 +969,14 @@ const scrollTo = (id: string) => {
                       <X :size="14" />
                       <span>取消分享</span>
                     </button>
+                    <button 
+                      class="danger-btn-mini" 
+                      @click.stop="handleDeleteSharedNote(note.id)"
+                      title="删除分享"
+                    >
+                      <Trash2 :size="14" />
+                      <span>删除分享</span>
+                    </button>
                   </template>
                   <template v-else>
                     <button 
@@ -963,6 +987,14 @@ const scrollTo = (id: string) => {
                     >
                       <RefreshCcw :size="14" />
                       <span>重新分享</span>
+                    </button>
+                    <button 
+                      class="danger-btn-mini" 
+                      @click.stop="handleDeleteSharedNote(note.id)"
+                      title="删除分享"
+                    >
+                      <Trash2 :size="14" />
+                      <span>删除分享</span>
                     </button>
                   </template>
                 </div>

@@ -38,6 +38,15 @@ func (u *UserService) UpdateSharedNoteStatus(ctx context.Context, userID uint, s
 	return errmsg.CodeSuccess
 }
 
+// DeleteSharedNote 删除分享记录
+func (u *UserService) DeleteSharedNote(ctx context.Context, userID uint, shareID int) int {
+	var privateNoteDao dao.UserPrivateNoteDao
+	if err := privateNoteDao.DeleteNoteShare(ctx, userID, shareID); err != nil {
+		return errmsg.CodeError
+	}
+	return errmsg.CodeSuccess
+}
+
 // UpdateSharedNoteExpire 更新分享过期时间
 func (u *UserService) UpdateSharedNoteExpire(ctx context.Context, userID uint, shareID int, req dto.UpdateSharedNoteExpireReq) int {
 	var privateNoteDao dao.UserPrivateNoteDao
@@ -76,6 +85,14 @@ func (u *UserService) GetPublicPrivateNotes(ctx context.Context, userID uint, re
 		return errmsg.CodeError, dto.PublicPrivateNoteListRes{}
 	}
 
+	// 批量查询分享状态
+	var noteIDs []uint
+	for _, note := range notes {
+		noteIDs = append(noteIDs, note.ID)
+	}
+	var privateNoteDao dao.UserPrivateNoteDao
+	sharedStatusMap, _ := privateNoteDao.CheckNotesSharedStatus(ctx, userID, noteIDs)
+
 	var res dto.PublicPrivateNoteListRes
 	res.Total = total
 	for _, note := range notes {
@@ -83,6 +100,7 @@ func (u *UserService) GetPublicPrivateNotes(ctx context.Context, userID uint, re
 			ID:        note.ID,
 			Title:     note.Title,
 			UpdatedAt: note.UpdatedAt,
+			IsShared:  sharedStatusMap[note.ID],
 		})
 	}
 	return errmsg.CodeSuccess, res

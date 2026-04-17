@@ -40,6 +40,12 @@ func (s *UserPrivateNoteService) GetNoteOrChildrenWithScope(ctx context.Context,
 			return nil, err
 		}
 		var children []dto.PrivateNoteItemRes
+		var noteIDs []uint
+		for _, note := range notes {
+			noteIDs = append(noteIDs, note.ID)
+		}
+		sharedStatusMap, _ := s.privateNoteDao.CheckNotesSharedStatus(ctx, userID, noteIDs)
+
 		for _, note := range notes {
 			children = append(children, dto.PrivateNoteItemRes{
 				ID:        note.ID,
@@ -49,6 +55,7 @@ func (s *UserPrivateNoteService) GetNoteOrChildrenWithScope(ctx context.Context,
 				IsPublic:  note.IsPublic,
 				UpdatedAt: note.UpdatedAt,
 				CreatedAt: note.CreatedAt,
+				IsShared:  sharedStatusMap[note.ID],
 			})
 		}
 		return dto.PrivateNoteResponse{
@@ -74,6 +81,12 @@ func (s *UserPrivateNoteService) GetNoteOrChildrenWithScope(ctx context.Context,
 			return nil, err
 		}
 		var children []dto.PrivateNoteItemRes
+		var noteIDs []uint
+		for _, n := range notes {
+			noteIDs = append(noteIDs, n.ID)
+		}
+		sharedStatusMap, _ := s.privateNoteDao.CheckNotesSharedStatus(ctx, userID, noteIDs)
+
 		for _, n := range notes {
 			children = append(children, dto.PrivateNoteItemRes{
 				ID:        n.ID,
@@ -83,6 +96,7 @@ func (s *UserPrivateNoteService) GetNoteOrChildrenWithScope(ctx context.Context,
 				IsPublic:  n.IsPublic,
 				UpdatedAt: n.UpdatedAt,
 				CreatedAt: n.CreatedAt,
+				IsShared:  sharedStatusMap[n.ID],
 			})
 		}
 		return dto.PrivateNoteResponse{
@@ -91,6 +105,9 @@ func (s *UserPrivateNoteService) GetNoteOrChildrenWithScope(ctx context.Context,
 			Children: children,
 		}, nil
 	}
+
+	// 查询单条笔记的分享状态
+	sharedStatusMap, _ := s.privateNoteDao.CheckNotesSharedStatus(ctx, userID, []uint{note.ID})
 
 	// 4. 如果是文件，返回文件内容
 	return dto.PrivateNoteResponse{
@@ -104,6 +121,7 @@ func (s *UserPrivateNoteService) GetNoteOrChildrenWithScope(ctx context.Context,
 			IsPublic:  note.IsPublic,
 			UpdatedAt: note.UpdatedAt,
 			CreatedAt: note.CreatedAt,
+			IsShared:  sharedStatusMap[note.ID],
 		},
 	}, nil
 }

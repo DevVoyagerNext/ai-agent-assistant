@@ -155,3 +155,27 @@ func (u *UserController) UpdateSharedNoteExpire(c *gin.Context) {
 
 	response.Ok(nil, c)
 }
+
+// DeleteSharedNote 删除分享记录接口
+func (u *UserController) DeleteSharedNote(c *gin.Context) {
+	userId, err := u.authService.GetUserID(c)
+	if err != nil {
+		response.FailWithCode(errmsg.UserTokenInvalid, c)
+		return
+	}
+
+	shareIdStr := c.Param("id")
+	shareId, err := strconv.Atoi(shareIdStr)
+	if err != nil || shareId <= 0 {
+		response.FailWithMsg(errmsg.CodeError, "分享ID格式错误", c)
+		return
+	}
+
+	errCode := u.userService.DeleteSharedNote(c.Request.Context(), userId, shareId)
+	if errCode != errmsg.CodeSuccess {
+		response.FailWithMsg(errCode, "删除分享记录失败", c)
+		return
+	}
+
+	response.Ok(nil, c)
+}

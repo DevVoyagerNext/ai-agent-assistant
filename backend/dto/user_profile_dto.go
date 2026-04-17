@@ -30,6 +30,7 @@ type PublicPrivateNoteItem struct {
 	ID        uint      `json:"id"`
 	Title     string    `json:"title"`
 	UpdatedAt time.Time `json:"updatedAt"`
+	IsShared  bool      `json:"isShared"` // 是否正在被分享
 }
 
 // PublicPrivateNoteListRes 公开私人笔记列表响应

@@ -78,6 +78,28 @@ func (dao *UserPrivateNoteDao) GetNotesByParent(ctx context.Context, userID uint
 	return notes, total, err
 }
 
+// CheckNotesSharedStatus 批量检查笔记是否被分享 (返回 map[uint]bool)
+func (dao *UserPrivateNoteDao) CheckNotesSharedStatus(ctx context.Context, userID uint, noteIDs []uint) (map[uint]bool, error) {
+	result := make(map[uint]bool)
+	if len(noteIDs) == 0 {
+		return result, nil
+	}
+
+	var shares []model.NoteShare
+	err := global.GVA_DB.WithContext(ctx).
+		Where("user_id = ? AND private_note_id IN ? AND is_active = 1 AND expires_at > NOW()", userID, noteIDs).
+		Find(&shares).Error
+
+	if err != nil {
+		return result, err
+	}
+
+	for _, share := range shares {
+		result[uint(share.PrivateNoteID)] = true
+	}
+	return result, nil
+}
+
 // CheckNoteExists 判断同一个文件夹下是否存在同名同类型的文件/文件夹
 func (dao *UserPrivateNoteDao) CheckNoteExists(ctx context.Context, userID uint, parentID int, title string, noteType string) (bool, error) {
 	var count int64
@@ -150,6 +172,13 @@ func (dao *UserPrivateNoteDao) UpdateNoteShareExpire(ctx context.Context, userID
 		Model(&model.NoteShare{}).
 		Where("id = ? AND user_id = ?", shareID, userID).
 		Update("expires_at", expireAt).Error
+}
+
+// DeleteNoteShare 删除分享记录
+func (dao *UserPrivateNoteDao) DeleteNoteShare(ctx context.Context, userID uint, shareID int) error {
+	return global.GVA_DB.WithContext(ctx).
+		Where("id = ? AND user_id = ?", shareID, userID).
+		Delete(&model.NoteShare{}).Error
 }
 
 // UpdateNote 更新笔记或文件夹

@@ -95,6 +95,11 @@ export const updateShareNoteExpire = (shareId: number, expireMinutes: number, ex
   return request.put<ApiResponse<null>>(`/user/notes/shares/${shareId}/expire`, { expireMinutes, expireAt })
 }
 
+// 11. 删除分享笔记
+export const deleteSharedNote = (id: number) => {
+  return request.delete<ApiResponse<null>>(`/user/notes/shares/${id}`)
+}
+
 // ----------------------------------------------------
 
 export const getSharedNotes = (page = 1, pageSize = 10) => {
