@@ -863,6 +863,7 @@ const scrollTo = (id: string) => {
                   <Folder v-if="note.type === 'folder'" :size="16" class="note-type-icon folder icon-pink" />
                   <FileText v-else :size="16" class="note-type-icon file icon-blue" />
                   <h4 @click.stop="openRename(note)">{{ note.title }}</h4>
+                  <span v-if="note.isShared" class="status-badge" style="margin-left: 8px;">已分享</span>
                   <Edit3 :size="12" class="edit-icon-mini" @click.stop="openRename(note)" />
                   <span class="date">{{ formatDate(note.updatedAt) }}</span>
                 </div>
@@ -870,8 +871,10 @@ const scrollTo = (id: string) => {
               <div class="note-item-actions">
                 <button 
                   class="share-btn-mini"
-                  @click.stop="openShareModal(note)"
-                  title="分享笔记"
+                  :class="{ 'is-shared': note.isShared }"
+                  :disabled="note.isShared"
+                  @click.stop="note.isShared ? null : openShareModal(note)"
+                  :title="note.isShared ? '已分享' : '分享笔记'"
                 >
                   <Share2 :size="18" />
                 </button>
@@ -1355,8 +1358,10 @@ const scrollTo = (id: string) => {
               <button 
                 v-if="noteDetail"
                 class="icon-btn share-btn-header" 
-                @click="openShareModal(noteDetail.content || noteDetail)"
-                title="分享笔记"
+                :class="{ 'is-shared': noteDetail.content?.isShared || noteDetail.isShared }"
+                :disabled="noteDetail.content?.isShared || noteDetail.isShared"
+                @click="(noteDetail.content?.isShared || noteDetail.isShared) ? null : openShareModal(noteDetail.content || noteDetail)"
+                :title="(noteDetail.content?.isShared || noteDetail.isShared) ? '已分享' : '分享笔记'"
               >
                 <Share2 :size="20" />
               </button>
@@ -1399,6 +1404,7 @@ const scrollTo = (id: string) => {
                 <div class="subject-row-info">
                   <div class="note-title-line">
                     <h4 @click.stop="openRename(child)">{{ child.title }}</h4>
+                    <span v-if="child.isShared" class="status-badge" style="margin-left: 8px;">已分享</span>
                     <Edit3 :size="12" class="edit-icon-mini" @click.stop="openRename(child)" />
                   </div>
                 </div>
@@ -1406,8 +1412,10 @@ const scrollTo = (id: string) => {
                   <!-- 子项列表中的分享按钮 -->
                   <button 
                     class="share-btn-mini"
-                    @click.stop="openShareModal(child)"
-                    title="分享笔记"
+                    :class="{ 'is-shared': child.isShared }"
+                    :disabled="child.isShared"
+                    @click.stop="child.isShared ? null : openShareModal(child)"
+                    :title="child.isShared ? '已分享' : '分享笔记'"
                   >
                     <Share2 :size="16" />
                   </button>
@@ -1530,7 +1538,7 @@ const scrollTo = (id: string) => {
   transition: all 0.2s;
 }
 
-.share-btn-mini:hover {
+.share-btn-mini:hover:not(:disabled) {
   background: rgba(139, 92, 246, 0.1);
   color: #8b5cf6;
 }
@@ -1539,8 +1547,20 @@ const scrollTo = (id: string) => {
   color: #8b5cf6 !important;
 }
 
-.share-btn-header:hover {
+.share-btn-header:hover:not(:disabled) {
   background: rgba(139, 92, 246, 0.1) !important;
+}
+
+.share-btn-mini.is-shared,
+.share-btn-header.is-shared {
+  color: var(--warm-gray-300) !important;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.share-btn-mini.is-shared:hover,
+.share-btn-header.is-shared:hover {
+  background: transparent !important;
 }
 
 .purple-btn {

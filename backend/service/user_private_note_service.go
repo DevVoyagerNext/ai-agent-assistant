@@ -322,7 +322,16 @@ func (s *UserPrivateNoteService) SharePrivateNote(ctx context.Context, userID ui
 		return dto.SharePrivateNoteRes{}, err
 	}
 
-	// 2. 解析过期时间
+	// 2. 检查是否已经被分享过
+	sharedStatusMap, err := s.privateNoteDao.CheckNotesSharedStatus(ctx, userID, []uint{note.ID})
+	if err != nil {
+		return dto.SharePrivateNoteRes{}, err
+	}
+	if sharedStatusMap[note.ID] {
+		return dto.SharePrivateNoteRes{}, errors.New("该笔记当前已被分享，不能重复分享")
+	}
+
+	// 3. 解析过期时间
 	expiresAt, err := time.ParseInLocation("2006-01-02 15:04:05", req.ExpiresAt, time.Local)
 	if err != nil {
 		return dto.SharePrivateNoteRes{}, errors.New("过期时间格式错误，应为 2006-01-02 15:04:05")
