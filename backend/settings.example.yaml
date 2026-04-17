@@ -4,13 +4,13 @@ mysql:
   config: charset=utf8mb4&parseTime=True&loc=Local
   db-name: ai_study_assistant
   username: root
-  password: 123456
+  password: your_database_password
   max-idle-conns: 10
   max-open-conns: 100
   log-mode: "error"
 
 jwt:
-  signing-key: "ai-study-assistant-secret-key"
+  signing-key: "your_jwt_secret_key"
   expires-time: 7200
   refresh-expires-time: 1209600
   buffer-time: 86400
@@ -19,13 +19,13 @@ jwt:
 redis:
   db: 0
   addr: "localhost:6379"
-  password: "123456"
+  password: "your_redis_password"
 
 email:
-  from: "1503464068@qq.com"
+  from: "your_email@example.com"
   nickname: "AI Study Assistant"
-  secret: "lrzykfmkwmahgacg"
-  host: "smtp.qq.com"
+  secret: "your_email_smtp_secret"
+  host: "smtp.example.com"
   port: 465
   is-ssl: true
 
@@ -39,3 +39,8 @@ log:
     - "stderr"
   disable-caller: false
   disable-stacktrace: false
+
+ai:
+  base-url: "https://api.siliconflow.cn/v1"
+  api-key: "your_ai_api_key_here"
+  model: "Pro/deepseek-ai/DeepSeek-V3.2"
