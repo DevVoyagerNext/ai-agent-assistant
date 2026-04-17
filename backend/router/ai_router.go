@@ -13,6 +13,9 @@ func (r *AIRouter) InitAuthAIRouter(Router *gin.RouterGroup) {
 	aiController := &controller.AIController{}
 	aiRouter := Router.Group("/ai")
 	{
-		aiRouter.POST("/chat", aiController.Chat) // AI 聊天接口
+		aiRouter.POST("/chat", aiController.Chat)                               // AI 聊天接口
+		aiRouter.GET("/sessions", aiController.GetUserSessions)                 // 获取用户的历史会话列表
+		aiRouter.PUT("/sessions/:id/title", aiController.UpdateSessionTitle)    // 修改会话标题
+		aiRouter.GET("/sessions/:id/messages", aiController.GetSessionMessages) // 获取具体会话的消息列表
 	}
 }
