@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, nextTick, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import MarkdownIt from 'markdown-it'
+import markdownit from 'markdown-it'
 import hljs from 'highlight.js'
 import 'highlight.js/styles/github.css'
 import { fetchEventSource } from '@microsoft/fetch-event-source'
@@ -19,18 +19,36 @@ import {
 const router = useRouter()
 const route = useRoute()
 
-const md = new MarkdownIt({
+const md = markdownit({
   breaks: true,
   linkify: true,
-  highlight: function (str: string, lang: string, _attrs: string) {
+  highlight: (str: string, lang: string, _attrs: string) => {
     if (lang && hljs.getLanguage(lang)) {
       try {
-        return '<pre class="hljs"><code>' + hljs.highlight(str, { language: lang, ignoreIllegals: true }).value + '</code></pre>'
+        return hljs.highlight(str, { language: lang, ignoreIllegals: true }).value
       } catch (__) {}
     }
-    return '<pre class="hljs"><code>' + md.utils.escapeHtml(str) + '</code></pre>'
+    return '' // Use default escaping
   }
 })
+
+// Custom fence rule to wrap in hljs classes, consistent with SubjectDetail.vue
+md.renderer.rules.fence = (tokens, idx, options, _env, _slf) => {
+  const token = tokens[idx]
+  const info = token.info ? token.info.trim() : ''
+  const langName = info.split(/\s+/g)[0]
+  
+  let highlighted = ''
+  if (options.highlight) {
+    highlighted = options.highlight(token.content, langName, '') || ''
+  }
+
+  if (!highlighted) {
+    highlighted = md.utils.escapeHtml(token.content)
+  }
+
+  return `<pre class="hljs"><code>${highlighted}</code></pre>\n`
+}
 
 const renderMarkdown = (content: string) => {
   if (!content) return ''
