@@ -7,6 +7,12 @@ type AIChatReq struct {
 	ParentID  *int64 `json:"parentId" form:"parentId"`   // 可选，用于分支对话
 }
 
+// ChatStreamChunk 用于流式返回时区分思考过程和正式回复
+type ChatStreamChunk struct {
+	Type    string `json:"type"`    // "reasoning" 或 "message"
+	Content string `json:"content"` // 内容片段
+}
+
 // AIChatRes AI 聊天返回结果
 type AIChatRes struct {
 	Reply     string `json:"reply"`

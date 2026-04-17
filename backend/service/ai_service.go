@@ -133,7 +133,7 @@ func (s *AIService) GetSessionMessages(ctx context.Context, userId uint, session
 }
 
 // Chat 处理与 AI 模型的单次对话（流式）
-func (s *AIService) Chat(ctx context.Context, userId uint, req dto.AIChatReq, fileContents []string) (<-chan string, int64, int64, error) {
+func (s *AIService) Chat(ctx context.Context, userId uint, req dto.AIChatReq, fileContents []string) (<-chan dto.ChatStreamChunk, int64, int64, error) {
 	aiConfig := global.GVA_CONFIG.AI
 	if aiConfig.APIKey == "" || aiConfig.BaseURL == "" {
 		global.GVA_LOG.Error("AI config is missing")
@@ -260,13 +260,14 @@ func (s *AIService) Chat(ctx context.Context, userId uint, req dto.AIChatReq, fi
 		return nil, session.ID, aiMsg.ID, errors.New("AI 服务调用失败")
 	}
 
-	msgChan := make(chan string)
+	msgChan := make(chan dto.ChatStreamChunk)
 
 	go func() {
 		defer stream.Close()
 		defer close(msgChan)
 
 		var fullReply string
+
 		for {
 			response, err := stream.Recv()
 			if errors.Is(err, io.EOF) {
@@ -279,10 +280,17 @@ func (s *AIService) Chat(ctx context.Context, userId uint, req dto.AIChatReq, fi
 			}
 
 			if len(response.Choices) > 0 {
-				chunk := response.Choices[0].Delta.Content
-				if chunk != "" {
-					fullReply += chunk
-					msgChan <- chunk
+				delta := response.Choices[0].Delta
+
+				// 处理思考过程 (Reasoning Content)
+				if delta.ReasoningContent != "" {
+					msgChan <- dto.ChatStreamChunk{Type: "reasoning", Content: delta.ReasoningContent}
+				}
+
+				// 处理正式回复 (Content)
+				if delta.Content != "" {
+					fullReply += delta.Content
+					msgChan <- dto.ChatStreamChunk{Type: "message", Content: delta.Content}
 				}
 			}
 		}

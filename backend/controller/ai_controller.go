@@ -86,10 +86,10 @@ func (con *AIController) Chat(c *gin.Context) {
 
 	// 流式监听并向客户端发送 chunk 数据
 	c.Stream(func(w io.Writer) bool {
-		if msg, ok := <-streamChan; ok {
+		if chunk, ok := <-streamChan; ok {
 			// 将字符串转换为 Base64 编码发送，既能完美保留空格和换行，又无需 JSON 序列化的开销
-			encodedMsg := base64.StdEncoding.EncodeToString([]byte(msg))
-			c.SSEvent("message", encodedMsg)
+			encodedMsg := base64.StdEncoding.EncodeToString([]byte(chunk.Content))
+			c.SSEvent(chunk.Type, encodedMsg)
 			return true
 		}
 		// 通道关闭，发送结束标记
