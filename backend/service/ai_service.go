@@ -229,7 +229,34 @@ func (s *AIService) Chat(ctx context.Context, userId uint, req dto.AIChatReq, fi
 		Content: finalPrompt,
 	})
 
-	// 保存用户消息
+	// 调用 AI (流式)
+	reqStream := openai.ChatCompletionRequest{
+		Model:    aiConfig.Model,
+		Messages: messages,
+		Stream:   true,
+	}
+
+	stream, err := client.CreateChatCompletionStream(ctx, reqStream)
+	if err != nil {
+		global.GVA_LOG.Error("AI API stream call failed", zap.Error(err))
+		if isNewSession {
+			db.Unscoped().Where("id = ?", session.ID).Delete(&model.Session{})
+		}
+		return nil, 0, 0, errors.New("AI 服务调用失败")
+	}
+
+	// 阻塞读取第一个数据块，确保 AI 真的有响应，避免空占位存入数据库
+	firstResponse, err := stream.Recv()
+	if err != nil {
+		stream.Close()
+		global.GVA_LOG.Error("AI API stream receive failed on first chunk", zap.Error(err))
+		if isNewSession {
+			db.Unscoped().Where("id = ?", session.ID).Delete(&model.Session{})
+		}
+		return nil, 0, 0, errors.New("AI 服务响应失败")
+	}
+
+	// 确认收到第一块数据（成功连接大模型）后，再将用户消息和 AI 占位消息存入数据库
 	userMsg := model.Message{
 		SessionID: session.ID,
 		ParentID:  req.ParentID,
@@ -247,19 +274,6 @@ func (s *AIService) Chat(ctx context.Context, userId uint, req dto.AIChatReq, fi
 	}
 	db.Create(&aiMsg)
 
-	// 调用 AI (流式)
-	reqStream := openai.ChatCompletionRequest{
-		Model:    aiConfig.Model,
-		Messages: messages,
-		Stream:   true,
-	}
-
-	stream, err := client.CreateChatCompletionStream(ctx, reqStream)
-	if err != nil {
-		global.GVA_LOG.Error("AI API stream call failed", zap.Error(err))
-		return nil, session.ID, aiMsg.ID, errors.New("AI 服务调用失败")
-	}
-
 	msgChan := make(chan dto.ChatStreamChunk)
 
 	go func() {
@@ -267,6 +281,18 @@ func (s *AIService) Chat(ctx context.Context, userId uint, req dto.AIChatReq, fi
 		defer close(msgChan)
 
 		var fullReply string
+
+		// 先处理已经收到的第一个 chunk
+		if len(firstResponse.Choices) > 0 {
+			delta := firstResponse.Choices[0].Delta
+			if delta.ReasoningContent != "" {
+				msgChan <- dto.ChatStreamChunk{Type: "reasoning", Content: delta.ReasoningContent}
+			}
+			if delta.Content != "" {
+				fullReply += delta.Content
+				msgChan <- dto.ChatStreamChunk{Type: "message", Content: delta.Content}
+			}
+		}
 
 		for {
 			response, err := stream.Recv()
@@ -298,6 +324,14 @@ func (s *AIService) Chat(ctx context.Context, userId uint, req dto.AIChatReq, fi
 		// 流式结束或异常中断后，更新完整内容到数据库
 		if fullReply != "" {
 			global.GVA_DB.Model(&model.Message{}).Where("id = ?", aiMsg.ID).Update("content", fullReply)
+		} else {
+			// 如果 AI 没有任何回复（发送失败或异常中断），清理掉刚才占位的数据库记录
+			global.GVA_DB.Unscoped().Where("id IN ?", []int64{userMsg.ID, aiMsg.ID}).Delete(&model.Message{})
+			// 如果是新建的会话，且第一条消息就失败了，同时清理空会话
+			if isNewSession {
+				global.GVA_DB.Unscoped().Where("id = ?", session.ID).Delete(&model.Session{})
+			}
+			return // 直接返回，不再执行后续的生成标题或摘要逻辑
 		}
 
 		// 异步任务处理：新会话生成标题，老会话检查是否需要生成摘要

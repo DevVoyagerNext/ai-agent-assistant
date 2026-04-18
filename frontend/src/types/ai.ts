@@ -21,6 +21,7 @@ export interface AIChatMessage {
   createdAt: string
   // For frontend UI only
   files?: File[] 
+  reasoning?: string
 }
 
 export interface AIMessageListRes {
