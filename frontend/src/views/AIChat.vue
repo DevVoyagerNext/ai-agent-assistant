@@ -12,7 +12,7 @@ import {
 } from '../api/ai'
 import type { AIChatSession, AIChatMessage } from '../types/ai'
 import { 
-  Plus, MessageSquare, Send, Paperclip, X, MoreVertical, Edit3, 
+  Plus, MessageSquare, Send, MoreVertical, Edit3, 
   Trash2, Loader2, ArrowLeft, Bot, User, Sparkles, ChevronDown, ChevronUp,
   ArrowUpCircle, ArrowDownCircle, Copy
 } from 'lucide-vue-next'
@@ -795,17 +795,6 @@ const adjustTextareaHeight = () => {
       </div>
 
       <div class="chat-input-area">
-        <!-- Selected Files Preview -->
-        <div v-if="selectedFiles.length > 0" class="selected-files-preview">
-          <div v-for="(file, idx) in selectedFiles" :key="idx" class="preview-file-tag">
-            <Paperclip :size="14" />
-            <span class="file-name">{{ file.name }}</span>
-            <button class="remove-file-btn" @click="removeFile(idx)">
-              <X :size="14" />
-            </button>
-          </div>
-        </div>
-
         <div class="input-box">
           <textarea 
             ref="chatInputRef"
@@ -818,15 +807,13 @@ const adjustTextareaHeight = () => {
           ></textarea>
           
           <div class="input-actions">
-            <label class="attach-btn" title="上传文件 (最多3个)">
-              <input type="file" multiple @change="handleFileSelect" style="display: none;" />
-              <Paperclip :size="20" />
-            </label>
+            <!-- Occupy left space to keep right-aligned flex layout looking balanced or simply justify-content: flex-end -->
+            <div class="spacer"></div>
             
             <button 
               class="send-btn" 
-              :class="{ active: inputContent.trim() || selectedFiles.length > 0 }"
-              :disabled="isSending || (!inputContent.trim() && selectedFiles.length === 0)"
+              :class="{ active: inputContent.trim() }"
+              :disabled="isSending || !inputContent.trim()"
               @click="sendMessage"
             >
               <Send :size="18" />
@@ -1477,45 +1464,6 @@ const adjustTextareaHeight = () => {
   align-items: center;
 }
 
-.selected-files-preview {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-  margin-bottom: 12px;
-  width: calc(100% - 98px);
-  max-width: 752px;
-  margin-right: 98px;
-  box-sizing: border-box;
-}
-
-.preview-file-tag {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 10px;
-  background: #f1f5f9;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  font-size: 13px;
-  color: #333;
-}
-
-.remove-file-btn {
-  background: transparent;
-  border: none;
-  color: #94a3b8;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  padding: 2px;
-  border-radius: 4px;
-}
-
-.remove-file-btn:hover {
-  background: #e2e8f0;
-  color: #ef4444;
-}
-
 .input-box {
   display: flex;
   flex-direction: column;
@@ -1542,22 +1490,6 @@ const adjustTextareaHeight = () => {
   justify-content: space-between;
   align-items: center;
   width: 100%;
-}
-
-.attach-btn {
-  color: #666;
-  cursor: pointer;
-  padding: 8px;
-  border-radius: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: background 0.2s;
-  margin-left: -8px;
-}
-
-.attach-btn:hover {
-  background: rgba(0,0,0,0.05);
 }
 
 .chat-textarea {
