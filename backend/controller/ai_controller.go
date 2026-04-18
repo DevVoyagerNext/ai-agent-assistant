@@ -6,7 +6,6 @@ import (
 	"backend/pkg/utils/response"
 	"backend/service"
 	"encoding/base64"
-	"fmt"
 	"io"
 	"strconv"
 
@@ -27,45 +26,13 @@ func (con *AIController) Chat(c *gin.Context) {
 		return
 	}
 
-	var fileContents []string
-	form, err := c.MultipartForm()
-	if err == nil && form != nil {
-		files := form.File["files"]
-		if len(files) > 3 {
-			response.FailWithMsg(errmsg.CodeError, "最多只能上传3个文件", c)
-			return
-		}
-
-		for _, file := range files {
-			if file.Size > 5*1024*1024 { // 限制单文件 5MB
-				response.FailWithMsg(errmsg.CodeError, "单个文件大小不能超过5MB: "+file.Filename, c)
-				return
-			}
-
-			f, err := file.Open()
-			if err != nil {
-				response.FailWithMsg(errmsg.CodeError, "无法读取文件: "+file.Filename, c)
-				return
-			}
-
-			contentBytes, err := io.ReadAll(f)
-			f.Close()
-			if err != nil {
-				response.FailWithMsg(errmsg.CodeError, "读取文件内容失败: "+file.Filename, c)
-				return
-			}
-
-			fileContents = append(fileContents, fmt.Sprintf("【文件: %s】\n%s\n", file.Filename, string(contentBytes)))
-		}
-	}
-
 	userId, err := con.authService.GetUserID(c)
 	if err != nil || userId == 0 {
 		response.FailWithCode(errmsg.UserTokenNotExist, c) // 必须登录
 		return
 	}
 
-	streamChan, sessionId, messageId, err := con.aiService.Chat(c.Request.Context(), userId, req, fileContents)
+	streamChan, sessionId, messageId, err := con.aiService.Chat(c.Request.Context(), userId, req)
 	if err != nil {
 		response.FailWithMsg(errmsg.CodeError, err.Error(), c)
 		return

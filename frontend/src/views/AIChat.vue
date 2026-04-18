@@ -152,7 +152,6 @@ const messages = ref<AIChatMessage[]>([])
 const hasMoreMessages = ref(true)
 const loadingMessages = ref(false)
 const inputContent = ref('')
-const selectedFiles = ref<File[]>([])
 const isSending = ref(false)
 const messagesContainer = ref<HTMLElement | null>(null)
 let activeChatAbortController: AbortController | null = null
@@ -363,32 +362,6 @@ const scrollToBottom = () => {
 }
 
 // ===== Chat Input Logic =====
-const handleFileSelect = (e: Event) => {
-  const target = e.target as HTMLInputElement
-  if (!target.files) return
-  
-  const newFiles = Array.from(target.files)
-  if (selectedFiles.value.length + newFiles.length > 3) {
-    alert('最多只能上传 3 个文件')
-    return
-  }
-  
-  for (const file of newFiles) {
-    if (file.size > 5 * 1024 * 1024) {
-      alert(`文件 ${file.name} 超过 5MB 限制`)
-      continue
-    }
-    selectedFiles.value.push(file)
-  }
-  
-  // reset input
-  target.value = ''
-}
-
-const removeFile = (index: number) => {
-  selectedFiles.value.splice(index, 1)
-}
-
 const parseSSEJson = <T>(data: string): T | null => {
   try {
     return JSON.parse(data) as T
@@ -464,7 +437,7 @@ const extractSSEEvents = (buffer: string) => {
 
 const sendMessage = async () => {
   const prompt = inputContent.value.trim()
-  if (!prompt && selectedFiles.value.length === 0) return
+  if (!prompt) return
   if (isSending.value) return
 
   // Optimistic UI
@@ -478,8 +451,7 @@ const sendMessage = async () => {
     role: 'user',
     content: prompt,
     status: 'active',
-    createdAt: new Date().toISOString(),
-    files: [...selectedFiles.value]
+    createdAt: new Date().toISOString()
   })
   
   messages.value.push(userMsg)
@@ -492,14 +464,8 @@ const sendMessage = async () => {
   if (parentId) {
     reqData.append('parentId', parentId.toString())
   }
-  if (selectedFiles.value.length > 0) {
-    selectedFiles.value.forEach(file => {
-      reqData.append('files', file)
-    })
-  }
   
   inputContent.value = ''
-  selectedFiles.value = []
   isSending.value = true
   nextTick(() => adjustTextareaHeight())
   
@@ -767,12 +733,6 @@ const adjustTextareaHeight = () => {
           </div>
           <div class="message-content-wrap">
             <!-- Render files if any (mainly for user) -->
-            <div v-if="msg.files && msg.files.length > 0" class="msg-files">
-              <div v-for="(f, i) in msg.files" :key="i" class="msg-file-item">
-                <Paperclip :size="12" />
-                <span class="file-name">{{ f.name }}</span>
-              </div>
-            </div>
             
             <div class="message-bubble-container">
               <div class="message-bubble" :class="{ 'markdown-body': msg.role === 'assistant' }">
