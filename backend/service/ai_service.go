@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/sashabaranov/go-openai"
@@ -257,13 +258,24 @@ func (s *AIService) Chat(ctx context.Context, userId uint, req dto.AIChatReq, fi
 	}
 
 	// 确认收到第一块数据（成功连接大模型）后，再将用户消息和 AI 占位消息存入数据库
+	// 清理 prompt 中可能存在的非 UTF-8 字符或空字符（如上传的 PDF 二进制数据），防止存入数据库失败
+	safePrompt := strings.ToValidUTF8(finalPrompt, "")
+	safePrompt = strings.ReplaceAll(safePrompt, "\x00", "")
+
 	userMsg := model.Message{
 		SessionID: session.ID,
 		ParentID:  req.ParentID,
 		Role:      openai.ChatMessageRoleUser,
-		Content:   finalPrompt,
+		Content:   safePrompt,
 	}
-	db.Create(&userMsg)
+	if err := db.Create(&userMsg).Error; err != nil {
+		global.GVA_LOG.Error("Failed to save user message", zap.Error(err))
+		if isNewSession {
+			db.Unscoped().Where("id = ?", session.ID).Delete(&model.Session{})
+		}
+		stream.Close()
+		return nil, 0, 0, errors.New("保存用户消息失败: 数据包含非法字符")
+	}
 
 	// 保存 AI 回复消息占位符
 	aiMsg := model.Message{
@@ -272,7 +284,15 @@ func (s *AIService) Chat(ctx context.Context, userId uint, req dto.AIChatReq, fi
 		Role:      openai.ChatMessageRoleAssistant,
 		Content:   "", // 留空，流式输出完成后再更新
 	}
-	db.Create(&aiMsg)
+	if err := db.Create(&aiMsg).Error; err != nil {
+		global.GVA_LOG.Error("Failed to save AI message placeholder", zap.Error(err))
+		if isNewSession {
+			db.Unscoped().Where("id = ?", session.ID).Delete(&model.Session{})
+		}
+		db.Unscoped().Where("id = ?", userMsg.ID).Delete(&model.Message{})
+		stream.Close()
+		return nil, 0, 0, errors.New("保存AI占位消息失败")
+	}
 
 	msgChan := make(chan dto.ChatStreamChunk)
 
