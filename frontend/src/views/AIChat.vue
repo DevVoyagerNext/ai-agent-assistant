@@ -211,11 +211,22 @@ onBeforeUnmount(() => {
   messagesContainer.value?.removeEventListener('click', handleCodeCopy)
 })
 
+// ===== Toast Logic =====
+const toastMsg = ref('')
+const showToastTimer = ref<any>(null)
+const showToast = (msg: string) => {
+  toastMsg.value = msg
+  if (showToastTimer.value) clearTimeout(showToastTimer.value)
+  showToastTimer.value = setTimeout(() => {
+    toastMsg.value = ''
+  }, 2000)
+}
+
 // ===== Copy Code Block =====
 const handleCodeCopy = async (e: MouseEvent) => {
-  const target = e.target as HTMLElement
-  if (target && target.classList.contains('code-copy-btn')) {
-    const rawCode = target.getAttribute('data-code') || ''
+  const btn = (e.target as HTMLElement).closest('.code-copy-btn') as HTMLElement
+  if (btn) {
+    const rawCode = btn.getAttribute('data-code') || ''
     // Decode HTML entities
     const textarea = document.createElement('textarea')
     textarea.innerHTML = rawCode
@@ -223,12 +234,10 @@ const handleCodeCopy = async (e: MouseEvent) => {
     
     try {
       await navigator.clipboard.writeText(decodedCode)
-      const originalText = target.innerText
-      target.innerText = '已复制!'
-      target.classList.add('copied')
+      btn.classList.add('copied')
+      showToast('代码已复制到剪贴板')
       setTimeout(() => {
-        target.innerText = originalText
-        target.classList.remove('copied')
+        btn.classList.remove('copied')
       }, 2000)
     } catch (err) {
       console.error('Failed to copy code:', err)
@@ -608,6 +617,12 @@ const scrollToNextUserMsg = (direction: 'up' | 'down') => {
     }
   })
 
+  // 如果点击的是“向下”且当前已经是最后一条用户消息，则跳转到最底部
+  if (direction === 'down' && closestIdx === userMsgs.length - 1) {
+    scrollToBottom()
+    return
+  }
+
   let targetIdx = closestIdx
   if (direction === 'up') {
     targetIdx = Math.max(0, closestIdx - 1)
@@ -627,6 +642,7 @@ const copyText = async (text: string) => {
   if (!text) return
   try {
     await navigator.clipboard.writeText(text)
+    showToast('内容已复制到剪贴板')
   } catch (err) {
     console.error('Failed to copy', err)
   }
@@ -649,6 +665,13 @@ const adjustTextareaHeight = () => {
 
 <template>
   <div class="ai-chat-layout">
+    <!-- Global Toast Notification -->
+    <Transition name="toast">
+      <div v-if="toastMsg" class="toast-notification">
+        {{ toastMsg }}
+      </div>
+    </Transition>
+
     <!-- Sidebar -->
     <aside class="chat-sidebar">
       <div class="sidebar-header">
@@ -812,7 +835,7 @@ const adjustTextareaHeight = () => {
             
             <button 
               class="send-btn" 
-              :class="{ active: inputContent.trim() }"
+              :class="{ active: inputContent.trim() && !isSending }"
               :disabled="isSending || !inputContent.trim()"
               @click="sendMessage"
             >
@@ -1548,5 +1571,28 @@ const adjustTextareaHeight = () => {
   .mobile-menu-btn {
     display: block;
   }
+}
+
+/* ===== Toast Notification ===== */
+.toast-notification {
+  position: fixed;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #333;
+  color: white;
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 14px;
+  z-index: 9999;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+.toast-enter-active, .toast-leave-active {
+  transition: all 0.3s ease;
+}
+.toast-enter-from, .toast-leave-to {
+  opacity: 0;
+  transform: translate(-50%, -20px);
 }
 </style>

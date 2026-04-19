@@ -17,11 +17,9 @@ export interface AIChatMessage {
   parentId: number | null
   role: 'user' | 'assistant'
   content: string
-  status: 'active' | string
-  createdAt: string
-  // For frontend UI only
-  files?: File[] 
   reasoning?: string
+  status: 'active' | 'deleted' | 'hidden'
+  createdAt: string
 }
 
 export interface AIMessageListRes {
