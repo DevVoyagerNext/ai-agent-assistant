@@ -11,6 +11,7 @@ type KnowledgeNode struct {
 	Status      string `gorm:"type:enum('draft', 'published', 'hidden');default:'draft';comment:节点显示状态" json:"status"`
 	AuditStatus int8   `gorm:"default:0;index:idx_audit_status;comment:审核状态：0=编辑中, 1=待审核, 2=已通过, 3=被驳回" json:"auditStatus"`
 	LastLogID   int64  `gorm:"default:0;comment:关联最新一条审批流水ID" json:"lastLogId"`
+	HasDraft    int8   `gorm:"type:tinyint(1);default:0;comment:是否有未处理的草稿：1=是, 0=否" json:"hasDraft"`
 	Level       int8   `gorm:"default:1;comment:节点层级：1=篇, 2=章, 3=节, 4=知识点" json:"level"`
 	IsLeaf      int8   `gorm:"default:0;index:idx_is_leaf;comment:是否为叶子节点（内容页）：1=是, 0=否" json:"isLeaf"`
 	SortOrder   int    `gorm:"default:0;comment:同层级下的显示排序序号" json:"sortOrder"`

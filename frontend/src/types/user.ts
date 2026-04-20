@@ -161,3 +161,28 @@ export interface RecentSubjectListRes {
   total: number
   list: UserSubjectProgressRes[]
 }
+
+// ---------------- 用户创建的教材类型 ----------------
+
+export interface CreatedSubjectItem {
+  id: number
+  slug: string
+  name: string
+  nameDraft: string
+  icon: string
+  description: string
+  descriptionDraft: string
+  coverImageId: number
+  coverImageIdDraft: number
+  status: 'draft' | 'published' | 'archived'
+  auditStatus: number // 0=编辑中, 1=待审核, 2=已通过, 3=被驳回
+  hasDraft: number // 1=是, 0=否
+  createdAt: string
+  likeCount: number
+  collectCount: number
+}
+
+export interface CreatedSubjectsRes {
+  total: number
+  list: CreatedSubjectItem[]
+}

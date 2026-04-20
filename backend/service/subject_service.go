@@ -106,18 +106,48 @@ func (s *SubjectService) SearchSubjects(ctx context.Context, keyword string, use
 	return dto.SubjectListRes{Total: total, List: enriched}, errmsg.CodeSuccess
 }
 
-func (s *SubjectService) GetUserCreatedSubjects(ctx context.Context, userId uint, page int, pageSize int) (dto.SubjectListRes, int) {
+func (s *SubjectService) GetUserCreatedSubjects(ctx context.Context, userId uint, page int, pageSize int) (dto.UserCreatedSubjectListRes, int) {
 	subjects, total, err := s.subjectDao.GetUserCreatedSubjects(ctx, userId, page, pageSize)
 	if err != nil {
-		return dto.SubjectListRes{}, errmsg.CodeError
+		return dto.UserCreatedSubjectListRes{}, errmsg.CodeError
 	}
 
-	enriched, code := s.enrichSubjectList(ctx, userId, subjects)
-	if code != errmsg.CodeSuccess {
-		return dto.SubjectListRes{}, code
+	if len(subjects) == 0 {
+		return dto.UserCreatedSubjectListRes{Total: 0, List: []dto.UserCreatedSubjectRes{}}, errmsg.CodeSuccess
 	}
 
-	return dto.SubjectListRes{Total: total, List: enriched}, errmsg.CodeSuccess
+	var subjectIds []uint
+	for _, sub := range subjects {
+		subjectIds = append(subjectIds, sub.ID)
+	}
+
+	likeCountMap, collectCountMap, err := s.subjectDao.GetSubjectsStats(ctx, subjectIds)
+	if err != nil {
+		return dto.UserCreatedSubjectListRes{}, errmsg.CodeError
+	}
+
+	var resList []dto.UserCreatedSubjectRes
+	for _, sub := range subjects {
+		resList = append(resList, dto.UserCreatedSubjectRes{
+			ID:                sub.ID,
+			Slug:              sub.Slug,
+			Name:              sub.Name,
+			NameDraft:         sub.NameDraft,
+			Icon:              sub.Icon,
+			Description:       sub.Description,
+			DescriptionDraft:  sub.DescriptionDraft,
+			CoverImageID:      sub.CoverImageID,
+			CoverImageIDDraft: sub.CoverImageIDDraft,
+			Status:            sub.Status,
+			AuditStatus:       sub.AuditStatus,
+			HasDraft:          sub.HasDraft,
+			CreatedAt:         sub.CreatedAt,
+			LikeCount:         likeCountMap[sub.ID],
+			CollectCount:      collectCountMap[sub.ID],
+		})
+	}
+
+	return dto.UserCreatedSubjectListRes{Total: total, List: resList}, errmsg.CodeSuccess
 }
 
 func (s *SubjectService) GetUserCollectedSubjects(ctx context.Context, userId uint, page, pageSize int) ([]dto.SubjectRes, int64, error) {

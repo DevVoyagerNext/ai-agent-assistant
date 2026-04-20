@@ -12,7 +12,8 @@ import type {
   SharePrivateNoteRes,
   ShareBasicInfoRes,
   ShareAccessReq,
-  ShareAccessRes
+  ShareAccessRes,
+  CreatedSubjectsRes
 } from '../types/user'
 
 export const getUserInfo = () => {
@@ -98,6 +99,13 @@ export const updateShareNoteExpire = (shareId: number, expireMinutes: number, ex
 // 11. 删除分享笔记
 export const deleteSharedNote = (id: number) => {
   return request.delete<ApiResponse<null>>(`/user/notes/shares/${id}`)
+}
+
+// 12. 获取用户自己创建的教材列表
+export const getUserCreatedSubjects = (page = 1, pageSize = 10) => {
+  return request.get<ApiResponse<CreatedSubjectsRes>>('/user/subjects/created', {
+    params: { page, pageSize }
+  })
 }
 
 // ----------------------------------------------------

@@ -17,6 +17,7 @@ type Subject struct {
 	Status            string    `gorm:"type:enum('draft', 'published', 'archived');default:'draft';comment:教材整体状态" json:"status"`
 	AuditStatus       int8      `gorm:"default:0;index:idx_audit_status;comment:审核状态：0=编辑中, 1=待审核, 2=已通过, 3=被驳回" json:"auditStatus"`
 	LastLogID         int64     `gorm:"default:0;comment:关联最新一条审批流水ID" json:"lastLogId"`
+	HasDraft          int8      `gorm:"type:tinyint(1);default:0;comment:是否有未处理的草稿：1=是, 0=否" json:"hasDraft"`
 	CreatedAt         time.Time `gorm:"default:CURRENT_TIMESTAMP;comment:学科创建时间" json:"createdAt"`
 }
 

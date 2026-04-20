@@ -9,7 +9,8 @@ import {
   getUserLikedSubjects,
   getUserLearningSubjects,
   getUserCompletedSubjects,
-  getUserRecentSubjects
+  getUserRecentSubjects,
+  getUserCreatedSubjects
 } from '../api/user'
 import type { 
   UserInfoRes, 
@@ -18,7 +19,8 @@ import type {
   SharedNoteItem, 
   LearnedSubjectItem,
   CollectFolderRes,
-  UserSubjectProgressRes
+  UserSubjectProgressRes,
+  CreatedSubjectItem
 } from '../types/user'
 
 export const useUserProfile = () => {
@@ -35,6 +37,7 @@ export const useUserProfile = () => {
   const learningSubjects = ref<UserSubjectProgressRes[]>([])
   const completedSubjects = ref<UserSubjectProgressRes[]>([])
   const recentSubjects = ref<UserSubjectProgressRes[]>([])
+  const createdSubjects = ref<CreatedSubjectItem[]>([])
 
   // Loading states
   const loadingUserInfo = ref(true)
@@ -49,6 +52,7 @@ export const useUserProfile = () => {
   const loadingLearningSubjects = ref(true)
   const loadingCompletedSubjects = ref(true)
   const loadingRecentSubjects = ref(true)
+  const loadingCreatedSubjects = ref(true)
 
   // Errors (optional, could be handled globally, but here we keep track to show error states)
   const errorUserInfo = ref('')
@@ -199,6 +203,20 @@ export const useUserProfile = () => {
     }
   }
 
+  const fetchCreatedSubjects = async () => {
+    loadingCreatedSubjects.value = true
+    try {
+      const res = await getUserCreatedSubjects()
+      if (res.data?.code === 200 && res.data.data) {
+        createdSubjects.value = res.data.data.list || []
+      }
+    } catch (err) {
+      console.error(err)
+    } finally {
+      loadingCreatedSubjects.value = false
+    }
+  }
+
   // ----------- 新增 Fetchers -----------
   const fetchCollectFolders = async () => {
     loadingCollectFolders.value = true
@@ -281,6 +299,7 @@ export const useUserProfile = () => {
     fetchLearningSubjects()
     fetchCompletedSubjects()
     fetchRecentSubjects()
+    fetchCreatedSubjects()
   }
 
   onMounted(() => {
@@ -298,6 +317,7 @@ export const useUserProfile = () => {
     learningSubjects,
     completedSubjects,
     recentSubjects,
+    createdSubjects,
 
     loadingUserInfo,
     loadingActivities,
@@ -309,6 +329,7 @@ export const useUserProfile = () => {
     loadingLearningSubjects,
     loadingCompletedSubjects,
     loadingRecentSubjects,
+    loadingCreatedSubjects,
     
     errorUserInfo,
     refreshAll

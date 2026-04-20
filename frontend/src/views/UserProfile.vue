@@ -33,6 +33,7 @@ const {
   collectFolders,
   likedSubjects,
   recentSubjects,
+  createdSubjects,
   
   loadingUserInfo,
   loadingActivities,
@@ -42,10 +43,24 @@ const {
   loadingCollectFolders,
   loadingLikedSubjects,
   loadingRecentSubjects,
+  loadingCreatedSubjects,
   
   errorUserInfo,
   refreshAll
 } = useUserProfile()
+
+// --- 用户创建的教材分类 ---
+const publishedNoDraftSubjects = computed(() => 
+  createdSubjects.value.filter(s => s.status === 'published' && s.hasDraft === 0)
+)
+
+const publishedWithDraftSubjects = computed(() => 
+  createdSubjects.value.filter(s => s.status === 'published' && s.hasDraft === 1)
+)
+
+const draftSubjects = computed(() => 
+  createdSubjects.value.filter(s => s.status === 'draft')
+)
 
 const toast = reactive({
   show: false,
@@ -805,6 +820,85 @@ const scrollTo = (id: string) => {
             </div>
             <div v-if="!recentSubjects.length" class="empty-state">
               暂无学习数据
+            </div>
+          </div>
+        </div>
+
+        <!-- Created Subjects -->
+        <div id="created" class="card">
+          <div class="card-header">
+            <Layers :size="20" class="icon-blue" />
+            <h2>创建的教材</h2>
+          </div>
+          
+          <div v-if="loadingCreatedSubjects" class="list-skeleton">
+            <div v-for="i in 3" :key="i" class="list-item-skeleton" style="padding: 12px 0;">
+              <div class="skeleton-col">
+                <Skeleton width="80%" height="16px" />
+                <Skeleton width="40%" height="12px" style="margin-top: 8px;" />
+              </div>
+            </div>
+          </div>
+          <div v-else class="note-list">
+            <!-- 已发布（无草稿） -->
+            <div v-if="publishedNoDraftSubjects.length" class="subject-group">
+              <h3 class="group-title">已发布</h3>
+              <div 
+                v-for="subject in publishedNoDraftSubjects" 
+                :key="subject.id" 
+                class="note-item"
+                @click="router.push(`/subject/${subject.id}`)"
+                style="cursor: pointer;"
+              >
+                <div class="note-title-line">
+                  <Book :size="16" class="note-type-icon icon-teal" />
+                  <h4>{{ subject.name }}</h4>
+                  <span class="status-badge published">已发布</span>
+                  <span class="date">{{ formatDate(subject.createdAt) }}</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- 已发布（有草稿） -->
+            <div v-if="publishedWithDraftSubjects.length" class="subject-group">
+              <h3 class="group-title">已发布 (有草稿待处理)</h3>
+              <div 
+                v-for="subject in publishedWithDraftSubjects" 
+                :key="subject.id" 
+                class="note-item"
+                @click="router.push(`/subject/${subject.id}`)"
+                style="cursor: pointer;"
+              >
+                <div class="note-title-line">
+                  <Book :size="16" class="note-type-icon icon-orange" />
+                  <h4>{{ subject.name }}</h4>
+                  <span class="status-badge has-draft">有草稿</span>
+                  <span class="date">{{ formatDate(subject.createdAt) }}</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- 未发布 -->
+            <div v-if="draftSubjects.length" class="subject-group">
+              <h3 class="group-title">未发布 (草稿)</h3>
+              <div 
+                v-for="subject in draftSubjects" 
+                :key="subject.id" 
+                class="note-item"
+                @click="router.push(`/subject/${subject.id}`)"
+                style="cursor: pointer;"
+              >
+                <div class="note-title-line">
+                  <Book :size="16" class="note-type-icon icon-gray" />
+                  <h4>{{ subject.nameDraft || subject.name || '未命名教材' }}</h4>
+                  <span class="status-badge draft">草稿</span>
+                  <span class="date">{{ formatDate(subject.createdAt) }}</span>
+                </div>
+              </div>
+            </div>
+
+            <div v-if="!createdSubjects.length" class="empty-state">
+              暂无创建的教材
             </div>
           </div>
         </div>
@@ -2786,5 +2880,42 @@ const scrollTo = (id: string) => {
   border-radius: 6px;
   font-weight: 600;
   cursor: pointer;
+}
+
+/* 教材分组样式 */
+.subject-group {
+  margin-bottom: 24px;
+}
+
+.subject-group:last-child {
+  margin-bottom: 0;
+}
+
+.group-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--warm-gray-500);
+  margin-bottom: 12px;
+  padding-left: 10px;
+  border-left: 3px solid var(--notion-blue);
+}
+
+.status-badge.published {
+  background: rgba(16, 185, 129, 0.1);
+  color: #10b981;
+}
+
+.status-badge.has-draft {
+  background: rgba(245, 158, 11, 0.1);
+  color: #f59e0b;
+}
+
+.status-badge.draft {
+  background: rgba(107, 114, 128, 0.1);
+  color: #6b7280;
+}
+
+.icon-gray {
+  color: #6b7280;
 }
 </style>

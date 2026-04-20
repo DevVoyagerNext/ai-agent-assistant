@@ -57,6 +57,30 @@ type SubjectListRes struct {
 	List  []SubjectRes `json:"list"`
 }
 
+// UserCreatedSubjectRes 用户创建的教材返回结构，包含草稿和统计信息
+type UserCreatedSubjectRes struct {
+	ID                uint      `json:"id"`
+	Slug              string    `json:"slug"`
+	Name              string    `json:"name"`
+	NameDraft         string    `json:"nameDraft"`
+	Icon              string    `json:"icon"`
+	Description       string    `json:"description"`
+	DescriptionDraft  string    `json:"descriptionDraft"`
+	CoverImageID      int       `json:"coverImageId"`
+	CoverImageIDDraft int       `json:"coverImageIdDraft"`
+	Status            string    `json:"status"`
+	AuditStatus       int8      `json:"auditStatus"`
+	HasDraft          int8      `json:"hasDraft"`
+	CreatedAt         time.Time `json:"createdAt"`
+	LikeCount         int64     `json:"likeCount"`    // 点赞总数
+	CollectCount      int64     `json:"collectCount"` // 收藏总数
+}
+
+type UserCreatedSubjectListRes struct {
+	Total int64                   `json:"total"`
+	List  []UserCreatedSubjectRes `json:"list"`
+}
+
 type CollectFolderRes struct {
 	ID          int       `json:"id"`
 	Name        string    `json:"name"`

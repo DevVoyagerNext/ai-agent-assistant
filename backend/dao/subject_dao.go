@@ -341,3 +341,49 @@ func (d *SubjectDao) UncollectSubject(ctx context.Context, userId uint, subjectI
 	return global.GVA_DB.WithContext(ctx).Where("user_id = ? AND subject_id = ?", userId, subjectId).
 		Delete(&model.UserCollectItem{}).Error
 }
+
+func (d *SubjectDao) GetSubjectsStats(ctx context.Context, subjectIds []uint) (map[uint]int64, map[uint]int64, error) {
+	likeCountMap := make(map[uint]int64)
+	collectCountMap := make(map[uint]int64)
+
+	if len(subjectIds) == 0 {
+		return likeCountMap, collectCountMap, nil
+	}
+
+	// 统计点赞数
+	type CountResult struct {
+		SubjectID int
+		Total     int64
+	}
+
+	var likeResults []CountResult
+	err := global.GVA_DB.WithContext(ctx).
+		Model(&model.UserSubjectLike{}).
+		Select("subject_id, count(id) as total").
+		Where("subject_id IN ?", subjectIds).
+		Group("subject_id").
+		Scan(&likeResults).Error
+	if err != nil {
+		return nil, nil, err
+	}
+	for _, res := range likeResults {
+		likeCountMap[uint(res.SubjectID)] = res.Total
+	}
+
+	// 统计收藏数
+	var collectResults []CountResult
+	err = global.GVA_DB.WithContext(ctx).
+		Model(&model.UserCollectItem{}).
+		Select("subject_id, count(id) as total").
+		Where("subject_id IN ?", subjectIds).
+		Group("subject_id").
+		Scan(&collectResults).Error
+	if err != nil {
+		return nil, nil, err
+	}
+	for _, res := range collectResults {
+		collectCountMap[uint(res.SubjectID)] = res.Total
+	}
+
+	return likeCountMap, collectCountMap, nil
+}
