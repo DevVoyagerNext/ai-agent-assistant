@@ -26,6 +26,7 @@ func (r *SubjectRouter) InitAuthSubjectRouter(Router *gin.RouterGroup) {
 	subjectController := &controller.SubjectController{}
 	userSubjectRouter := Router.Group("/user/subjects")
 	{
+		userSubjectRouter.GET("/created", subjectController.GetUserCreatedSubjects)                     // 获取用户自己创建的教材
 		userSubjectRouter.GET("/folders", subjectController.GetUserCollectFolders)                      // 获取用户收藏夹
 		userSubjectRouter.GET("/folders/:folderId", subjectController.GetUserCollectedSubjectsByFolder) // 获取用户收藏夹下的教材
 		userSubjectRouter.GET("/collected", subjectController.GetUserCollectedSubjects)                 // 获取用户收藏的教材

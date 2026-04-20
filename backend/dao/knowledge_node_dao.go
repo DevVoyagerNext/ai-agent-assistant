@@ -79,7 +79,10 @@ func (dao *KnowledgeNodeDao) GetUserStudyStatusByNodeIDs(userID uint, nodeIDs []
 // GetUserStudyNote 获取用户对某个节点的随堂笔记
 func (dao *KnowledgeNodeDao) GetUserStudyNote(userID uint, nodeID int) (model.UserStudyNote, error) {
 	var note model.UserStudyNote
-	err := global.GVA_DB.Where("user_id = ? AND node_id = ?", userID, nodeID).First(&note).Error
+	err := global.GVA_DB.
+		Joins("JOIN knowledge_nodes ON knowledge_nodes.id = user_study_notes.node_id").
+		Where("user_study_notes.user_id = ? AND user_study_notes.node_id = ? AND knowledge_nodes.status = ?", userID, nodeID, "published").
+		First(&note).Error
 	return note, err
 }
 

@@ -46,6 +46,20 @@ func (d *SubjectDao) SearchSubjectsByName(ctx context.Context, keyword string, p
 	return subjects, total, err
 }
 
+func (d *SubjectDao) GetUserCreatedSubjects(ctx context.Context, userId uint, page, pageSize int) ([]model.Subject, int64, error) {
+	query := global.GVA_DB.WithContext(ctx).Model(&model.Subject{}).Where("creator_id = ?", userId)
+
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	offset := (page - 1) * pageSize
+	var subjects []model.Subject
+	err := query.Order("created_at desc").Offset(offset).Limit(pageSize).Find(&subjects).Error
+	return subjects, total, err
+}
+
 func (d *SubjectDao) GetUserCollectedSubjects(ctx context.Context, userId uint, page, pageSize int) ([]model.Subject, int64, error) {
 	query := global.GVA_DB.WithContext(ctx).
 		Model(&model.Subject{}).

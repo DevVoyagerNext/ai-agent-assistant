@@ -187,6 +187,32 @@ func (con *SubjectController) GetAllSubjects(c *gin.Context) {
 	response.Ok(res, c)
 }
 
+// GetUserCreatedSubjects 获取当前用户自己创建的教材列表（需要登录）
+func (con *SubjectController) GetUserCreatedSubjects(c *gin.Context) {
+	userId, err := con.authService.GetUserID(c)
+	if err != nil || userId == 0 {
+		response.FailWithCode(errmsg.UserTokenNotExist, c)
+		return
+	}
+
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "10"))
+	if page <= 0 {
+		page = 1
+	}
+	if pageSize <= 0 {
+		pageSize = 10
+	}
+
+	res, code := con.subjectService.GetUserCreatedSubjects(c.Request.Context(), userId, page, pageSize)
+	if code != errmsg.CodeSuccess {
+		response.FailWithCode(code, c)
+		return
+	}
+
+	response.Ok(res, c)
+}
+
 // GetSubjectByID 获取教材详情（不需要登录，但会根据登录状态返回点赞收藏等信息）
 func (con *SubjectController) GetSubjectByID(c *gin.Context) {
 	idStr := c.Param("id")

@@ -106,6 +106,20 @@ func (s *SubjectService) SearchSubjects(ctx context.Context, keyword string, use
 	return dto.SubjectListRes{Total: total, List: enriched}, errmsg.CodeSuccess
 }
 
+func (s *SubjectService) GetUserCreatedSubjects(ctx context.Context, userId uint, page int, pageSize int) (dto.SubjectListRes, int) {
+	subjects, total, err := s.subjectDao.GetUserCreatedSubjects(ctx, userId, page, pageSize)
+	if err != nil {
+		return dto.SubjectListRes{}, errmsg.CodeError
+	}
+
+	enriched, code := s.enrichSubjectList(ctx, userId, subjects)
+	if code != errmsg.CodeSuccess {
+		return dto.SubjectListRes{}, code
+	}
+
+	return dto.SubjectListRes{Total: total, List: enriched}, errmsg.CodeSuccess
+}
+
 func (s *SubjectService) GetUserCollectedSubjects(ctx context.Context, userId uint, page, pageSize int) ([]dto.SubjectRes, int64, error) {
 	subjects, total, err := s.subjectDao.GetUserCollectedSubjects(ctx, userId, page, pageSize)
 	if err != nil {
