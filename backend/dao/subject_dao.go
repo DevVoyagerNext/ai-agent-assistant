@@ -21,19 +21,19 @@ func (d *SubjectDao) GetSubjectsByCategoryID(ctx context.Context, categoryId int
 	var subjects []model.Subject
 	err := global.GVA_DB.WithContext(ctx).
 		Joins("JOIN subject_category_rel ON subject_category_rel.subject_id = subjects.id").
-		Where("subject_category_rel.category_id = ?", categoryId).
+		Where("subject_category_rel.category_id = ? AND subjects.status = ?", categoryId, "published").
 		Find(&subjects).Error
 	return subjects, err
 }
 
 func (d *SubjectDao) GetAllSubjects(ctx context.Context) ([]model.Subject, error) {
 	var subjects []model.Subject
-	err := global.GVA_DB.WithContext(ctx).Find(&subjects).Error
+	err := global.GVA_DB.WithContext(ctx).Where("status = ?", "published").Find(&subjects).Error
 	return subjects, err
 }
 
 func (d *SubjectDao) SearchSubjectsByName(ctx context.Context, keyword string, page int, pageSize int) ([]model.Subject, int64, error) {
-	query := global.GVA_DB.WithContext(ctx).Model(&model.Subject{}).Where("name LIKE ?", "%"+keyword+"%")
+	query := global.GVA_DB.WithContext(ctx).Model(&model.Subject{}).Where("name LIKE ? AND status = ?", "%"+keyword+"%", "published")
 
 	var total int64
 	if err := query.Count(&total).Error; err != nil {

@@ -8,6 +8,7 @@ type KnowledgeNode struct {
 	Path        string `gorm:"default:'0/';type:varchar(255);index:idx_subject_path,priority:2,length:128;comment:层级路径，用于快速检索和排序" json:"path"`
 	Name        string `gorm:"not null;type:varchar(150);comment:节点名称（如：栈、单链表、第一章）" json:"name"`
 	NameDraft   string `gorm:"type:varchar(150);default:'';comment:节点标题草稿" json:"nameDraft"`
+	Status      string `gorm:"type:enum('draft', 'published', 'hidden');default:'draft';comment:节点显示状态" json:"status"`
 	AuditStatus int8   `gorm:"default:0;index:idx_audit_status;comment:审核状态：0=编辑中, 1=待审核, 2=已通过, 3=被驳回" json:"auditStatus"`
 	LastLogID   int64  `gorm:"default:0;comment:关联最新一条审批流水ID" json:"lastLogId"`
 	Level       int8   `gorm:"default:1;comment:节点层级：1=篇, 2=章, 3=节, 4=知识点" json:"level"`
