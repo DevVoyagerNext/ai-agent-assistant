@@ -15,7 +15,7 @@ type KnowledgeNodeDao struct{}
 // GetNodesByParent 统一根据 parentId 获取知识点，如果是顶级节点 parentId 传 0
 func (dao *KnowledgeNodeDao) GetNodesByParent(subjectID, parentID int) ([]model.KnowledgeNode, error) {
 	var nodes []model.KnowledgeNode
-	err := global.GVA_DB.Where("subject_id = ? AND parent_id = ?", subjectID, parentID).
+	err := global.GVA_DB.Where("subject_id = ? AND parent_id = ? AND status = ?", subjectID, parentID, "published").
 		Order("sort_order asc").
 		Find(&nodes).Error
 	return nodes, err
@@ -24,7 +24,7 @@ func (dao *KnowledgeNodeDao) GetNodesByParent(subjectID, parentID int) ([]model.
 // GetChildNodes 仅根据 parentId 获取直属下级知识点（当不需要限制 subjectId 时，可选）
 func (dao *KnowledgeNodeDao) GetChildNodes(parentID int) ([]model.KnowledgeNode, error) {
 	var nodes []model.KnowledgeNode
-	err := global.GVA_DB.Where("parent_id = ?", parentID).
+	err := global.GVA_DB.Where("parent_id = ? AND status = ?", parentID, "published").
 		Order("sort_order asc").
 		Find(&nodes).Error
 	return nodes, err
@@ -36,7 +36,7 @@ func (dao *KnowledgeNodeDao) GetNodesByParentIDs(parentIDs []int) ([]model.Knowl
 	if len(parentIDs) == 0 {
 		return nodes, nil
 	}
-	err := global.GVA_DB.Where("parent_id IN ?", parentIDs).
+	err := global.GVA_DB.Where("parent_id IN ? AND status = ?", parentIDs, "published").
 		Order("parent_id asc, sort_order asc").
 		Find(&nodes).Error
 	return nodes, err
@@ -45,7 +45,7 @@ func (dao *KnowledgeNodeDao) GetNodesByParentIDs(parentIDs []int) ([]model.Knowl
 // GetNodeByID 获取知识点基础信息
 func (dao *KnowledgeNodeDao) GetNodeByID(nodeID int) (model.KnowledgeNode, error) {
 	var node model.KnowledgeNode
-	err := global.GVA_DB.Where("id = ?", nodeID).First(&node).Error
+	err := global.GVA_DB.Where("id = ? AND status = ?", nodeID, "published").First(&node).Error
 	return node, err
 }
 
@@ -137,7 +137,7 @@ func (dao *KnowledgeNodeDao) UpsertUserStudyStatus(userID uint, nodeID int, stat
 func (dao *KnowledgeNodeDao) CountTotalLeafNodes(ctx context.Context, subjectID int) (int64, error) {
 	var count int64
 	err := global.GVA_DB.WithContext(ctx).Model(&model.KnowledgeNode{}).
-		Where("subject_id = ? AND is_leaf = ?", subjectID, 1).
+		Where("subject_id = ? AND is_leaf = ? AND status = ?", subjectID, 1, "published").
 		Count(&count).Error
 	return count, err
 }
@@ -147,8 +147,8 @@ func (dao *KnowledgeNodeDao) CountLearnedLeafNodes(ctx context.Context, userID u
 	var count int64
 	err := global.GVA_DB.WithContext(ctx).Model(&model.UserStudyStatus{}).
 		Joins("JOIN knowledge_nodes ON knowledge_nodes.id = user_study_status.node_id").
-		Where("user_study_status.user_id = ? AND user_study_status.status = ? AND knowledge_nodes.subject_id = ? AND knowledge_nodes.is_leaf = ?",
-			userID, "completed", subjectID, 1).
+		Where("user_study_status.user_id = ? AND user_study_status.status = ? AND knowledge_nodes.subject_id = ? AND knowledge_nodes.is_leaf = ? AND knowledge_nodes.status = ?",
+			userID, "completed", subjectID, 1, "published").
 		Count(&count).Error
 	return count, err
 }

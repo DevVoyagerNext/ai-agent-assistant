@@ -271,6 +271,15 @@ func (s *KnowledgeNodeService) GetUserStudyNote(ctx context.Context, nodeID int,
 	if userID == 0 {
 		return nil, errors.New("用户未登录")
 	}
+
+	// 检查知识点是否存在且已发布
+	if _, err := s.nodeDao.GetNodeByID(nodeID); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, errors.New("知识点不存在")
+		}
+		return nil, err
+	}
+
 	note, err := s.nodeDao.GetUserStudyNote(userID, nodeID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -341,6 +350,15 @@ func (s *KnowledgeNodeService) UpdateNodeStatus(ctx context.Context, userID uint
 	if userID == 0 {
 		return errors.New("用户未登录")
 	}
+
+	// 检查知识点是否存在且已发布
+	if _, err := s.nodeDao.GetNodeByID(nodeID); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return errors.New("知识点不存在")
+		}
+		return err
+	}
+
 	err := s.nodeDao.UpsertUserStudyStatus(userID, nodeID, status)
 	if err != nil {
 		return err
@@ -366,6 +384,14 @@ func (s *KnowledgeNodeService) UpdateNodeStatus(ctx context.Context, userID uint
 func (s *KnowledgeNodeService) MarkNodeDifficulty(ctx context.Context, userID uint, nodeID int, difficulty string) error {
 	if userID == 0 {
 		return errors.New("用户未登录")
+	}
+
+	// 检查知识点是否存在且已发布
+	if _, err := s.nodeDao.GetNodeByID(nodeID); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return errors.New("知识点不存在")
+		}
+		return err
 	}
 
 	// 开启事务

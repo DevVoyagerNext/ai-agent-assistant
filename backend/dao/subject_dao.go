@@ -206,13 +206,13 @@ func (d *SubjectDao) GetSubjectsByIds(ctx context.Context, ids []int) ([]model.S
 	if len(ids) == 0 {
 		return subjects, nil
 	}
-	err := global.GVA_DB.WithContext(ctx).Where("id IN ?", ids).Find(&subjects).Error
+	err := global.GVA_DB.WithContext(ctx).Where("id IN ? AND status = ?", ids, "published").Find(&subjects).Error
 	return subjects, err
 }
 
 func (d *SubjectDao) GetSubjectById(ctx context.Context, id int) (*model.Subject, error) {
 	var subject model.Subject
-	err := global.GVA_DB.WithContext(ctx).Where("id = ?", id).First(&subject).Error
+	err := global.GVA_DB.WithContext(ctx).Where("id = ? AND status = ?", id, "published").First(&subject).Error
 	return &subject, err
 }
 
