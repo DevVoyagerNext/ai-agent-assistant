@@ -3,16 +3,21 @@ package service
 import (
 	"backend/dao"
 	"backend/dto"
+	"backend/global"
 	"backend/model"
 	"backend/pkg/errmsg"
 	"context"
 	"errors"
+	"fmt"
+	"time"
 
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
 type SubjectService struct {
-	subjectDao dao.SubjectDao
+	subjectDao       dao.SubjectDao
+	knowledgeNodeDao dao.KnowledgeNodeDao
 }
 
 func (s *SubjectService) enrichSubjectList(ctx context.Context, userId uint, subjects []model.Subject) ([]dto.SubjectRes, int) {
@@ -134,6 +139,7 @@ func (s *SubjectService) GetUserCreatedSubjects(ctx context.Context, userId uint
 			Name:              sub.Name,
 			NameDraft:         sub.NameDraft,
 			Icon:              sub.Icon,
+			IconDraft:         sub.IconDraft,
 			Description:       sub.Description,
 			DescriptionDraft:  sub.DescriptionDraft,
 			CoverImageID:      sub.CoverImageID,
@@ -148,6 +154,92 @@ func (s *SubjectService) GetUserCreatedSubjects(ctx context.Context, userId uint
 	}
 
 	return dto.UserCreatedSubjectListRes{Total: total, List: resList}, errmsg.CodeSuccess
+}
+
+// CreateSubject 创建新教材（同时生成顶级知识节点）
+func (s *SubjectService) CreateSubject(ctx context.Context, userId uint, req dto.CreateSubjectReq) (uint, int) {
+	// 生成一个简单的唯一 slug（UUID前8位）
+	slug := fmt.Sprintf("%s-%s", uuid.New().String()[:8], fmt.Sprintf("%d", time.Now().Unix()))
+
+	// 开启事务，保证教材和根节点同时创建
+	var newSubjectId uint
+	err := global.GVA_DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// 1. 创建教材记录
+		subject := model.Subject{
+			CreatorID:         int(userId),
+			Slug:              slug,
+			Name:              req.NameDraft, // 发布前默认占位
+			NameDraft:         req.NameDraft,
+			Description:       "", // 发布前默认占位
+			DescriptionDraft:  req.DescriptionDraft,
+			Icon:              "", // 发布前默认占位
+			IconDraft:         req.IconDraft,
+			CoverImageID:      0, // 发布前默认占位
+			CoverImageIDDraft: req.CoverImageIdDraft,
+			Status:            "draft",
+			AuditStatus:       0,
+			HasDraft:          1,
+		}
+
+		if err := s.subjectDao.CreateSubjectWithTx(tx, &subject); err != nil {
+			return err
+		}
+		newSubjectId = subject.ID
+
+		// 2. 创建关联的顶级“篇”节点 (parent_id = 0)
+		topNode := model.KnowledgeNode{
+			SubjectID:   int(newSubjectId),
+			ParentID:    0,
+			Path:        "0/",
+			Name:        req.NameDraft,
+			NameDraft:   req.NameDraft,
+			Status:      "draft",
+			AuditStatus: 0,
+			HasDraft:    1,
+			Level:       1,
+			IsLeaf:      0,
+			SortOrder:   1, // 第一个节点
+		}
+
+		if err := s.knowledgeNodeDao.CreateKnowledgeNodeWithTx(tx, &topNode); err != nil {
+			return err
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return 0, errmsg.CodeError
+	}
+
+	return newSubjectId, errmsg.CodeSuccess
+}
+
+// UpdateSubjectDraft 修改教材名称或简介草稿
+func (s *SubjectService) UpdateSubjectDraft(ctx context.Context, userId uint, req dto.UpdateSubjectDraftReq) error {
+	// 1. 校验教材是否存在且属于该用户
+	var subject model.Subject
+	if err := global.GVA_DB.WithContext(ctx).Where("id = ? AND creator_id = ?", req.SubjectID, userId).First(&subject).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return errors.New("无权操作该教材或教材不存在")
+		}
+		return err
+	}
+
+	// 2. 开启事务更新教材草稿及对应的顶级节点草稿
+	err := global.GVA_DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// 更新教材的 draft 字段
+		if err := s.subjectDao.UpdateSubjectDraftWithTx(tx, req.SubjectID, req.NameDraft, req.IconDraft, req.DescriptionDraft); err != nil {
+			return err
+		}
+		// 同步更新 parent_id=0 的顶级知识点
+		if err := s.knowledgeNodeDao.UpdateSubjectTopNodeDraftWithTx(tx, req.SubjectID, req.NameDraft); err != nil {
+			return err
+		}
+		return nil
+	})
+
+	return err
 }
 
 func (s *SubjectService) GetUserCollectedSubjects(ctx context.Context, userId uint, page, pageSize int) ([]dto.SubjectRes, int64, error) {

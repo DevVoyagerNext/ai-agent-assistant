@@ -64,6 +64,7 @@ type UserCreatedSubjectRes struct {
 	Name              string    `json:"name"`
 	NameDraft         string    `json:"nameDraft"`
 	Icon              string    `json:"icon"`
+	IconDraft         string    `json:"iconDraft"`
 	Description       string    `json:"description"`
 	DescriptionDraft  string    `json:"descriptionDraft"`
 	CoverImageID      int       `json:"coverImageId"`
@@ -98,6 +99,20 @@ type CreateCollectFolderReq struct {
 
 type AddSubjectToFolderReq struct {
 	SubjectID int `json:"subjectId" binding:"required,gt=0"`
+}
+
+type CreateSubjectReq struct {
+	NameDraft         string `json:"nameDraft" binding:"required,min=1,max=100"`
+	DescriptionDraft  string `json:"descriptionDraft" binding:"max=500"`
+	IconDraft         string `json:"iconDraft" binding:"max=255"`
+	CoverImageIdDraft int    `json:"coverImageIdDraft" binding:"min=0"`
+}
+
+type UpdateSubjectDraftReq struct {
+	SubjectID        int    `json:"subjectId" binding:"required,gt=0"`
+	NameDraft        string `json:"nameDraft" binding:"required,min=1,max=100"`
+	DescriptionDraft string `json:"descriptionDraft" binding:"max=500"`
+	IconDraft        string `json:"iconDraft" binding:"max=255"`
 }
 
 type UpdateCollectFolderPublicReq struct {

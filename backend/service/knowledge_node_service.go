@@ -435,3 +435,99 @@ func (s *KnowledgeNodeService) MarkNodeDifficulty(ctx context.Context, userID ui
 		return nil
 	})
 }
+
+// CreateKnowledgeNode 创建知识节点
+func (s *KnowledgeNodeService) CreateKnowledgeNode(ctx context.Context, userID uint, req dto.CreateKnowledgeNodeReq) (uint, error) {
+	// 1. 校验教材是否属于该用户
+	var subject model.Subject
+	if err := global.GVA_DB.WithContext(ctx).Where("id = ? AND creator_id = ?", req.SubjectID, userID).First(&subject).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return 0, errors.New("无权操作该教材或教材不存在")
+		}
+		return 0, err
+	}
+
+	level := int8(1)
+	path := "0/"
+
+	// 2. 如果 parent_id > 0，校验父节点是否属于同一个教材，并计算层级
+	if req.ParentID > 0 {
+		parentNode, err := s.nodeDao.GetNodeByIDWithoutStatus(req.ParentID)
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return 0, errors.New("父节点不存在")
+			}
+			return 0, err
+		}
+		if parentNode.SubjectID != req.SubjectID {
+			return 0, errors.New("父节点不属于该教材")
+		}
+
+		level = parentNode.Level + 1
+		path = parentNode.Path + strconv.Itoa(req.ParentID) + "/"
+	}
+
+	// 3. 获取同级节点最大排序号
+	maxSortOrder := s.nodeDao.GetMaxSortOrderByParent(req.SubjectID, req.ParentID)
+
+	// 4. 创建节点
+	newNode := model.KnowledgeNode{
+		SubjectID:   req.SubjectID,
+		ParentID:    req.ParentID,
+		Path:        path,
+		Name:        req.NameDraft, // 默认占位
+		NameDraft:   req.NameDraft,
+		Status:      "draft",
+		AuditStatus: 0,
+		HasDraft:    1,
+		Level:       level,
+		IsLeaf:      0, // 默认0，如果后续要加正文可能再改为1，或者在编辑详情时确认
+		SortOrder:   maxSortOrder + 1,
+	}
+
+	err := global.GVA_DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		return s.nodeDao.CreateKnowledgeNodeWithTx(tx, &newNode)
+	})
+
+	if err != nil {
+		return 0, err
+	}
+
+	return newNode.ID, nil
+}
+
+// UpdateKnowledgeNodeDraft 更新知识节点名称草稿
+func (s *KnowledgeNodeService) UpdateKnowledgeNodeDraft(ctx context.Context, userID uint, nodeID int, req dto.UpdateKnowledgeNodeDraftReq) error {
+	// 1. 校验教材是否属于该用户
+	var subject model.Subject
+	if err := global.GVA_DB.WithContext(ctx).Where("id = ? AND creator_id = ?", req.SubjectID, userID).First(&subject).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return errors.New("无权操作该教材或教材不存在")
+		}
+		return err
+	}
+
+	// 2. 校验节点是否存在且属于该教材
+	node, err := s.nodeDao.GetNodeByIDWithoutStatus(nodeID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return errors.New("知识点不存在")
+		}
+		return err
+	}
+	if node.SubjectID != req.SubjectID {
+		return errors.New("知识点不属于指定的教材")
+	}
+
+	// 3. 拦截顶级节点的修改（顶级节点只能通过修改教材接口来同步更新）
+	if node.ParentID == 0 {
+		return errors.New("顶级节点名称需通过修改教材信息同步，无法单独修改")
+	}
+
+	// 4. 更新节点名称草稿并置 has_draft=1
+	if err := s.nodeDao.UpdateKnowledgeNodeDraft(nodeID, req.NameDraft); err != nil {
+		return err
+	}
+
+	return nil
+}

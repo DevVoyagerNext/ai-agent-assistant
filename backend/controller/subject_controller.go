@@ -25,6 +25,54 @@ func (con *SubjectController) GetCategories(c *gin.Context) {
 	response.Ok(res, c)
 }
 
+// CreateSubject 创建新教材
+func (con *SubjectController) CreateSubject(c *gin.Context) {
+	userId, err := con.authService.GetUserID(c)
+	if err != nil || userId == 0 {
+		response.FailWithCode(errmsg.UserTokenNotExist, c)
+		return
+	}
+
+	var req dto.CreateSubjectReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.FailWithMsg(errmsg.CodeError, "参数错误: "+err.Error(), c)
+		return
+	}
+
+	newSubjectId, code := con.subjectService.CreateSubject(c.Request.Context(), userId, req)
+	if code != errmsg.CodeSuccess {
+		response.FailWithMsg(code, "创建教材失败", c)
+		return
+	}
+
+	response.Ok(map[string]interface{}{
+		"subjectId": newSubjectId,
+	}, c)
+}
+
+// UpdateSubjectDraft 修改教材草稿信息
+func (con *SubjectController) UpdateSubjectDraft(c *gin.Context) {
+	userId, err := con.authService.GetUserID(c)
+	if err != nil || userId == 0 {
+		response.FailWithCode(errmsg.UserTokenNotExist, c)
+		return
+	}
+
+	var req dto.UpdateSubjectDraftReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.FailWithMsg(errmsg.CodeError, "参数错误: "+err.Error(), c)
+		return
+	}
+
+	err = con.subjectService.UpdateSubjectDraft(c.Request.Context(), userId, req)
+	if err != nil {
+		response.FailWithMsg(errmsg.CodeError, err.Error(), c)
+		return
+	}
+
+	response.Ok(nil, c)
+}
+
 // ToggleSubjectLike 点赞或取消点赞教材（需要登录）
 func (con *SubjectController) ToggleSubjectLike(c *gin.Context) {
 	userId, err := con.authService.GetUserID(c)

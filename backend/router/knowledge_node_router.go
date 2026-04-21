@@ -27,6 +27,10 @@ func (s *KnowledgeNodeRouter) InitAuthKnowledgeNodeRouter(Router *gin.RouterGrou
 	nodeController := &controller.KnowledgeNodeController{}
 	authNodeRouter := Router.Group("/nodes")
 	{
+		// 1. 创建知识节点
+		authNodeRouter.POST("", nodeController.CreateKnowledgeNode)
+		// 2. 修改知识点名称草稿
+		authNodeRouter.PUT("/:nodeId/draft", nodeController.UpdateKnowledgeNodeDraft)
 		// 4. 获取某个知识点的随堂笔记 (如: /v1/nodes/12/note)
 		authNodeRouter.GET("/:nodeId/note", nodeController.GetUserStudyNote)
 		// 5. 创建或修改某个知识点的随堂笔记 (如: POST /v1/nodes/12/note)

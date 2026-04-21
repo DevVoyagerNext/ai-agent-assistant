@@ -659,6 +659,10 @@ const scrollTo = (id: string) => {
             <Layers :size="18" class="icon-teal" />
             <span>最近学习</span>
           </div>
+          <div class="nav-item" @click="scrollTo('created')">
+            <Book :size="18" class="icon-blue" />
+            <span>创建教材</span>
+          </div>
           <div class="nav-item" @click="scrollTo('liked')">
             <Star :size="18" class="icon-orange" />
             <span>点赞教材</span>

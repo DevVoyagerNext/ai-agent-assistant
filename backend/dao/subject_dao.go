@@ -60,6 +60,19 @@ func (d *SubjectDao) GetUserCreatedSubjects(ctx context.Context, userId uint, pa
 	return subjects, total, err
 }
 
+func (d *SubjectDao) CreateSubjectWithTx(tx *gorm.DB, subject *model.Subject) error {
+	return tx.Create(subject).Error
+}
+
+func (d *SubjectDao) UpdateSubjectDraftWithTx(tx *gorm.DB, subjectId int, nameDraft, iconDraft, descDraft string) error {
+	return tx.Model(&model.Subject{}).Where("id = ?", subjectId).Updates(map[string]interface{}{
+		"name_draft":        nameDraft,
+		"icon_draft":        iconDraft,
+		"description_draft": descDraft,
+		"has_draft":         1,
+	}).Error
+}
+
 func (d *SubjectDao) GetUserCollectedSubjects(ctx context.Context, userId uint, page, pageSize int) ([]model.Subject, int64, error) {
 	query := global.GVA_DB.WithContext(ctx).
 		Model(&model.Subject{}).

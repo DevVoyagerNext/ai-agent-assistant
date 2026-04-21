@@ -10,6 +10,7 @@ type Subject struct {
 	Name              string    `gorm:"not null;type:varchar(100);comment:学科显示名称，如数据结构" json:"name"`
 	NameDraft         string    `gorm:"type:varchar(100);default:'';comment:教材名称草稿" json:"nameDraft"`
 	Icon              string    `gorm:"type:varchar(255);comment:学科图标CSS类名/URL地址" json:"icon"`
+	IconDraft         string    `gorm:"type:varchar(255);default:NULL;comment:学科图标草稿（CSS类名或URL）" json:"iconDraft"`
 	Description       string    `gorm:"type:text;comment:学科简介描述" json:"description"`
 	DescriptionDraft  string    `gorm:"type:text;default:NULL;comment:教材简介草稿" json:"descriptionDraft"`
 	CoverImageID      int       `gorm:"default:0;comment:学科封面图片ID，关联images表" json:"coverImageId"`

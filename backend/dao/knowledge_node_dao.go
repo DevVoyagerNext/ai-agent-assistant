@@ -49,6 +49,48 @@ func (dao *KnowledgeNodeDao) GetNodeByID(nodeID int) (model.KnowledgeNode, error
 	return node, err
 }
 
+// GetNodeByIDWithoutStatus 获取知识点基础信息（不限制状态，用于创建/编辑时的校验）
+func (dao *KnowledgeNodeDao) GetNodeByIDWithoutStatus(nodeID int) (model.KnowledgeNode, error) {
+	var node model.KnowledgeNode
+	err := global.GVA_DB.Where("id = ?", nodeID).First(&node).Error
+	return node, err
+}
+
+// CreateKnowledgeNodeWithTx 在事务中创建知识节点
+func (dao *KnowledgeNodeDao) CreateKnowledgeNodeWithTx(tx *gorm.DB, node *model.KnowledgeNode) error {
+	return tx.Create(node).Error
+}
+
+// GetMaxSortOrderByParent 获取同级节点下最大的 SortOrder
+func (dao *KnowledgeNodeDao) GetMaxSortOrderByParent(subjectID int, parentID int) int {
+	var maxSortOrder int
+	global.GVA_DB.Model(&model.KnowledgeNode{}).
+		Where("subject_id = ? AND parent_id = ?", subjectID, parentID).
+		Select("COALESCE(MAX(sort_order), 0)").
+		Scan(&maxSortOrder)
+	return maxSortOrder
+}
+
+// UpdateSubjectTopNodeDraftWithTx 更新某个教材下顶级节点的草稿信息（随教材信息同步）
+func (dao *KnowledgeNodeDao) UpdateSubjectTopNodeDraftWithTx(tx *gorm.DB, subjectID int, nameDraft string) error {
+	return tx.Model(&model.KnowledgeNode{}).
+		Where("subject_id = ? AND parent_id = 0", subjectID).
+		Updates(map[string]interface{}{
+			"name_draft": nameDraft,
+			"has_draft":  1,
+		}).Error
+}
+
+// UpdateKnowledgeNodeDraft 更新知识点节点的草稿名称
+func (dao *KnowledgeNodeDao) UpdateKnowledgeNodeDraft(nodeID int, nameDraft string) error {
+	return global.GVA_DB.Model(&model.KnowledgeNode{}).
+		Where("id = ?", nodeID).
+		Updates(map[string]interface{}{
+			"name_draft": nameDraft,
+			"has_draft":  1,
+		}).Error
+}
+
 // GetNodeContentByID 获取知识点内容（正文等）
 func (dao *KnowledgeNodeDao) GetNodeContentByID(nodeID int) (model.KnowledgeContent, error) {
 	var content model.KnowledgeContent

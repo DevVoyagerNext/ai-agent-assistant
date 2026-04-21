@@ -64,3 +64,16 @@ type UpdateNodeStatusReq struct {
 type MarkNodeDifficultyReq struct {
 	Difficulty string `json:"difficulty" binding:"required,oneof=easy medium hard"`
 }
+
+// CreateKnowledgeNodeReq 创建知识节点请求体
+type CreateKnowledgeNodeReq struct {
+	SubjectID int    `json:"subjectId" binding:"required,gt=0"`
+	ParentID  int    `json:"parentId" binding:"min=0"`
+	NameDraft string `json:"nameDraft" binding:"required,min=1,max=150"`
+}
+
+// UpdateKnowledgeNodeDraftReq 更新知识节点名称请求体
+type UpdateKnowledgeNodeDraftReq struct {
+	SubjectID int    `json:"subjectId" binding:"required,gt=0"`
+	NameDraft string `json:"nameDraft" binding:"required,min=1,max=150"`
+}

@@ -149,6 +149,61 @@ func (con *KnowledgeNodeController) UpsertUserStudyNote(c *gin.Context) {
 	response.Ok(nil, c)
 }
 
+// CreateKnowledgeNode 创建知识节点
+func (con *KnowledgeNodeController) CreateKnowledgeNode(c *gin.Context) {
+	userId, err := con.authService.GetUserID(c)
+	if err != nil || userId == 0 {
+		response.FailWithCode(errmsg.UserTokenNotExist, c) // 必须登录
+		return
+	}
+
+	var req dto.CreateKnowledgeNodeReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.FailWithMsg(errmsg.CodeError, "参数错误: "+err.Error(), c)
+		return
+	}
+
+	newNodeId, err := con.nodeService.CreateKnowledgeNode(c.Request.Context(), userId, req)
+	if err != nil {
+		response.FailWithMsg(errmsg.CodeError, err.Error(), c)
+		return
+	}
+
+	response.Ok(map[string]interface{}{
+		"nodeId": newNodeId,
+	}, c)
+}
+
+// UpdateKnowledgeNodeDraft 修改知识点名称草稿
+func (con *KnowledgeNodeController) UpdateKnowledgeNodeDraft(c *gin.Context) {
+	nodeIdStr := c.Param("nodeId")
+	nodeId, err := strconv.Atoi(nodeIdStr)
+	if err != nil || nodeId <= 0 {
+		response.FailWithMsg(errmsg.CodeError, "知识点ID格式错误", c)
+		return
+	}
+
+	userId, err := con.authService.GetUserID(c)
+	if err != nil || userId == 0 {
+		response.FailWithCode(errmsg.UserTokenNotExist, c)
+		return
+	}
+
+	var req dto.UpdateKnowledgeNodeDraftReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.FailWithMsg(errmsg.CodeError, "参数错误: "+err.Error(), c)
+		return
+	}
+
+	err = con.nodeService.UpdateKnowledgeNodeDraft(c.Request.Context(), userId, nodeId, req)
+	if err != nil {
+		response.FailWithMsg(errmsg.CodeError, err.Error(), c)
+		return
+	}
+
+	response.Ok(nil, c)
+}
+
 // UpdateNodeStatus 更新知识点学习状态
 func (con *KnowledgeNodeController) UpdateNodeStatus(c *gin.Context) {
 	nodeIdStr := c.Param("nodeId")
