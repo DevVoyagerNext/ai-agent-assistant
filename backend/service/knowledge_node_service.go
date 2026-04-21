@@ -482,11 +482,17 @@ func (s *KnowledgeNodeService) CreateKnowledgeNode(ctx context.Context, userID u
 		AuditStatus: 0,
 		HasDraft:    1,
 		Level:       level,
-		IsLeaf:      0, // 默认0，如果后续要加正文可能再改为1，或者在编辑详情时确认
+		IsLeaf:      1, // 默认当前节点为叶子节点
 		SortOrder:   maxSortOrder + 1,
 	}
 
 	err := global.GVA_DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// 如果有父节点，把父节点改为非叶子节点
+		if req.ParentID > 0 {
+			if err := s.nodeDao.UpdateNodeIsLeafWithTx(tx, req.ParentID, 0); err != nil {
+				return err
+			}
+		}
 		return s.nodeDao.CreateKnowledgeNodeWithTx(tx, &newNode)
 	})
 

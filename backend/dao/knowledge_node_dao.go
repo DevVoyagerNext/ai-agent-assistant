@@ -82,6 +82,11 @@ func (dao *KnowledgeNodeDao) CreateKnowledgeNodeWithTx(tx *gorm.DB, node *model.
 	return tx.Create(node).Error
 }
 
+// UpdateNodeIsLeafWithTx 在事务中更新节点的 IsLeaf 状态
+func (dao *KnowledgeNodeDao) UpdateNodeIsLeafWithTx(tx *gorm.DB, nodeID int, isLeaf int8) error {
+	return tx.Model(&model.KnowledgeNode{}).Where("id = ?", nodeID).Update("is_leaf", isLeaf).Error
+}
+
 // GetMaxSortOrderByParent 获取同级节点下最大的 SortOrder
 func (dao *KnowledgeNodeDao) GetMaxSortOrderByParent(subjectID int, parentID int) int {
 	var maxSortOrder int

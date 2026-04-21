@@ -51,3 +51,18 @@ export interface AuthorInitRes {
   lastNodeId: number;
   nodeList: AuthorNode[];
 }
+
+export interface CreateKnowledgeNodePayload {
+  subjectId: number;
+  parentId: number;
+  nameDraft: string;
+}
+
+export interface UpdateKnowledgeNodeDraftPayload {
+  subjectId: number;
+  nameDraft: string;
+}
+
+export interface UpsertKnowledgeContentPayload {
+  contentDraft: string;
+}
