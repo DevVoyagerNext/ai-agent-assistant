@@ -28,13 +28,15 @@ import {
   Send,
   Bot,
   User,
-  Sparkles,
+  Pencil,
   LoaderCircle,
   Plus,
   ChevronUp,
   ArrowUpCircle,
   ArrowDownCircle,
-  Copy
+  Copy,
+  List,
+  AlignVerticalSpaceAround
 } from 'lucide-vue-next'
 import {
   getAISessions,
@@ -50,6 +52,7 @@ const SAVE_DEBOUNCE_MS = 800
 const SAVE_THROTTLE_MS = 1800
 
 // 节点树状态
+const isAccordionMode = ref(true)
 const nodes = ref<AuthorNode[]>([])
 const lastNodeId = ref<number | null>(null)
 const expandedKeys = ref<Set<number>>(new Set())
@@ -793,7 +796,7 @@ const fetchChildren = async (parentId: number) => {
       // 我们需要将最新的 children 更新到 nodes.value 中，保证草稿状态是最新的
       const childrenMap = new Map(children.map(c => [c.id, c]))
       
-      const nextNodes = nodes.value.map(n => {
+      const nextNodes = nodes.value.filter(n => !Number.isNaN(n.id)).map(n => {
         if (childrenMap.has(n.id)) {
           const updatedNode = childrenMap.get(n.id)!
           childrenMap.delete(n.id)
@@ -818,6 +821,17 @@ const toggleExpand = async (node: AuthorNode, event: Event) => {
   if (expandedKeys.value.has(node.id)) {
     expandedKeys.value.delete(node.id)
   } else {
+    if (isAccordionMode.value) {
+      // 手风琴模式：收起同级其他节点
+      // 找出所有与当前节点 parentId 相同的节点
+      const siblings = nodes.value.filter(n => n.parentId === node.parentId)
+      siblings.forEach(sibling => {
+        if (sibling.id !== node.id && expandedKeys.value.has(sibling.id)) {
+          expandedKeys.value.delete(sibling.id)
+        }
+      })
+    }
+
     expandedKeys.value.add(node.id)
     // 每次展开都去请求最新数据，保证数据是最新的
     await fetchChildren(node.id)
@@ -836,6 +850,15 @@ const handleNodeSelect = async (nodeId: number) => {
   // 如果是非叶子节点，点击时自动处理展开逻辑
   if (node.isLeaf === 0) {
     if (!expandedKeys.value.has(node.id)) {
+      if (isAccordionMode.value) {
+        // 手风琴模式：收起同级其他节点
+        const siblings = nodes.value.filter(n => n.parentId === node.parentId)
+        siblings.forEach(sibling => {
+          if (sibling.id !== node.id && expandedKeys.value.has(sibling.id)) {
+            expandedKeys.value.delete(sibling.id)
+          }
+        })
+      }
       expandedKeys.value.add(node.id)
       // 每次展开都去请求最新数据
       await fetchChildren(node.id)
@@ -857,59 +880,58 @@ const handleNodeSelect = async (nodeId: number) => {
   
   loadingContent.value = true
   saveStatus.value = 'saved'
+
+  if (vditorInstance) {
+    try {
+      vditorInstance.destroy()
+    } catch (e) {
+      // ignore
+    }
+    vditorInstance = null
+  }
+
+  let newContent = ''
+
   try {
     const res = await getAuthorNodeContent(nodeId)
     if (res.data?.code === 200 && res.data.data) {
       contentInfo.value = res.data.data
       // 优先显示草稿，如果没有草稿则显示正式内容
-      editContent.value = res.data.data.hasDraft === 1 ? res.data.data.contentDraft : res.data.data.content
-      originalContent.value = editContent.value
-
-      // Initialize or update Vditor
-      nextTick(() => {
-        if (vditorInstance) {
-          vditorInstance.setValue(editContent.value)
-        } else {
-          vditorInstance = new Vditor('vditor-container', {
-            mode: 'ir',
-            cdn: '/vditor',
-            minHeight: 0,
-            height: '100%',
-            toolbarConfig: { pin: true },
-            toolbar: [
-              'headings', 'bold', 'italic', 'strike', 'link', '|', 
-              'list', 'ordered-list', 'check', 'outdent', 'indent', '|', 
-              'quote', 'line', 'code', 'inline-code', 'insert-before', 'insert-after', '|', 
-              'undo', 'redo'
-            ],
-            cache: { enable: false },
-            input: (value) => {
-              editContent.value = value
-            }
-          })
-        }
-      })
+      newContent = res.data.data.hasDraft === 1 ? res.data.data.contentDraft : res.data.data.content
     } else {
-      editContent.value = ''
-      originalContent.value = ''
       contentInfo.value = null
-      nextTick(() => {
-        if (vditorInstance) {
-          vditorInstance.setValue('')
-        }
-      })
     }
   } catch (err) {
     console.error('获取节点内容失败', err)
-    editContent.value = ''
-    originalContent.value = ''
     contentInfo.value = null
-  } finally {
-    loadingContent.value = false
-    nextTick(() => {
-      isHydratingEditor.value = false
-    })
   }
+
+  editContent.value = newContent
+  originalContent.value = newContent
+  loadingContent.value = false
+
+  await nextTick()
+
+  // Initialize Vditor on the newly created DOM element
+  vditorInstance = new Vditor('vditor-container', {
+    mode: 'ir',
+    cdn: '/vditor',
+    minHeight: 0,
+    height: '100%',
+    toolbarConfig: { pin: true },
+    toolbar: [
+      'headings', 'bold', 'italic', 'strike', 'link', '|', 
+      'list', 'ordered-list', 'check', 'outdent', 'indent', '|', 
+      'quote', 'line', 'code', 'inline-code', 'insert-before', 'insert-after', '|', 
+      'undo', 'redo'
+    ],
+    cache: { enable: false },
+    input: (value) => {
+      editContent.value = value
+    }
+  })
+
+  isHydratingEditor.value = false
 }
 
 // 自动保存逻辑
@@ -948,8 +970,10 @@ const createChildNode = async () => {
     return
   }
 
-  await flushPendingSave()
+  if (creatingChild.value) return
   creatingChild.value = true
+
+  await flushPendingSave()
 
   try {
     const parentId = activeNodeId.value
@@ -960,15 +984,47 @@ const createChildNode = async () => {
     })
 
     if (res.data?.code === 200 && res.data.data) {
+      const data = res.data.data as any
+      const newId = typeof data === 'object' ? Number(data.id || data.nodeId) : Number(data)
       const parentNode = nodes.value.find(node => node.id === parentId)
       if (parentNode) {
         parentNode.isLeaf = 0
       }
+      
+      // 乐观更新：将新节点预先推入 nodes.value 中，防止因为数据库延迟导致 fetchChildren 获取不到
+      const isExist = nodes.value.find(n => n.id === newId)
+      if (!isExist) {
+        nodes.value.push({
+          id: newId,
+          subjectId: subjectId,
+          parentId: parentId,
+          name: '',
+          nameDraft: nameDraft,
+          status: 'draft',
+          auditStatus: 0,
+          hasDraft: 1,
+          path: parentNode ? `${parentNode.path}/${newId}` : `${newId}`,
+          isLeaf: 1,
+          sortOrder: 99999 // 默认排在最后
+        } as any)
+      }
+
       expandedKeys.value.add(parentId)
       await fetchChildren(parentId)
       cancelCreateChild()
       showToast('子节点创建成功')
-      await handleNodeSelect(Number(res.data.data))
+      
+      // 立刻跳转选中新节点
+      await handleNodeSelect(newId)
+      
+      // 滚动树列表到新节点位置，确保用户能看到
+      await nextTick()
+      setTimeout(() => {
+        const activeEl = document.querySelector('.tree-node.active')
+        if (activeEl) {
+          activeEl.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        }
+      }, 100)
     } else {
       showToast(res.data?.msg || '创建子节点失败', 'error')
     }
@@ -1033,10 +1089,12 @@ const stopDrag = () => {
 
 interface AuthorTreeNode extends AuthorNode {
   children: AuthorTreeNode[]
+  hasDescendantDraft?: boolean
 }
 
 interface VisibleTreeNode extends AuthorNode {
   depth: number
+  hasDescendantDraft?: boolean
 }
 
 // 构建树形结构供渲染
@@ -1044,10 +1102,17 @@ const treeNodes = computed<AuthorTreeNode[]>(() => {
   const buildTree = (parentId: number): AuthorTreeNode[] => {
     return nodes.value
       .filter(n => Number(n.parentId) === parentId)
-      .map(n => ({
-        ...n,
-        children: buildTree(n.id)
-      }))
+      .map(n => {
+        const children = buildTree(n.id)
+        const hasDescendantDraft = children.some(
+          child => child.status === 'draft' || child.hasDraft === 1 || child.hasDescendantDraft
+        )
+        return {
+          ...n,
+          children,
+          hasDescendantDraft
+        }
+      })
   }
   return buildTree(0)
 })
@@ -1060,7 +1125,8 @@ const visibleTreeNodes = computed<VisibleTreeNode[]>(() => {
     items.forEach(item => {
       result.push({
         ...item,
-        depth
+        depth,
+        hasDescendantDraft: item.hasDescendantDraft
       })
 
       if (expandedKeys.value.has(item.id) && item.children.length > 0) {
@@ -1090,13 +1156,23 @@ const visibleTreeNodes = computed<VisibleTreeNode[]>(() => {
           <ArrowLeft :size="16" />
           返回
         </button>
-        <h2 class="sidebar-title">教材目录</h2>
+        <div class="sidebar-title-wrapper">
+          <h2 class="sidebar-title">教材目录</h2>
+          <button 
+            class="accordion-toggle-btn" 
+            @click="isAccordionMode = !isAccordionMode"
+            :title="isAccordionMode ? '当前为手风琴模式，点击切换为普通模式' : '当前为普通模式，点击切换为手风琴模式'"
+          >
+            <AlignVerticalSpaceAround v-if="isAccordionMode" :size="14" />
+            <List v-else :size="14" />
+          </button>
+        </div>
       </div>
       
       <div class="sidebar-content">
         <div v-if="loadingTree" class="loading-state">加载中...</div>
         <div v-else-if="treeNodes.length === 0" class="empty-state">暂无目录节点</div>
-        <div v-else class="tree-container">
+        <TransitionGroup name="tree-list" tag="div" v-else class="tree-container">
           <div
             v-for="node in visibleTreeNodes"
             :key="node.id"
@@ -1106,17 +1182,19 @@ const visibleTreeNodes = computed<VisibleTreeNode[]>(() => {
           >
             <div class="node-content" :style="{ paddingLeft: `${8 + node.depth * 16}px` }">
               <span v-if="node.isLeaf !== 1" class="expand-icon" @click="toggleExpand(node, $event)">
-                <ChevronDown v-if="expandedKeys.has(node.id)" :size="14" />
-                <ChevronRight v-else :size="14" />
+                <ChevronRight :size="14" :class="['expand-svg', { 'is-expanded': expandedKeys.has(node.id) }]" />
               </span>
               <span v-else class="expand-placeholder"></span>
-              <FileText v-if="node.isLeaf === 1" :size="14" class="node-icon file" />
-              <Folder v-else :size="14" class="node-icon folder" />
+              <div class="node-icon-wrapper">
+                <FileText v-if="node.isLeaf === 1" :size="14" class="node-icon file" />
+                <Folder v-else :size="14" class="node-icon folder" />
+                <Pencil v-if="node.status === 'draft' || node.hasDraft === 1" :size="12" class="draft-dot-icon" fill="currentColor" />
+                <span v-else-if="node.hasDescendantDraft" class="descendant-draft-dot"></span>
+              </div>
               <span class="node-title">{{ node.nameDraft || node.name || '未命名' }}</span>
-              <span v-if="node.status === 'draft' || node.hasDraft === 1" class="draft-dot"></span>
             </div>
           </div>
-        </div>
+        </TransitionGroup>
       </div>
     </aside>
 
@@ -1163,10 +1241,6 @@ const visibleTreeNodes = computed<VisibleTreeNode[]>(() => {
         <div class="editor-body">
           <!-- 左侧：草稿编辑 -->
           <div class="pane draft-pane">
-            <div class="pane-header" style="justify-content: flex-start; gap: 16px;">
-              <span class="pane-title">草稿编辑</span>
-            </div>
-            
             <div class="pane-content pane-content-vditor">
               <div class="draft-edit-area">
                 <div v-if="createChildVisible" class="create-child-panel">
@@ -1202,9 +1276,8 @@ const visibleTreeNodes = computed<VisibleTreeNode[]>(() => {
                   :readonly="activeNodeNameReadonly"
                   :class="{ readonly: activeNodeNameReadonly }"
                 />
-                <div class="field-tip">
-                  <span v-if="activeNodeNameReadonly">顶级节点标题不可在此处修改，请通过教材修改接口同步。</span>
-                  <span v-else>标题与正文会自动保存，已同时做防抖和节流处理。</span>
+                <div class="field-tip" v-if="activeNodeNameReadonly">
+                  <span>顶级节点标题不可在此处修改，请通过教材修改接口同步。</span>
                 </div>
                 <div id="vditor-container" class="vditor-wrapper"></div>
               </div>
@@ -1535,10 +1608,35 @@ const visibleTreeNodes = computed<VisibleTreeNode[]>(() => {
   color: rgba(0, 0, 0, 0.95);
 }
 
+.sidebar-title-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+}
+
 .sidebar-title {
   font-size: 16px;
   font-weight: 600;
   margin: 0;
+}
+
+.accordion-toggle-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: rgba(0, 0, 0, 0.45);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.accordion-toggle-btn:hover {
+  background-color: rgba(0, 0, 0, 0.05);
+  color: rgba(0, 0, 0, 0.85);
 }
 
 .sidebar-content {
@@ -1550,12 +1648,41 @@ const visibleTreeNodes = computed<VisibleTreeNode[]>(() => {
 .tree-container {
   display: flex;
   flex-direction: column;
+  position: relative;
+}
+
+/* Tree Node Animations */
+.tree-list-move,
+.tree-list-enter-active,
+.tree-list-leave-active {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: hidden;
+}
+
+.tree-list-enter-from,
+.tree-list-leave-to {
+  opacity: 0;
+  max-height: 0 !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
+  transform: translateX(-8px);
+}
+
+.tree-list-enter-to,
+.tree-list-leave-from {
+  opacity: 1;
+  max-height: 40px; /* Assuming 36px is the typical height */
+  transform: translateX(0);
 }
 
 .tree-node {
   padding: 4px 12px;
   cursor: pointer;
   user-select: none;
+  max-height: 40px; /* Setting explicit max-height for animation */
+  box-sizing: border-box;
 }
 
 .tree-node:hover {
@@ -1583,6 +1710,15 @@ const visibleTreeNodes = computed<VisibleTreeNode[]>(() => {
   height: 20px;
   border-radius: 4px;
   color: #a39e98;
+  cursor: pointer;
+}
+
+.expand-svg {
+  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.expand-svg.is-expanded {
+  transform: rotate(90deg);
 }
 
 .expand-placeholder {
@@ -1603,6 +1739,14 @@ const visibleTreeNodes = computed<VisibleTreeNode[]>(() => {
   color: #a39e98;
 }
 
+.node-icon-wrapper {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 6px;
+}
+
 .node-title {
   font-size: 14px;
   white-space: nowrap;
@@ -1611,12 +1755,25 @@ const visibleTreeNodes = computed<VisibleTreeNode[]>(() => {
   flex: 1;
 }
 
-.draft-dot {
-  width: 6px;
-  height: 6px;
-  background-color: #dd5b00;
+.draft-dot-icon {
+  position: absolute;
+  top: -6px;
+  right: -8px;
+  color: #3b82f6; /* 静态蓝色 */
+  background-color: transparent; /* 透明背景 */
+  flex-shrink: 0;
+  z-index: 1;
+}
+
+.descendant-draft-dot {
+  position: absolute;
+  top: -3px;
+  right: -5px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
-  margin-right: 8px;
+  background-color: #eab308; /* 黄色 */
+  z-index: 1;
 }
 
 .tree-children {
@@ -2585,21 +2742,6 @@ const visibleTreeNodes = computed<VisibleTreeNode[]>(() => {
   overflow: hidden;
 }
 
-.pane-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 16px;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
-  background-color: #ffffff;
-}
-
-.pane-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: #615d59;
-}
-
 .draft-header-actions {
   display: flex;
   align-items: center;
@@ -2639,6 +2781,7 @@ const visibleTreeNodes = computed<VisibleTreeNode[]>(() => {
   display: flex;
   flex-direction: column;
   overflow: hidden; /* Important for Vditor to scroll itself */
+  background-color: #ffffff;
 }
 
 .vditor-wrapper {
@@ -2647,19 +2790,101 @@ const visibleTreeNodes = computed<VisibleTreeNode[]>(() => {
   border: none !important;
 }
 
-/* Override Vditor internal styles to match Notion */
+/* Override Vditor internal styles to match modern clean design */
 .vditor-wrapper :deep(.vditor) {
   border: none !important;
+  background-color: transparent !important;
 }
+
 .vditor-wrapper :deep(.vditor-toolbar) {
-  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
-  background-color: #f6f5f4;
-  padding: 8px 16px;
+  border-bottom: 1px solid rgba(226, 232, 240, 0.8) !important;
+  background: #ffffff !important;
+  padding: 4px 48px 8px !important; /* 上间距缩小到4px，进一步拉近标题和工具栏 */
+  width: 100% !important;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+  justify-content: flex-start;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  box-shadow: none !important;
+  max-width: 1000px !important;
+  margin: 0 auto !important;
+  box-sizing: border-box !important;
+  border-radius: 0 !important;
+  border-left: none !important;
+  border-right: none !important;
+  border-top: none !important;
 }
+
+.vditor-wrapper :deep(.vditor-toolbar__item) {
+  margin: 0 !important;
+}
+
+.vditor-wrapper :deep(.vditor-toolbar__item > button) {
+  color: #64748b !important;
+  border-radius: 8px !important;
+  padding: 6px !important;
+  width: 36px !important;
+  height: 36px !important;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  background: transparent !important;
+  border: 1px solid transparent !important;
+}
+
+.vditor-wrapper :deep(.vditor-toolbar__item > button:hover) {
+  background: #ffffff !important;
+  color: #2563eb !important;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.05) !important;
+  transform: translateY(-1px);
+}
+
+.vditor-wrapper :deep(.vditor-toolbar__item > button.vditor-menu--current) {
+  background: #eff6ff !important;
+  color: #2563eb !important;
+  border-color: #bfdbfe !important;
+  box-shadow: inset 0 2px 4px rgba(0,0,0,0.02) !important;
+}
+
+.vditor-wrapper :deep(.vditor-toolbar__divider) {
+  height: 20px !important;
+  margin: 0 8px !important;
+  border-left: 1px solid #cbd5e1 !important;
+}
+
 .vditor-wrapper :deep(.vditor-reset) {
-  padding: 24px;
-  font-family: Inter, -apple-system, system-ui, sans-serif;
-  color: rgba(0,0,0,0.95);
+  padding: 24px 60px 40px !important; /* 减小正文上方的内边距，让内容更紧凑 */
+  width: 100% !important;
+  max-width: 1000px !important;
+  margin: 0 auto !important;
+  box-sizing: border-box !important;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif !important;
+  color: #334155 !important;
+  font-size: 16px !important;
+  line-height: 1.8 !important;
+  background-color: #ffffff !important;
+  min-height: calc(100% - 150px) !important;
+  border-left: none !important;
+  border-right: none !important;
+  border-bottom: none !important;
+  border-radius: 0 0 8px 8px !important;
+  box-shadow: none !important;
+  margin-bottom: 40px !important;
+}
+
+.vditor-wrapper :deep(.vditor-reset h1),
+.vditor-wrapper :deep(.vditor-reset h2),
+.vditor-wrapper :deep(.vditor-reset h3),
+.vditor-wrapper :deep(.vditor-reset h4) {
+  color: #0f172a !important;
+  font-weight: 600 !important;
+  margin-top: 2em !important;
+  margin-bottom: 1em !important;
 }
 
 /* 隐藏 vditor 默认的提示框 */
@@ -2671,14 +2896,19 @@ const visibleTreeNodes = computed<VisibleTreeNode[]>(() => {
   display: flex;
   flex-direction: column;
   flex: 1;
+  background-color: #ffffff;
 }
 
 .create-child-panel {
-  margin: 20px 24px 8px;
-  padding: 16px;
-  border: 1px solid rgba(0, 117, 222, 0.16);
+  max-width: 1000px;
+  width: calc(100% - 48px);
+  margin: 20px auto 8px;
+  padding: 16px 20px;
+  box-sizing: border-box;
+  border: 1px solid rgba(59, 130, 246, 0.15);
   border-radius: 12px;
-  background: rgba(239, 246, 255, 0.72);
+  background: #eff6ff;
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.05);
 }
 
 .create-child-header {
@@ -2709,49 +2939,61 @@ const visibleTreeNodes = computed<VisibleTreeNode[]>(() => {
   flex: 1;
   min-width: 0;
   height: 38px;
-  padding: 0 12px;
-  border: 1px solid rgba(0, 0, 0, 0.12);
+  padding: 0 14px;
+  border: 1px solid #cbd5e1;
   border-radius: 8px;
   background: #ffffff;
   font-size: 14px;
-  color: rgba(0, 0, 0, 0.95);
+  color: #0f172a;
   outline: none;
+  transition: all 0.2s ease;
 }
 
 .child-input:focus {
   border-color: #3b82f6;
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
 }
 
 .published-name {
-  font-size: 32px;
-  font-weight: 700;
-  color: rgba(0, 0, 0, 0.95);
+  font-size: 36px;
+  font-weight: 800;
+  color: #0f172a;
   margin-bottom: 24px;
-  letter-spacing: -0.625px;
+  letter-spacing: -0.02em;
 }
 
 .empty-content {
-  color: #a39e98;
+  color: #94a3b8;
   font-size: 14px;
   font-style: italic;
   margin-top: 16px;
 }
 
 .title-input {
-  font-size: 32px;
-  font-weight: 700;
+  font-size: 36px;
+  font-weight: 800;
   border: none;
   outline: none;
-  color: rgba(0, 0, 0, 0.95);
+  color: #0f172a;
   background: transparent;
-  padding: 24px 24px 0 24px;
-  margin-bottom: 0;
-  letter-spacing: -0.625px;
+  padding: 16px 60px 8px; /* 顶部距离减少使标题整体上移，底部留出8px防止文字下半部分被截断 */
+  margin: 0 auto; /* 去除负边距，避免被下方工具栏物理遮挡 */
+  width: 100%;
+  max-width: 1000px;
+  box-sizing: border-box;
+  letter-spacing: -0.02em;
+  background-color: #ffffff;
+  box-shadow: none;
+  border-left: none;
+  border-right: none;
+  border-top: none;
+  border-bottom: none;
+  border-radius: 8px 8px 0 0;
+  line-height: 1.5; /* 恢复正常的行高，防止输入框内部文字被上下裁剪 */
 }
 
 .title-input::placeholder {
-  color: #a39e98;
+  color: #cbd5e1;
 }
 
 .title-input.readonly {
@@ -2760,10 +3002,20 @@ const visibleTreeNodes = computed<VisibleTreeNode[]>(() => {
 }
 
 .field-tip {
-  padding: 8px 24px 16px;
-  font-size: 12px;
+  padding: 4px 60px 8px;
+  font-size: 13px;
   line-height: 1.6;
   color: #64748b;
+  max-width: 1000px;
+  margin: 0 auto;
+  width: 100%;
+  box-sizing: border-box;
+  background-color: #ffffff;
+  box-shadow: none;
+  border-left: none;
+  border-right: none;
+  border-top: none;
+  border-bottom: none;
 }
 
 
