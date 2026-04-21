@@ -1,6 +1,16 @@
 import request from '../utils/request'
 import type { ApiResponse } from '../types/index'
-import type { SubjectNode, SubjectNodeDetail, NodeNote, AuthorInitRes, AuthorNode, AuthorNodeContent } from '../types/node'
+import type {
+  SubjectNode,
+  SubjectNodeDetail,
+  NodeNote,
+  AuthorInitRes,
+  AuthorNode,
+  AuthorNodeContent,
+  CreateKnowledgeNodePayload,
+  UpdateKnowledgeNodeDraftPayload,
+  UpsertKnowledgeContentPayload
+} from '../types/node'
 import { validateNoteContent } from '../utils/noteValidation'
 
 // 获取教材顶级知识点
@@ -67,12 +77,17 @@ export const getAuthorNodeContent = (nodeId: number) => {
   return request.get<ApiResponse<AuthorNodeContent>>(`/nodes/${nodeId}/author-content`)
 }
 
-// 4. 创作者修改知识点名称草稿 (猜测的PUT接口，基于上下文)
-export const updateAuthorNodeName = (nodeId: number, nameDraft: string) => {
-  return request.put<ApiResponse<null>>(`/nodes/${nodeId}/author-name`, { nameDraft })
+// 4. 创建知识节点
+export const createKnowledgeNode = (data: CreateKnowledgeNodePayload) => {
+  return request.post<ApiResponse<number>>('/nodes', data)
 }
 
-// 5. 创作者修改正文草稿 (猜测的PUT接口，基于上下文)
-export const updateAuthorNodeContent = (nodeId: number, contentDraft: string) => {
-  return request.put<ApiResponse<null>>(`/nodes/${nodeId}/author-content`, { contentDraft })
+// 5. 修改知识点名称草稿
+export const updateKnowledgeNodeDraft = (nodeId: number, data: UpdateKnowledgeNodeDraftPayload) => {
+  return request.put<ApiResponse<null>>(`/nodes/${nodeId}/draft`, data)
+}
+
+// 6. 更新或创建知识点正文内容草稿
+export const upsertKnowledgeContent = (nodeId: number, data: UpsertKnowledgeContentPayload) => {
+  return request.put<ApiResponse<null>>(`/nodes/${nodeId}/content`, data)
 }

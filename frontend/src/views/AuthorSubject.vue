@@ -1,24 +1,26 @@
 <script setup lang="ts">
-import { ref, onMounted, computed, watch, nextTick, onBeforeUnmount } from 'vue'
+import { ref, onMounted, computed, watch, nextTick, onBeforeUnmount, reactive } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import Vditor from 'vditor'
 import 'vditor/dist/index.css'
 import markdownit from 'markdown-it'
 import hljs from 'highlight.js'
 import 'highlight.js/styles/github.css'
-import { 
-  getAuthorInitNodes, 
-  getAuthorChildNodes, 
-  getAuthorNodeContent, 
-  updateAuthorNodeName, 
-  updateAuthorNodeContent 
+import {
+  getAuthorInitNodes,
+  getAuthorChildNodes,
+  getAuthorNodeContent,
+  createKnowledgeNode,
+  updateKnowledgeNodeDraft,
+  upsertKnowledgeContent
 } from '../api/node'
 import type { AuthorNode, AuthorNodeContent } from '../types/node'
-import { 
-  ChevronRight, 
-  ChevronDown, 
-  FileText, 
-  Folder, 
+import Toast from '../components/Toast.vue'
+import {
+  ChevronRight,
+  ChevronDown,
+  FileText,
+  Folder,
   ArrowLeft,
   CheckCircle2,
   Clock,
@@ -30,22 +32,22 @@ import {
   LoaderCircle,
   Plus,
   ChevronUp,
-  RotateCcw,
   ArrowUpCircle,
   ArrowDownCircle,
   Copy
 } from 'lucide-vue-next'
-import { 
-  getAISessions, 
-  getAISessionMessages, 
-  updateAISessionTitle 
+import {
+  getAISessions,
+  getAISessionMessages
 } from '../api/ai'
 import type { AIChatMessage, AIChatSession } from '../types/ai'
-import { reactive } from 'vue'
 
 const route = useRoute()
 const router = useRouter()
 const subjectId = Number(route.params.id)
+const TITLE_MAX_LENGTH = 150
+const SAVE_DEBOUNCE_MS = 800
+const SAVE_THROTTLE_MS = 1800
 
 // 节点树状态
 const nodes = ref<AuthorNode[]>([])
@@ -66,12 +68,35 @@ const originalContent = ref('')
 const saving = ref(false)
 const saveStatus = ref<'saved' | 'unsaved' | 'saving' | 'error'>('saved')
 const contentInfo = ref<AuthorNodeContent | null>(null)
+const creatingChild = ref(false)
+const createChildVisible = ref(false)
+const newChildName = ref('')
+const isHydratingEditor = ref(false)
+const pendingSaveAfterCurrent = ref(false)
+const toast = reactive({
+  show: false,
+  message: '',
+  type: 'success' as 'success' | 'error'
+})
+let saveDebounceTimer: ReturnType<typeof setTimeout> | null = null
+let saveThrottleTimer: ReturnType<typeof setTimeout> | null = null
+let lastSaveTimestamp = 0
+
+const showToast = (message: string, type: 'success' | 'error' = 'success') => {
+  toast.message = message
+  toast.type = type
+  toast.show = true
+}
+
+const activeNodeNameReadonly = computed(() => activeNode.value?.parentId === 0)
 
 onBeforeUnmount(() => {
   if (vditorInstance) {
     vditorInstance.destroy()
     vditorInstance = null
   }
+  if (saveDebounceTimer) clearTimeout(saveDebounceTimer)
+  if (saveThrottleTimer) clearTimeout(saveThrottleTimer)
 })
 
 // 控制是否显示已发布内容面板
@@ -205,11 +230,6 @@ const openAIHistory = async () => {
   if (!sessions.value.length) {
     await loadSessions(true)
   }
-}
-
-const openAIEntry = () => {
-  aiViewMode.value = 'entry'
-  aiHistoryDrawerOpen.value = false
 }
 
 const closeAIHistory = () => {
@@ -569,7 +589,161 @@ const normalizeAuthorNode = (node: AuthorNode): AuthorNode => ({
   isLeaf: Number(node.isLeaf)
 })
 
-let saveTimer: any = null
+const hasPendingDraftChanges = () => {
+  return editName.value !== originalName.value || editContent.value !== originalContent.value
+}
+
+const updateEditorNameSilently = (value: string) => {
+  isHydratingEditor.value = true
+  editName.value = value
+  originalName.value = value
+  nextTick(() => {
+    isHydratingEditor.value = false
+  })
+}
+
+const clearAutoSaveTimers = () => {
+  if (saveDebounceTimer) {
+    clearTimeout(saveDebounceTimer)
+    saveDebounceTimer = null
+  }
+  if (saveThrottleTimer) {
+    clearTimeout(saveThrottleTimer)
+    saveThrottleTimer = null
+  }
+}
+
+const scheduleAutoSave = () => {
+  if (!activeNodeId.value || !hasPendingDraftChanges()) return
+  if (saveDebounceTimer) clearTimeout(saveDebounceTimer)
+  saveDebounceTimer = setTimeout(() => {
+    void queueSaveDraft()
+  }, SAVE_DEBOUNCE_MS)
+}
+
+const queueSaveDraft = async () => {
+  if (!activeNodeId.value || !hasPendingDraftChanges()) {
+    saveStatus.value = 'saved'
+    return
+  }
+
+  if (saving.value) {
+    pendingSaveAfterCurrent.value = true
+    return
+  }
+
+  const now = Date.now()
+  const remaining = SAVE_THROTTLE_MS - (now - lastSaveTimestamp)
+  if (remaining > 0) {
+    if (saveThrottleTimer) clearTimeout(saveThrottleTimer)
+    saveThrottleTimer = setTimeout(() => {
+      void persistDraft()
+    }, remaining)
+    return
+  }
+
+  await persistDraft()
+}
+
+const flushPendingSave = async () => {
+  clearAutoSaveTimers()
+  if (hasPendingDraftChanges()) {
+    await persistDraft()
+  }
+}
+
+const persistDraft = async () => {
+  if (!activeNodeId.value) return
+
+  const currentNodeId = activeNodeId.value
+  const currentNode = nodes.value.find(node => node.id === currentNodeId) || null
+  const trimmedName = editName.value.trim()
+
+  if (!trimmedName) {
+    saveStatus.value = 'error'
+    showToast('节点标题不能为空', 'error')
+    return
+  }
+
+  if (trimmedName.length > TITLE_MAX_LENGTH) {
+    saveStatus.value = 'error'
+    showToast(`节点标题不能超过 ${TITLE_MAX_LENGTH} 个字符`, 'error')
+    return
+  }
+
+  if (!hasPendingDraftChanges()) {
+    saveStatus.value = 'saved'
+    return
+  }
+
+  saveStatus.value = 'saving'
+  saving.value = true
+
+  try {
+    let success = true
+
+    if (!activeNodeNameReadonly.value && trimmedName !== originalName.value) {
+      const resName = await updateKnowledgeNodeDraft(currentNodeId, {
+        subjectId,
+        nameDraft: trimmedName
+      })
+
+      if (resName.data?.code === 200) {
+        updateEditorNameSilently(trimmedName)
+        if (currentNode) {
+          currentNode.nameDraft = trimmedName
+          currentNode.hasDraft = 1
+        }
+      } else {
+        success = false
+      }
+    }
+
+    if (editContent.value !== originalContent.value) {
+      const resContent = await upsertKnowledgeContent(currentNodeId, {
+        contentDraft: editContent.value
+      })
+
+      if (resContent.data?.code === 200) {
+        originalContent.value = editContent.value
+        if (contentInfo.value) {
+          contentInfo.value = {
+            ...contentInfo.value,
+            contentDraft: editContent.value,
+            hasDraft: 1
+          }
+        }
+        if (currentNode) {
+          currentNode.hasDraft = 1
+        }
+      } else {
+        success = false
+      }
+    }
+
+    if (success) {
+      lastSaveTimestamp = Date.now()
+      saveStatus.value = 'saved'
+    } else {
+      saveStatus.value = 'error'
+      showToast('自动保存失败，请稍后重试', 'error')
+    }
+  } catch (err: any) {
+    console.error('保存失败', err)
+    saveStatus.value = 'error'
+    showToast(err?.response?.data?.msg || '自动保存失败，请稍后重试', 'error')
+  } finally {
+    saving.value = false
+    if (saveThrottleTimer) {
+      clearTimeout(saveThrottleTimer)
+      saveThrottleTimer = null
+    }
+    if (pendingSaveAfterCurrent.value) {
+      pendingSaveAfterCurrent.value = false
+      void queueSaveDraft()
+    }
+  }
+}
 
 // 初始化加载
 onMounted(async () => {
@@ -655,6 +829,10 @@ const handleNodeSelect = async (nodeId: number) => {
   const node = nodes.value.find(n => n.id === nodeId)
   if (!node) return
 
+  if (activeNodeId.value && activeNodeId.value !== nodeId) {
+    await flushPendingSave()
+  }
+
   // 如果是非叶子节点，点击时自动处理展开逻辑
   if (node.isLeaf === 0) {
     if (!expandedKeys.value.has(node.id)) {
@@ -670,7 +848,10 @@ const handleNodeSelect = async (nodeId: number) => {
   if (activeNodeId.value === nodeId) return
   
   activeNodeId.value = nodeId
+  createChildVisible.value = false
+  newChildName.value = ''
   
+  isHydratingEditor.value = true
   editName.value = node.nameDraft || node.name || '未命名节点'
   originalName.value = editName.value
   
@@ -704,7 +885,6 @@ const handleNodeSelect = async (nodeId: number) => {
             cache: { enable: false },
             input: (value) => {
               editContent.value = value
-              // 触发 watcher 的保存逻辑
             }
           })
         }
@@ -726,63 +906,77 @@ const handleNodeSelect = async (nodeId: number) => {
     contentInfo.value = null
   } finally {
     loadingContent.value = false
+    nextTick(() => {
+      isHydratingEditor.value = false
+    })
   }
 }
 
 // 自动保存逻辑
 watch([editName, editContent], ([newName, newContent]) => {
+  if (!activeNodeId.value || isHydratingEditor.value) return
+
   if (newName !== originalName.value || newContent !== originalContent.value) {
     saveStatus.value = 'unsaved'
-    if (saveTimer) clearTimeout(saveTimer)
-    saveTimer = setTimeout(() => {
-      saveDraft()
-    }, 2000) // 2秒防抖自动保存
+    scheduleAutoSave()
+  } else if (!saving.value) {
+    saveStatus.value = 'saved'
   }
 })
 
-const saveDraft = async () => {
+const openCreateChild = () => {
   if (!activeNodeId.value) return
-  saveStatus.value = 'saving'
-  saving.value = true
-  
+  newChildName.value = ''
+  createChildVisible.value = true
+}
+
+const cancelCreateChild = () => {
+  createChildVisible.value = false
+  newChildName.value = ''
+}
+
+const createChildNode = async () => {
+  if (!activeNodeId.value) return
+
+  const nameDraft = newChildName.value.trim()
+  if (!nameDraft) {
+    showToast('新节点标题不能为空', 'error')
+    return
+  }
+  if (nameDraft.length > TITLE_MAX_LENGTH) {
+    showToast(`新节点标题不能超过 ${TITLE_MAX_LENGTH} 个字符`, 'error')
+    return
+  }
+
+  await flushPendingSave()
+  creatingChild.value = true
+
   try {
-    let success = true
-    // 保存名称
-    if (editName.value !== originalName.value) {
-      const resName = await updateAuthorNodeName(activeNodeId.value, editName.value)
-      if (resName.data?.code === 200) {
-        originalName.value = editName.value
-        // 更新列表中的节点
-        const node = nodes.value.find(n => n.id === activeNodeId.value)
-        if (node) {
-          node.nameDraft = editName.value
-          node.hasDraft = 1
-        }
-      } else {
-        success = false
+    const parentId = activeNodeId.value
+    const res = await createKnowledgeNode({
+      subjectId,
+      parentId,
+      nameDraft
+    })
+
+    if (res.data?.code === 200 && res.data.data) {
+      const parentNode = nodes.value.find(node => node.id === parentId)
+      if (parentNode) {
+        parentNode.isLeaf = 0
       }
-    }
-    
-    // 保存内容
-    if (editContent.value !== originalContent.value) {
-      const resContent = await updateAuthorNodeContent(activeNodeId.value, editContent.value)
-      if (resContent.data?.code === 200) {
-        originalContent.value = editContent.value
-      } else {
-        success = false
-      }
-    }
-    
-    if (success) {
-      saveStatus.value = 'saved'
+      expandedKeys.value.add(parentId)
+      await fetchChildren(parentId)
+      cancelCreateChild()
+      showToast('子节点创建成功')
+      await handleNodeSelect(Number(res.data.data))
     } else {
-      saveStatus.value = 'error'
+      showToast(res.data?.msg || '创建子节点失败', 'error')
     }
-  } catch (err) {
-    console.error('保存失败', err)
-    saveStatus.value = 'error'
+  } catch (err: any) {
+    console.error('创建子节点失败', err)
+    showToast(err?.response?.data?.msg || '创建子节点失败', 'error')
   } finally {
-    saving.value = false
+    creatingChild.value = false
   }
 }
 
@@ -883,6 +1077,12 @@ const visibleTreeNodes = computed<VisibleTreeNode[]>(() => {
 
 <template>
   <div class="author-layout">
+    <Toast
+      v-if="toast.show"
+      :message="toast.message"
+      :type="toast.type"
+      @close="toast.show = false"
+    />
     <!-- 侧边栏 -->
     <aside class="sidebar" :style="{ width: sidebarWidth + 'px' }">
       <div class="sidebar-header">
@@ -953,6 +1153,10 @@ const visibleTreeNodes = computed<VisibleTreeNode[]>(() => {
             </div>
           </div>
           <div class="header-actions">
+            <button class="btn-primary" type="button" @click="openCreateChild" :disabled="creatingChild">
+              <Plus :size="14" />
+              新建子节点
+            </button>
           </div>
         </header>
         
@@ -965,12 +1169,43 @@ const visibleTreeNodes = computed<VisibleTreeNode[]>(() => {
             
             <div class="pane-content pane-content-vditor">
               <div class="draft-edit-area">
+                <div v-if="createChildVisible" class="create-child-panel">
+                  <div class="create-child-header">
+                    <span class="create-child-title">在当前节点下创建子节点</span>
+                    <span class="create-child-hint">输入标题后立即创建并自动选中新节点</span>
+                  </div>
+                  <div class="create-child-actions">
+                    <input
+                      v-model="newChildName"
+                      class="child-input"
+                      placeholder="输入新节点标题..."
+                      maxlength="150"
+                      autocomplete="off"
+                      @keydown.enter.prevent="createChildNode"
+                    />
+                    <button class="btn-primary" type="button" @click="createChildNode" :disabled="creatingChild">
+                      <LoaderCircle v-if="creatingChild" :size="14" class="spin" />
+                      <Plus v-else :size="14" />
+                      创建
+                    </button>
+                    <button class="btn-secondary" type="button" @click="cancelCreateChild" :disabled="creatingChild">
+                      取消
+                    </button>
+                  </div>
+                </div>
                 <input 
                   v-model="editName" 
                   class="title-input" 
                   placeholder="输入草稿标题..."
                   autocomplete="off"
+                  maxlength="150"
+                  :readonly="activeNodeNameReadonly"
+                  :class="{ readonly: activeNodeNameReadonly }"
                 />
+                <div class="field-tip">
+                  <span v-if="activeNodeNameReadonly">顶级节点标题不可在此处修改，请通过教材修改接口同步。</span>
+                  <span v-else>标题与正文会自动保存，已同时做防抖和节流处理。</span>
+                </div>
                 <div id="vditor-container" class="vditor-wrapper"></div>
               </div>
             </div>
@@ -1495,6 +1730,31 @@ const visibleTreeNodes = computed<VisibleTreeNode[]>(() => {
 }
 
 .btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-secondary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background-color: #ffffff;
+  color: #615d59;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 4px;
+  padding: 6px 12px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background-color: #f6f5f4;
+  color: rgba(0, 0, 0, 0.95);
+}
+
+.btn-secondary:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
@@ -2413,6 +2673,56 @@ const visibleTreeNodes = computed<VisibleTreeNode[]>(() => {
   flex: 1;
 }
 
+.create-child-panel {
+  margin: 20px 24px 8px;
+  padding: 16px;
+  border: 1px solid rgba(0, 117, 222, 0.16);
+  border-radius: 12px;
+  background: rgba(239, 246, 255, 0.72);
+}
+
+.create-child-header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+
+.create-child-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1e3a8a;
+}
+
+.create-child-hint {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.create-child-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.child-input {
+  flex: 1;
+  min-width: 0;
+  height: 38px;
+  padding: 0 12px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 8px;
+  background: #ffffff;
+  font-size: 14px;
+  color: rgba(0, 0, 0, 0.95);
+  outline: none;
+}
+
+.child-input:focus {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
+}
+
 .published-name {
   font-size: 32px;
   font-weight: 700;
@@ -2442,6 +2752,18 @@ const visibleTreeNodes = computed<VisibleTreeNode[]>(() => {
 
 .title-input::placeholder {
   color: #a39e98;
+}
+
+.title-input.readonly {
+  color: #64748b;
+  cursor: not-allowed;
+}
+
+.field-tip {
+  padding: 8px 24px 16px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: #64748b;
 }
 
 
