@@ -600,6 +600,7 @@ func (s *KnowledgeNodeService) GetAuthorChildNodes(ctx context.Context, userID u
 			AuditStatus: node.AuditStatus,
 			HasDraft:    node.HasDraft,
 			Path:        node.Path,
+			IsLeaf:      node.IsLeaf,
 		})
 	}
 
@@ -640,6 +641,7 @@ func (s *KnowledgeNodeService) GetAuthorNodeContent(ctx context.Context, userID 
 		ContentDraft: content.ContentDraft,
 		AuditStatus:  content.AuditStatus,
 		HasDraft:     content.HasDraft,
+		IsLeaf:       node.IsLeaf,
 	}, nil
 }
 
@@ -725,6 +727,7 @@ func (s *KnowledgeNodeService) GetAuthorInitEditNodes(ctx context.Context, userI
 			AuditStatus: node.AuditStatus,
 			HasDraft:    node.HasDraft,
 			Path:        node.Path,
+			IsLeaf:      node.IsLeaf,
 		})
 	}
 

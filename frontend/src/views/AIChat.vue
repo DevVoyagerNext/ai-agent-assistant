@@ -12,8 +12,8 @@ import {
 } from '../api/ai'
 import type { AIChatSession, AIChatMessage } from '../types/ai'
 import { 
-  Plus, MessageSquare, Send, MoreVertical, Edit3, 
-  Trash2, Loader2, ArrowLeft, Bot, User, Sparkles, ChevronDown, ChevronUp,
+  Plus, MessageSquare, Send, Edit3, 
+  Loader2, ArrowLeft, Bot, User, Sparkles, ChevronDown, ChevronUp,
   ArrowUpCircle, ArrowDownCircle, Copy
 } from 'lucide-vue-next'
 

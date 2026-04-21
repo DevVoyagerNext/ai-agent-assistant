@@ -851,7 +851,7 @@ const scrollTo = (id: string) => {
                 v-for="subject in publishedNoDraftSubjects" 
                 :key="subject.id" 
                 class="note-item"
-                @click="router.push(`/subject/${subject.id}`)"
+                @click="router.push(`/author/subject/${subject.id}`)"
                 style="cursor: pointer;"
               >
                 <div class="note-title-line">
@@ -870,7 +870,7 @@ const scrollTo = (id: string) => {
                 v-for="subject in publishedWithDraftSubjects" 
                 :key="subject.id" 
                 class="note-item"
-                @click="router.push(`/subject/${subject.id}`)"
+                @click="router.push(`/author/subject/${subject.id}`)"
                 style="cursor: pointer;"
               >
                 <div class="note-title-line">
@@ -889,7 +889,7 @@ const scrollTo = (id: string) => {
                 v-for="subject in draftSubjects" 
                 :key="subject.id" 
                 class="note-item"
-                @click="router.push(`/subject/${subject.id}`)"
+                @click="router.push(`/author/subject/${subject.id}`)"
                 style="cursor: pointer;"
               >
                 <div class="note-title-line">

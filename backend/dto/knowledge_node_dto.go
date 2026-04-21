@@ -94,6 +94,7 @@ type AuthorChildNodeRes struct {
 	AuditStatus int8   `json:"auditStatus"`
 	HasDraft    int8   `json:"hasDraft"`
 	Path        string `json:"path"`
+	IsLeaf      int8   `json:"isLeaf"`
 }
 
 // AuthorNodeContentRes 创作者视角的节点内容信息
@@ -102,6 +103,7 @@ type AuthorNodeContentRes struct {
 	ContentDraft string `json:"contentDraft"`
 	AuditStatus  int8   `json:"auditStatus"`
 	HasDraft     int8   `json:"hasDraft"`
+	IsLeaf       int8   `json:"isLeaf"`
 }
 
 // AuthorInitEditRes 创作者进入编辑页面的初始响应信息

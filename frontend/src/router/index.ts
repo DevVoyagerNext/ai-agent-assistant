@@ -35,6 +35,11 @@ const routes = [
     component: () => import('../views/AIChat.vue')
   },
   {
+    path: '/author/subject/:id',
+    name: 'AuthorSubject',
+    component: () => import('../views/AuthorSubject.vue')
+  },
+  {
     path: '/auth',
     component: () => import('../layouts/AuthLayout.vue'),
     children: [

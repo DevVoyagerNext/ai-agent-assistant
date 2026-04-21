@@ -1,6 +1,6 @@
 import request from '../utils/request'
 import type { ApiResponse } from '../types/index'
-import type { SubjectNode, SubjectNodeDetail, NodeNote } from '../types/node'
+import type { SubjectNode, SubjectNodeDetail, NodeNote, AuthorInitRes, AuthorNode, AuthorNodeContent } from '../types/node'
 import { validateNoteContent } from '../utils/noteValidation'
 
 // 获取教材顶级知识点
@@ -46,4 +46,33 @@ export const updateNodeStatus = (nodeId: number, status: 'unstarted' | 'learning
 // 评价知识点难易程度
 export const updateNodeDifficulty = (nodeId: number, difficulty: 'easy' | 'medium' | 'hard') => {
   return request.put<ApiResponse<null>>(`/nodes/${nodeId}/difficulty`, { difficulty })
+}
+
+// ========== 创作者视角接口 ==========
+
+// 1. 查询创作知识点 (含断点)
+export const getAuthorInitNodes = (subjectId: number) => {
+  return request.get<ApiResponse<AuthorInitRes>>('/nodes/author-init', {
+    params: { subjectId }
+  })
+}
+
+// 2. 创作者获取子节点列表接口
+export const getAuthorChildNodes = (nodeId: number) => {
+  return request.get<ApiResponse<AuthorNode[]>>(`/nodes/${nodeId}/author-children`)
+}
+
+// 3. 创作者获取节点内容接口
+export const getAuthorNodeContent = (nodeId: number) => {
+  return request.get<ApiResponse<AuthorNodeContent>>(`/nodes/${nodeId}/author-content`)
+}
+
+// 4. 创作者修改知识点名称草稿 (猜测的PUT接口，基于上下文)
+export const updateAuthorNodeName = (nodeId: number, nameDraft: string) => {
+  return request.put<ApiResponse<null>>(`/nodes/${nodeId}/author-name`, { nameDraft })
+}
+
+// 5. 创作者修改正文草稿 (猜测的PUT接口，基于上下文)
+export const updateAuthorNodeContent = (nodeId: number, contentDraft: string) => {
+  return request.put<ApiResponse<null>>(`/nodes/${nodeId}/author-content`, { contentDraft })
 }
