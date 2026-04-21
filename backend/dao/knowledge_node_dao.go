@@ -30,6 +30,15 @@ func (dao *KnowledgeNodeDao) GetChildNodes(parentID int) ([]model.KnowledgeNode,
 	return nodes, err
 }
 
+// GetChildNodesWithoutStatus 获取直属下级知识点（不限制发布状态，用于创作者视角）
+func (dao *KnowledgeNodeDao) GetChildNodesWithoutStatus(parentID int) ([]model.KnowledgeNode, error) {
+	var nodes []model.KnowledgeNode
+	err := global.GVA_DB.Where("parent_id = ?", parentID).
+		Order("sort_order asc").
+		Find(&nodes).Error
+	return nodes, err
+}
+
 // GetNodesByParentIDs 批量根据 parentId 列表获取子节点列表
 func (dao *KnowledgeNodeDao) GetNodesByParentIDs(parentIDs []int) ([]model.KnowledgeNode, error) {
 	var nodes []model.KnowledgeNode
@@ -37,6 +46,18 @@ func (dao *KnowledgeNodeDao) GetNodesByParentIDs(parentIDs []int) ([]model.Knowl
 		return nodes, nil
 	}
 	err := global.GVA_DB.Where("parent_id IN ? AND status = ?", parentIDs, "published").
+		Order("parent_id asc, sort_order asc").
+		Find(&nodes).Error
+	return nodes, err
+}
+
+// GetNodesByParentIDsWithoutStatus 批量根据 parentId 列表获取子节点列表（不限制状态）
+func (dao *KnowledgeNodeDao) GetNodesByParentIDsWithoutStatus(parentIDs []int) ([]model.KnowledgeNode, error) {
+	var nodes []model.KnowledgeNode
+	if len(parentIDs) == 0 {
+		return nodes, nil
+	}
+	err := global.GVA_DB.Where("parent_id IN ?", parentIDs).
 		Order("parent_id asc, sort_order asc").
 		Find(&nodes).Error
 	return nodes, err
@@ -96,6 +117,33 @@ func (dao *KnowledgeNodeDao) GetNodeContentByID(nodeID int) (model.KnowledgeCont
 	var content model.KnowledgeContent
 	err := global.GVA_DB.Where("node_id = ?", nodeID).First(&content).Error
 	return content, err
+}
+
+// UpsertKnowledgeContent 更新或创建知识点正文内容草稿
+func (dao *KnowledgeNodeDao) UpsertKnowledgeContent(nodeID int, contentDraft string) error {
+	var content model.KnowledgeContent
+	err := global.GVA_DB.Where("node_id = ?", nodeID).First(&content).Error
+
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			// 如果该节点还没有内容记录，则创建一条
+			content = model.KnowledgeContent{
+				NodeID:       nodeID,
+				Content:      "", // 发布前内容为空
+				ContentDraft: contentDraft,
+				AuditStatus:  0,
+				HasDraft:     1,
+			}
+			return global.GVA_DB.Create(&content).Error
+		}
+		return err
+	}
+
+	// 如果存在记录，则更新其 draft 字段
+	return global.GVA_DB.Model(&content).Updates(map[string]interface{}{
+		"content_draft": contentDraft,
+		"has_draft":     1,
+	}).Error
 }
 
 // GetNodeMetricsByNodeIDs 批量获取这些节点的统计指标（难度等）

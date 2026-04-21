@@ -77,3 +77,35 @@ type UpdateKnowledgeNodeDraftReq struct {
 	SubjectID int    `json:"subjectId" binding:"required,gt=0"`
 	NameDraft string `json:"nameDraft" binding:"required,min=1,max=150"`
 }
+
+// UpsertKnowledgeContentReq 创建或更新知识点正文内容请求体
+type UpsertKnowledgeContentReq struct {
+	ContentDraft string `json:"contentDraft" binding:"required"`
+}
+
+// AuthorChildNodeRes 创作者视角的子节点信息
+type AuthorChildNodeRes struct {
+	ID          uint   `json:"id"`
+	SubjectID   int    `json:"subjectId"`
+	ParentID    int    `json:"parentId"`
+	Name        string `json:"name"`
+	NameDraft   string `json:"nameDraft"`
+	Status      string `json:"status"`
+	AuditStatus int8   `json:"auditStatus"`
+	HasDraft    int8   `json:"hasDraft"`
+	Path        string `json:"path"`
+}
+
+// AuthorNodeContentRes 创作者视角的节点内容信息
+type AuthorNodeContentRes struct {
+	Content      string `json:"content"`
+	ContentDraft string `json:"contentDraft"`
+	AuditStatus  int8   `json:"auditStatus"`
+	HasDraft     int8   `json:"hasDraft"`
+}
+
+// AuthorInitEditRes 创作者进入编辑页面的初始响应信息
+type AuthorInitEditRes struct {
+	LastNodeID int                  `json:"lastNodeId"` // 最后编辑或默认的节点ID
+	NodeList   []AuthorChildNodeRes `json:"nodeList"`   // 需要展开的节点树扁平列表
+}

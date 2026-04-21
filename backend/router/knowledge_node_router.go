@@ -31,13 +31,21 @@ func (s *KnowledgeNodeRouter) InitAuthKnowledgeNodeRouter(Router *gin.RouterGrou
 		authNodeRouter.POST("", nodeController.CreateKnowledgeNode)
 		// 2. 修改知识点名称草稿
 		authNodeRouter.PUT("/:nodeId/draft", nodeController.UpdateKnowledgeNodeDraft)
-		// 4. 获取某个知识点的随堂笔记 (如: /v1/nodes/12/note)
+		// 3. 更新或创建知识点正文内容草稿
+		authNodeRouter.PUT("/:nodeId/content", nodeController.UpsertKnowledgeContent)
+		// 4. 创作者获取子节点列表
+		authNodeRouter.GET("/:nodeId/author-children", nodeController.GetAuthorChildNodes)
+		// 5. 创作者获取节点内容
+		authNodeRouter.GET("/:nodeId/author-content", nodeController.GetAuthorNodeContent)
+		// 6. 创作者进入编辑页面的初始节点列表（结合断点进度）
+		authNodeRouter.GET("/author-init", nodeController.GetAuthorInitEditNodes)
+		// 7. 获取某个知识点的随堂笔记 (如: /v1/nodes/12/note)
 		authNodeRouter.GET("/:nodeId/note", nodeController.GetUserStudyNote)
-		// 5. 创建或修改某个知识点的随堂笔记 (如: POST /v1/nodes/12/note)
+		// 8. 创建或修改某个知识点的随堂笔记 (如: POST /v1/nodes/12/note)
 		authNodeRouter.POST("/:nodeId/note", nodeController.UpsertUserStudyNote)
-		// 6. 更新某个知识点的学习状态 (如: PUT /v1/nodes/12/status)
+		// 9. 更新某个知识点的学习状态 (如: PUT /v1/nodes/12/status)
 		authNodeRouter.PUT("/:nodeId/status", nodeController.UpdateNodeStatus)
-		// 7. 标记知识点难度 (如: PUT /v1/nodes/12/difficulty)
+		// 10. 标记知识点难度 (如: PUT /v1/nodes/12/difficulty)
 		authNodeRouter.PUT("/:nodeId/difficulty", nodeController.MarkNodeDifficulty)
 	}
 }

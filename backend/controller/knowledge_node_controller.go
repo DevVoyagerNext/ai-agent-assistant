@@ -204,6 +204,108 @@ func (con *KnowledgeNodeController) UpdateKnowledgeNodeDraft(c *gin.Context) {
 	response.Ok(nil, c)
 }
 
+// UpsertKnowledgeContent 更新或创建知识点正文内容草稿
+func (con *KnowledgeNodeController) UpsertKnowledgeContent(c *gin.Context) {
+	nodeIdStr := c.Param("nodeId")
+	nodeId, err := strconv.Atoi(nodeIdStr)
+	if err != nil || nodeId <= 0 {
+		response.FailWithMsg(errmsg.CodeError, "知识点ID格式错误", c)
+		return
+	}
+
+	userId, err := con.authService.GetUserID(c)
+	if err != nil || userId == 0 {
+		response.FailWithCode(errmsg.UserTokenNotExist, c)
+		return
+	}
+
+	var req dto.UpsertKnowledgeContentReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.FailWithMsg(errmsg.CodeError, "参数错误: "+err.Error(), c)
+		return
+	}
+
+	err = con.nodeService.UpsertKnowledgeContent(c.Request.Context(), userId, nodeId, req)
+	if err != nil {
+		response.FailWithMsg(errmsg.CodeError, err.Error(), c)
+		return
+	}
+
+	response.Ok(nil, c)
+}
+
+// GetAuthorChildNodes 创作者获取子节点列表
+func (con *KnowledgeNodeController) GetAuthorChildNodes(c *gin.Context) {
+	nodeIdStr := c.Param("nodeId")
+	nodeId, err := strconv.Atoi(nodeIdStr)
+	if err != nil || nodeId <= 0 {
+		response.FailWithMsg(errmsg.CodeError, "知识点ID格式错误", c)
+		return
+	}
+
+	userId, err := con.authService.GetUserID(c)
+	if err != nil || userId == 0 {
+		response.FailWithCode(errmsg.UserTokenNotExist, c)
+		return
+	}
+
+	res, err := con.nodeService.GetAuthorChildNodes(c.Request.Context(), userId, nodeId)
+	if err != nil {
+		response.FailWithMsg(errmsg.CodeError, err.Error(), c)
+		return
+	}
+
+	response.Ok(res, c)
+}
+
+// GetAuthorNodeContent 创作者获取节点内容
+func (con *KnowledgeNodeController) GetAuthorNodeContent(c *gin.Context) {
+	nodeIdStr := c.Param("nodeId")
+	nodeId, err := strconv.Atoi(nodeIdStr)
+	if err != nil || nodeId <= 0 {
+		response.FailWithMsg(errmsg.CodeError, "知识点ID格式错误", c)
+		return
+	}
+
+	userId, err := con.authService.GetUserID(c)
+	if err != nil || userId == 0 {
+		response.FailWithCode(errmsg.UserTokenNotExist, c)
+		return
+	}
+
+	res, err := con.nodeService.GetAuthorNodeContent(c.Request.Context(), userId, nodeId)
+	if err != nil {
+		response.FailWithMsg(errmsg.CodeError, err.Error(), c)
+		return
+	}
+
+	response.Ok(res, c)
+}
+
+// GetAuthorInitEditNodes 获取创作者进入编辑页面的初始节点列表
+func (con *KnowledgeNodeController) GetAuthorInitEditNodes(c *gin.Context) {
+	subjectIdStr := c.Query("subjectId")
+	subjectId, err := strconv.Atoi(subjectIdStr)
+	if err != nil || subjectId <= 0 {
+		response.FailWithMsg(errmsg.CodeError, "教材ID格式错误", c)
+		return
+	}
+
+	userId, err := con.authService.GetUserID(c)
+	if err != nil || userId == 0 {
+		response.FailWithCode(errmsg.UserTokenNotExist, c)
+		return
+	}
+
+	res, err := con.nodeService.GetAuthorInitEditNodes(c.Request.Context(), userId, subjectId)
+	if err != nil {
+		response.FailWithMsg(errmsg.CodeError, err.Error(), c)
+		return
+	}
+
+	response.Ok(res, c)
+}
+
 // UpdateNodeStatus 更新知识点学习状态
 func (con *KnowledgeNodeController) UpdateNodeStatus(c *gin.Context) {
 	nodeIdStr := c.Param("nodeId")

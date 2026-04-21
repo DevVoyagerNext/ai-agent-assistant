@@ -17,7 +17,8 @@ import (
 )
 
 type KnowledgeNodeService struct {
-	nodeDao dao.KnowledgeNodeDao
+	nodeDao    dao.KnowledgeNodeDao
+	subjectDao dao.SubjectDao
 }
 
 // enrichNodes 内部方法：批量组装知识点的难度评价与用户进度
@@ -530,4 +531,205 @@ func (s *KnowledgeNodeService) UpdateKnowledgeNodeDraft(ctx context.Context, use
 	}
 
 	return nil
+}
+
+// UpsertKnowledgeContent 更新或创建知识点正文内容草稿
+func (s *KnowledgeNodeService) UpsertKnowledgeContent(ctx context.Context, userID uint, nodeID int, req dto.UpsertKnowledgeContentReq) error {
+	// 1. 校验节点是否存在
+	node, err := s.nodeDao.GetNodeByIDWithoutStatus(nodeID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return errors.New("知识点不存在")
+		}
+		return err
+	}
+
+	// 2. 校验节点对应的教材是否属于该用户
+	var subject model.Subject
+	if err := global.GVA_DB.WithContext(ctx).Where("id = ? AND creator_id = ?", node.SubjectID, userID).First(&subject).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return errors.New("无权操作该教材或教材不存在")
+		}
+		return err
+	}
+
+	// 3. 执行更新/创建正文草稿操作
+	if err := s.nodeDao.UpsertKnowledgeContent(nodeID, req.ContentDraft); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// GetAuthorChildNodes 创作者获取子节点列表
+func (s *KnowledgeNodeService) GetAuthorChildNodes(ctx context.Context, userID uint, parentNodeID int) ([]dto.AuthorChildNodeRes, error) {
+	// 1. 获取父节点信息
+	parentNode, err := s.nodeDao.GetNodeByIDWithoutStatus(parentNodeID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, errors.New("父节点不存在")
+		}
+		return nil, err
+	}
+
+	// 2. 校验教材是否属于该用户
+	var subject model.Subject
+	if err := global.GVA_DB.WithContext(ctx).Where("id = ? AND creator_id = ?", parentNode.SubjectID, userID).First(&subject).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, errors.New("无权操作该教材或教材不存在")
+		}
+		return nil, err
+	}
+
+	// 3. 获取所有子节点
+	nodes, err := s.nodeDao.GetChildNodesWithoutStatus(parentNodeID)
+	if err != nil {
+		return nil, err
+	}
+
+	// 4. 组装返回值
+	var res []dto.AuthorChildNodeRes
+	for _, node := range nodes {
+		res = append(res, dto.AuthorChildNodeRes{
+			ID:          node.ID,
+			SubjectID:   node.SubjectID,
+			ParentID:    node.ParentID,
+			Name:        node.Name,
+			NameDraft:   node.NameDraft,
+			Status:      node.Status,
+			AuditStatus: node.AuditStatus,
+			HasDraft:    node.HasDraft,
+			Path:        node.Path,
+		})
+	}
+
+	return res, nil
+}
+
+// GetAuthorNodeContent 创作者获取节点内容
+func (s *KnowledgeNodeService) GetAuthorNodeContent(ctx context.Context, userID uint, nodeID int) (dto.AuthorNodeContentRes, error) {
+	// 1. 获取节点信息
+	node, err := s.nodeDao.GetNodeByIDWithoutStatus(nodeID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return dto.AuthorNodeContentRes{}, errors.New("节点不存在")
+		}
+		return dto.AuthorNodeContentRes{}, err
+	}
+
+	// 2. 校验教材是否属于该用户
+	var subject model.Subject
+	if err := global.GVA_DB.WithContext(ctx).Where("id = ? AND creator_id = ?", node.SubjectID, userID).First(&subject).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return dto.AuthorNodeContentRes{}, errors.New("无权操作该教材或教材不存在")
+		}
+		return dto.AuthorNodeContentRes{}, err
+	}
+
+	// 3. 获取内容
+	content, err := s.nodeDao.GetNodeContentByID(nodeID)
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return dto.AuthorNodeContentRes{}, err
+	}
+
+	// 4. 更新编写进度（断点记录）
+	_ = s.subjectDao.UpsertSubjectWritingProgress(ctx, userID, node.SubjectID, nodeID)
+
+	return dto.AuthorNodeContentRes{
+		Content:      content.Content,
+		ContentDraft: content.ContentDraft,
+		AuditStatus:  content.AuditStatus,
+		HasDraft:     content.HasDraft,
+	}, nil
+}
+
+// GetAuthorInitEditNodes 获取创作者进入编辑页面的初始节点列表
+func (s *KnowledgeNodeService) GetAuthorInitEditNodes(ctx context.Context, userID uint, subjectID int) (dto.AuthorInitEditRes, error) {
+	// 1. 校验教材是否属于该用户
+	var subject model.Subject
+	if err := global.GVA_DB.WithContext(ctx).Where("id = ? AND creator_id = ?", subjectID, userID).First(&subject).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return dto.AuthorInitEditRes{}, errors.New("无权操作该教材或教材不存在")
+		}
+		return dto.AuthorInitEditRes{}, err
+	}
+
+	// 2. 尝试查询断点记录
+	progress, err := s.subjectDao.GetSubjectWritingProgress(ctx, userID, subjectID)
+
+	var targetParentIDs []int
+	var lastNodeID int
+
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			// 没有记录，默认只展开最外层（parent_id=0）的子节点
+			targetParentIDs = []int{0}
+		} else {
+			return dto.AuthorInitEditRes{}, err
+		}
+	} else {
+		// 有断点记录，先获取该最后编辑节点的信息
+		lastNode, err := s.nodeDao.GetNodeByIDWithoutStatus(progress.LastNodeID)
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				// 如果最后编辑的节点被删了，退回到默认状态
+				targetParentIDs = []int{0}
+			} else {
+				return dto.AuthorInitEditRes{}, err
+			}
+		} else {
+			lastNodeID = int(lastNode.ID)
+			// 解析 Path 获取所有需要展开的父节点ID
+			// Path 格式例如 "0/12/34/"，按 "/" 分割
+			pathParts := strings.Split(strings.Trim(lastNode.Path, "/"), "/")
+
+			// 把所有层级的 ID 都收集起来
+			for _, part := range pathParts {
+				if id, err := strconv.Atoi(part); err == nil {
+					targetParentIDs = append(targetParentIDs, id)
+				}
+			}
+
+			// 还要把自己也加进去，展开自己的子节点
+			targetParentIDs = append(targetParentIDs, progress.LastNodeID)
+		}
+	}
+
+	// 3. 批量获取这些 parentID 下的所有子节点
+	nodes, err := s.nodeDao.GetNodesByParentIDsWithoutStatus(targetParentIDs)
+	if err != nil {
+		return dto.AuthorInitEditRes{}, err
+	}
+
+	// 4. 处理默认 lastNodeID 逻辑
+	if lastNodeID == 0 {
+		// 寻找查出来的 nodes 中第一个 parent_id = 0 的节点作为默认打开的节点
+		for _, node := range nodes {
+			if node.ParentID == 0 {
+				lastNodeID = int(node.ID)
+				break
+			}
+		}
+	}
+
+	// 5. 组装返回数据
+	var nodeList []dto.AuthorChildNodeRes
+	for _, node := range nodes {
+		nodeList = append(nodeList, dto.AuthorChildNodeRes{
+			ID:          node.ID,
+			SubjectID:   node.SubjectID,
+			ParentID:    node.ParentID,
+			Name:        node.Name,
+			NameDraft:   node.NameDraft,
+			Status:      node.Status,
+			AuditStatus: node.AuditStatus,
+			HasDraft:    node.HasDraft,
+			Path:        node.Path,
+		})
+	}
+
+	return dto.AuthorInitEditRes{
+		LastNodeID: lastNodeID,
+		NodeList:   nodeList,
+	}, nil
 }

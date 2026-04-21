@@ -73,6 +73,23 @@ func (d *SubjectDao) UpdateSubjectDraftWithTx(tx *gorm.DB, subjectId int, nameDr
 	}).Error
 }
 
+func (d *SubjectDao) GetSubjectWritingProgress(ctx context.Context, userId uint, subjectId int) (*model.SubjectWritingProgress, error) {
+	var progress model.SubjectWritingProgress
+	err := global.GVA_DB.WithContext(ctx).Where("user_id = ? AND subject_id = ?", userId, subjectId).First(&progress).Error
+	if err != nil {
+		return nil, err
+	}
+	return &progress, nil
+}
+
+func (d *SubjectDao) UpsertSubjectWritingProgress(ctx context.Context, userId uint, subjectId int, nodeId int) error {
+	return global.GVA_DB.WithContext(ctx).Exec(`
+		INSERT INTO subject_writing_progress (user_id, subject_id, last_node_id, updated_at)
+		VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+		ON DUPLICATE KEY UPDATE last_node_id = VALUES(last_node_id), updated_at = CURRENT_TIMESTAMP
+	`, userId, subjectId, nodeId).Error
+}
+
 func (d *SubjectDao) GetUserCollectedSubjects(ctx context.Context, userId uint, page, pageSize int) ([]model.Subject, int64, error) {
 	query := global.GVA_DB.WithContext(ctx).
 		Model(&model.Subject{}).
