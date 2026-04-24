@@ -147,6 +147,26 @@ func (s *AIService) buildUserPrompt(req dto.AIChatReq) string {
 	return builder.String()
 }
 
+func (s *AIService) streamToolCallChecker(_ context.Context, sr *schema.StreamReader[*schema.Message]) (bool, error) {
+	defer sr.Close()
+
+	for {
+		msg, err := sr.Recv()
+		if errors.Is(err, io.EOF) {
+			return false, nil
+		}
+		if err != nil {
+			return false, err
+		}
+		if msg == nil {
+			continue
+		}
+		if len(msg.ToolCalls) > 0 {
+			return true, nil
+		}
+	}
+}
+
 func (s *AIService) newChatAgent(ctx context.Context, userID uint) (*react.Agent, error) {
 	chatModel, err := s.newChatModel(ctx)
 	if err != nil {
@@ -159,7 +179,8 @@ func (s *AIService) newChatAgent(ctx context.Context, userID uint) (*react.Agent
 	}
 
 	agent, err := react.NewAgent(ctx, &react.AgentConfig{
-		ToolCallingModel: chatModel,
+		ToolCallingModel:      chatModel,
+		StreamToolCallChecker: s.streamToolCallChecker,
 		ToolsConfig: compose.ToolsNodeConfig{
 			Tools:               tools,
 			ExecuteSequentially: true,
