@@ -108,6 +108,16 @@ export const getUserCreatedSubjects = (page = 1, pageSize = 10) => {
   })
 }
 
+// 13. 创建教材
+export const createSubject = (data: { nameDraft: string; descriptionDraft?: string; iconDraft?: string; coverImageIdDraft?: number }) => {
+  return request.post<ApiResponse<{ subjectId: number }>>('/user/subjects', data)
+}
+
+// 14. 修改教材草稿信息
+export const updateSubjectDraft = (data: { subjectId: number; nameDraft: string; descriptionDraft: string; iconDraft: string }) => {
+  return request.put<ApiResponse<null>>('/user/subjects', data)
+}
+
 // ----------------------------------------------------
 
 export const getSharedNotes = (page = 1, pageSize = 10) => {

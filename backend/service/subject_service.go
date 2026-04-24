@@ -242,6 +242,25 @@ func (s *SubjectService) UpdateSubjectDraft(ctx context.Context, userId uint, re
 	return err
 }
 
+// PublishSubject 发布教材
+func (s *SubjectService) PublishSubject(ctx context.Context, userId uint, subjectId int) error {
+	// 1. 校验教材是否存在且属于该用户
+	var subject model.Subject
+	if err := global.GVA_DB.WithContext(ctx).Where("id = ? AND creator_id = ?", subjectId, userId).First(&subject).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return errors.New("无权操作该教材或教材不存在")
+		}
+		return err
+	}
+
+	// 2. 更新教材状态为待审核 (audit_status=1) 并清除草稿标记 (has_draft=0)
+	if err := s.subjectDao.PublishSubject(ctx, subjectId, userId); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func (s *SubjectService) GetUserCollectedSubjects(ctx context.Context, userId uint, page, pageSize int) ([]dto.SubjectRes, int64, error) {
 	subjects, total, err := s.subjectDao.GetUserCollectedSubjects(ctx, userId, page, pageSize)
 	if err != nil {

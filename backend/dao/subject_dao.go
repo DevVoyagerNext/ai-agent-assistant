@@ -73,6 +73,17 @@ func (d *SubjectDao) UpdateSubjectDraftWithTx(tx *gorm.DB, subjectId int, nameDr
 	}).Error
 }
 
+// PublishSubject 发布教材，修改审核状态和草稿标记
+func (d *SubjectDao) PublishSubject(ctx context.Context, subjectId int, userId uint) error {
+	return global.GVA_DB.WithContext(ctx).
+		Model(&model.Subject{}).
+		Where("id = ? AND creator_id = ?", subjectId, userId).
+		Updates(map[string]interface{}{
+			"audit_status": 1,
+			"has_draft":    0,
+		}).Error
+}
+
 func (d *SubjectDao) GetSubjectWritingProgress(ctx context.Context, userId uint, subjectId int) (*model.SubjectWritingProgress, error) {
 	var progress model.SubjectWritingProgress
 	err := global.GVA_DB.WithContext(ctx).Where("user_id = ? AND subject_id = ?", userId, subjectId).First(&progress).Error

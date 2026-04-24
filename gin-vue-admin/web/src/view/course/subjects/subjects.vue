@@ -3,23 +3,24 @@
   <div>
     <div class="gva-search-box">
       <el-form ref="elSearchFormRef" :inline="true" :model="searchInfo" class="demo-form-inline" @keyup.enter="onSubmit">
-            <el-form-item label="学科主键ID" prop="id">
+            <el-form-item label="学科ID" prop="id">
   <el-input v-model.number="searchInfo.id" placeholder="搜索条件" />
 </el-form-item>
             
-            <el-form-item label="学科显示名称，如数据结构" prop="name">
+            <el-form-item label="作者ID" prop="creatorId">
+  <el-input v-model.number="searchInfo.creatorId" placeholder="搜索条件" />
+</el-form-item>
+            
+            <el-form-item label="学科名称" prop="name">
   <el-input v-model="searchInfo.name" placeholder="搜索条件" />
 </el-form-item>
             
-            <el-form-item label="教材名称草稿" prop="nameDraft">
+            <el-form-item label="名称草稿" prop="nameDraft">
   <el-input v-model="searchInfo.nameDraft" placeholder="搜索条件" />
 </el-form-item>
             
-            <el-form-item label="教材整体状态" prop="status">
-  <el-select v-model="searchInfo.status" clearable placeholder="请选择">
-    <el-option key="true" label="是" value="true"></el-option>
-    <el-option key="false" label="否" value="false"></el-option>
-  </el-select>
+            <el-form-item label="教材状态" prop="status">
+  <el-input v-model="searchInfo.status" placeholder="搜索条件" />
 </el-form-item>
             
 
@@ -51,40 +52,38 @@
         >
         <el-table-column type="selection" width="55" />
         
-            <el-table-column align="left" label="学科主键ID" prop="id" width="120" />
+            <el-table-column align="left" label="学科ID" prop="id" width="120" />
 
-            <el-table-column align="left" label="所属作者/所有者ID" prop="creatorId" width="120" />
+            <el-table-column align="left" label="作者ID" prop="creatorId" width="120" />
 
-            <el-table-column align="left" label="学科唯一标识，如data_structure" prop="slug" width="120" />
+            <el-table-column align="left" label="学科标识" prop="slug" width="120" />
 
-            <el-table-column align="left" label="学科显示名称，如数据结构" prop="name" width="120" />
+            <el-table-column align="left" label="学科名称" prop="name" width="120" />
 
-            <el-table-column align="left" label="教材名称草稿" prop="nameDraft" width="120" />
+            <el-table-column align="left" label="名称草稿" prop="nameDraft" width="120" />
 
-            <el-table-column align="left" label="学科图标CSS类名/URL地址" prop="icon" width="120" />
+            <el-table-column align="left" label="学科图标" prop="icon" width="120" />
 
-            <el-table-column align="left" label="学科图标草稿（CSS类名或URL）" prop="iconDraft" width="120" />
+            <el-table-column align="left" label="图标草稿" prop="iconDraft" width="120" />
 
-            <el-table-column align="left" label="学科简介描述" prop="description" width="120" />
+            <el-table-column align="left" label="学科简介" prop="description" width="120" />
 
-            <el-table-column align="left" label="教材简介草稿" prop="descriptionDraft" width="120" />
+            <el-table-column align="left" label="简介草稿" prop="descriptionDraft" width="120" />
 
-            <el-table-column align="left" label="学科创建时间" prop="createdAt" width="180">
+            <el-table-column align="left" label="创建时间" prop="createdAt" width="180">
    <template #default="scope">{{ formatDate(scope.row.createdAt) }}</template>
 </el-table-column>
-            <el-table-column align="left" label="学科封面图片ID，关联images表" prop="coverImageId" width="120" />
+            <el-table-column align="left" label="学科封面ID" prop="coverImageId" width="120" />
 
-            <el-table-column align="left" label="教材封面ID草稿" prop="coverImageIdDraft" width="120" />
+            <el-table-column align="left" label="封面ID草稿" prop="coverImageIdDraft" width="120" />
 
-            <el-table-column align="left" label="教材整体状态" prop="status" width="120">
-    <template #default="scope">{{ formatBoolean(scope.row.status) }}</template>
-</el-table-column>
-            <el-table-column align="left" label="审核状态：0=编辑中, 1=待审核, 2=已通过, 3=被驳回" prop="auditStatus" width="120">
-    <template #default="scope">{{ formatBoolean(scope.row.auditStatus) }}</template>
-</el-table-column>
-            <el-table-column align="left" label="关联最新一条审批流水ID" prop="lastLogId" width="120" />
+            <el-table-column align="left" label="教材状态" prop="status" width="120" />
 
-            <el-table-column align="left" label="是否有未处理的草稿：1=是, 0=否" prop="hasDraft" width="120">
+            <el-table-column align="left" label="审核状态" prop="auditStatus" width="120" />
+
+            <el-table-column align="left" label="审批流水" prop="lastLogId" width="120" />
+
+            <el-table-column align="left" label="未处理草稿" prop="hasDraft" width="120">
     <template #default="scope">{{ formatBoolean(scope.row.hasDraft) }}</template>
 </el-table-column>
         <el-table-column align="left" label="操作" fixed="right" :min-width="appStore.operateMinWith">
@@ -119,90 +118,60 @@
             </template>
 
           <el-form :model="formData" label-position="top" ref="elFormRef" :rules="rule" label-width="80px">
-            <el-form-item label="所属作者/所有者ID:" prop="creatorId">
-    <el-input v-model.number="formData.creatorId" :clearable="true" placeholder="请输入所属作者/所有者ID" />
-</el-form-item>
-            <el-form-item label="学科唯一标识，如data_structure:" prop="slug">
-    <el-input v-model="formData.slug" :clearable="true" placeholder="请输入学科唯一标识，如data_structure" />
-</el-form-item>
-            <el-form-item label="学科图标CSS类名/URL地址:" prop="icon">
-    <el-input v-model="formData.icon" :clearable="true" placeholder="请输入学科图标CSS类名/URL地址" />
-</el-form-item>
-            <el-form-item label="学科简介描述:" prop="description">
-    <el-input v-model="formData.description" :clearable="true" placeholder="请输入学科简介描述" />
-</el-form-item>
-            <el-form-item label="教材简介草稿:" prop="descriptionDraft">
-    <el-input v-model="formData.descriptionDraft" :clearable="true" placeholder="请输入教材简介草稿" />
-</el-form-item>
-            <el-form-item label="学科创建时间:" prop="createdAt">
-    <el-date-picker v-model="formData.createdAt" type="date" style="width:100%" placeholder="选择日期" :clearable="true" />
-</el-form-item>
-            <el-form-item label="学科封面图片ID，关联images表:" prop="coverImageId">
-    <el-input v-model.number="formData.coverImageId" :clearable="true" placeholder="请输入学科封面图片ID，关联images表" />
-</el-form-item>
-            <el-form-item label="教材整体状态:" prop="status">
-    <el-switch v-model="formData.status" active-color="#13ce66" inactive-color="#ff4949" active-text="是" inactive-text="否" clearable ></el-switch>
-</el-form-item>
-            <el-form-item label="审核状态：0=编辑中, 1=待审核, 2=已通过, 3=被驳回:" prop="auditStatus">
-    <el-switch v-model="formData.auditStatus" active-color="#13ce66" inactive-color="#ff4949" active-text="是" inactive-text="否" clearable ></el-switch>
-</el-form-item>
-            <el-form-item label="关联最新一条审批流水ID:" prop="lastLogId">
-    <el-input v-model.number="formData.lastLogId" :clearable="true" placeholder="请输入关联最新一条审批流水ID" />
-</el-form-item>
-            <el-form-item label="是否有未处理的草稿：1=是, 0=否:" prop="hasDraft">
-    <el-switch v-model="formData.hasDraft" active-color="#13ce66" inactive-color="#ff4949" active-text="是" inactive-text="否" clearable ></el-switch>
+            <el-form-item label="教材状态:" prop="status">
+    <el-input v-model="formData.status" :clearable="true" placeholder="请输入教材状态" />
 </el-form-item>
           </el-form>
     </el-drawer>
 
     <el-drawer destroy-on-close :size="appStore.drawerSize" v-model="detailShow" :show-close="true" :before-close="closeDetailShow" title="查看">
             <el-descriptions :column="1" border>
-                    <el-descriptions-item label="学科主键ID">
+                    <el-descriptions-item label="学科ID">
     {{ detailForm.id }}
 </el-descriptions-item>
-                    <el-descriptions-item label="所属作者/所有者ID">
+                    <el-descriptions-item label="作者ID">
     {{ detailForm.creatorId }}
 </el-descriptions-item>
-                    <el-descriptions-item label="学科唯一标识，如data_structure">
+                    <el-descriptions-item label="学科标识">
     {{ detailForm.slug }}
 </el-descriptions-item>
-                    <el-descriptions-item label="学科显示名称，如数据结构">
+                    <el-descriptions-item label="学科名称">
     {{ detailForm.name }}
 </el-descriptions-item>
-                    <el-descriptions-item label="教材名称草稿">
+                    <el-descriptions-item label="名称草稿">
     {{ detailForm.nameDraft }}
 </el-descriptions-item>
-                    <el-descriptions-item label="学科图标CSS类名/URL地址">
+                    <el-descriptions-item label="学科图标">
     {{ detailForm.icon }}
 </el-descriptions-item>
-                    <el-descriptions-item label="学科图标草稿（CSS类名或URL）">
+                    <el-descriptions-item label="图标草稿">
     {{ detailForm.iconDraft }}
 </el-descriptions-item>
-                    <el-descriptions-item label="学科简介描述">
+                    <el-descriptions-item label="学科简介">
     {{ detailForm.description }}
 </el-descriptions-item>
-                    <el-descriptions-item label="教材简介草稿">
+                    <el-descriptions-item label="简介草稿">
     {{ detailForm.descriptionDraft }}
 </el-descriptions-item>
-                    <el-descriptions-item label="学科创建时间">
+                    <el-descriptions-item label="创建时间">
     {{ detailForm.createdAt }}
 </el-descriptions-item>
-                    <el-descriptions-item label="学科封面图片ID，关联images表">
+                    <el-descriptions-item label="学科封面ID">
     {{ detailForm.coverImageId }}
 </el-descriptions-item>
-                    <el-descriptions-item label="教材封面ID草稿">
+                    <el-descriptions-item label="封面ID草稿">
     {{ detailForm.coverImageIdDraft }}
 </el-descriptions-item>
-                    <el-descriptions-item label="教材整体状态">
+                    <el-descriptions-item label="教材状态">
     {{ detailForm.status }}
 </el-descriptions-item>
-                    <el-descriptions-item label="审核状态：0=编辑中, 1=待审核, 2=已通过, 3=被驳回">
+                    <el-descriptions-item label="审核状态">
     {{ detailForm.auditStatus }}
 </el-descriptions-item>
-                    <el-descriptions-item label="关联最新一条审批流水ID">
+                    <el-descriptions-item label="审批流水">
     {{ detailForm.lastLogId }}
 </el-descriptions-item>
-                    <el-descriptions-item label="是否有未处理的草稿：1=是, 0=否">
+                    <el-descriptions-item label="未处理草稿">
     {{ detailForm.hasDraft }}
 </el-descriptions-item>
             </el-descriptions>
@@ -243,17 +212,7 @@ const showAllQuery = ref(false)
 
 // 自动化生成的字典（可能为空）以及字段
 const formData = ref({
-            creatorId: undefined,
-            slug: '',
-            icon: '',
-            description: '',
-            descriptionDraft: '',
-            createdAt: new Date(),
-            coverImageId: undefined,
-            status: false,
-            auditStatus: false,
-            lastLogId: undefined,
-            hasDraft: false,
+            status: '',
         })
 
 
@@ -282,12 +241,6 @@ const onSubmit = () => {
   elSearchFormRef.value?.validate(async(valid) => {
     if (!valid) return
     page.value = 1
-    if (searchInfo.value.status === ""){
-        searchInfo.value.status=null
-    }
-    if (searchInfo.value.auditStatus === ""){
-        searchInfo.value.auditStatus=null
-    }
     if (searchInfo.value.hasDraft === ""){
         searchInfo.value.hasDraft=null
     }
@@ -423,17 +376,7 @@ const openDialog = () => {
 const closeDialog = () => {
     dialogFormVisible.value = false
     formData.value = {
-        creatorId: undefined,
-        slug: '',
-        icon: '',
-        description: '',
-        descriptionDraft: '',
-        createdAt: new Date(),
-        coverImageId: undefined,
-        status: false,
-        auditStatus: false,
-        lastLogId: undefined,
-        hasDraft: false,
+        status: '',
         }
 }
 // 弹窗确定

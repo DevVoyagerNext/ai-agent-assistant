@@ -73,6 +73,30 @@ func (con *SubjectController) UpdateSubjectDraft(c *gin.Context) {
 	response.Ok(nil, c)
 }
 
+// PublishSubject 发布教材
+func (con *SubjectController) PublishSubject(c *gin.Context) {
+	userId, err := con.authService.GetUserID(c)
+	if err != nil || userId == 0 {
+		response.FailWithCode(errmsg.UserTokenNotExist, c)
+		return
+	}
+
+	subjectIdStr := c.Param("id")
+	subjectId, err := strconv.Atoi(subjectIdStr)
+	if err != nil || subjectId <= 0 {
+		response.FailWithCode(errmsg.CodeError, c)
+		return
+	}
+
+	err = con.subjectService.PublishSubject(c.Request.Context(), userId, subjectId)
+	if err != nil {
+		response.FailWithMsg(errmsg.CodeError, err.Error(), c)
+		return
+	}
+
+	response.Ok(nil, c)
+}
+
 // ToggleSubjectLike 点赞或取消点赞教材（需要登录）
 func (con *SubjectController) ToggleSubjectLike(c *gin.Context) {
 	userId, err := con.authService.GetUserID(c)

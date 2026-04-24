@@ -28,6 +28,7 @@ func (r *SubjectRouter) InitAuthSubjectRouter(Router *gin.RouterGroup) {
 	{
 		userSubjectRouter.POST("", subjectController.CreateSubject)                                     // 创建教材
 		userSubjectRouter.PUT("", subjectController.UpdateSubjectDraft)                                 // 修改教材草稿信息
+		userSubjectRouter.PUT("/:id/publish", subjectController.PublishSubject)                         // 发布教材
 		userSubjectRouter.GET("/created", subjectController.GetUserCreatedSubjects)                     // 获取用户自己创建的教材
 		userSubjectRouter.GET("/folders", subjectController.GetUserCollectFolders)                      // 获取用户收藏夹
 		userSubjectRouter.GET("/folders/:folderId", subjectController.GetUserCollectedSubjectsByFolder) // 获取用户收藏夹下的教材

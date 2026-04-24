@@ -1,10 +1,10 @@
 import service from '@/utils/request'
 // @Tags Subjects
-// @Summary 创建subjects表
+// @Summary 创建教材审批
 // @Security ApiKeyAuth
 // @Accept application/json
 // @Produce application/json
-// @Param data body model.Subjects true "创建subjects表"
+// @Param data body model.Subjects true "创建教材审批"
 // @Success 200 {string} string "{"success":true,"data":{},"msg":"创建成功"}"
 // @Router /subjects/createSubjects [post]
 export const createSubjects = (data) => {
@@ -16,11 +16,11 @@ export const createSubjects = (data) => {
 }
 
 // @Tags Subjects
-// @Summary 删除subjects表
+// @Summary 删除教材审批
 // @Security ApiKeyAuth
 // @Accept application/json
 // @Produce application/json
-// @Param data body model.Subjects true "删除subjects表"
+// @Param data body model.Subjects true "删除教材审批"
 // @Success 200 {string} string "{"success":true,"data":{},"msg":"删除成功"}"
 // @Router /subjects/deleteSubjects [delete]
 export const deleteSubjects = (params) => {
@@ -32,11 +32,11 @@ export const deleteSubjects = (params) => {
 }
 
 // @Tags Subjects
-// @Summary 批量删除subjects表
+// @Summary 批量删除教材审批
 // @Security ApiKeyAuth
 // @Accept application/json
 // @Produce application/json
-// @Param data body request.IdsReq true "批量删除subjects表"
+// @Param data body request.IdsReq true "批量删除教材审批"
 // @Success 200 {string} string "{"success":true,"data":{},"msg":"删除成功"}"
 // @Router /subjects/deleteSubjects [delete]
 export const deleteSubjectsByIds = (params) => {
@@ -48,11 +48,11 @@ export const deleteSubjectsByIds = (params) => {
 }
 
 // @Tags Subjects
-// @Summary 更新subjects表
+// @Summary 更新教材审批
 // @Security ApiKeyAuth
 // @Accept application/json
 // @Produce application/json
-// @Param data body model.Subjects true "更新subjects表"
+// @Param data body model.Subjects true "更新教材审批"
 // @Success 200 {string} string "{"success":true,"data":{},"msg":"更新成功"}"
 // @Router /subjects/updateSubjects [put]
 export const updateSubjects = (data) => {
@@ -64,11 +64,11 @@ export const updateSubjects = (data) => {
 }
 
 // @Tags Subjects
-// @Summary 用id查询subjects表
+// @Summary 用id查询教材审批
 // @Security ApiKeyAuth
 // @Accept application/json
 // @Produce application/json
-// @Param data query model.Subjects true "用id查询subjects表"
+// @Param data query model.Subjects true "用id查询教材审批"
 // @Success 200 {string} string "{"success":true,"data":{},"msg":"查询成功"}"
 // @Router /subjects/findSubjects [get]
 export const findSubjects = (params) => {
@@ -80,11 +80,11 @@ export const findSubjects = (params) => {
 }
 
 // @Tags Subjects
-// @Summary 分页获取subjects表列表
+// @Summary 分页获取教材审批列表
 // @Security ApiKeyAuth
 // @Accept application/json
 // @Produce application/json
-// @Param data query request.PageInfo true "分页获取subjects表列表"
+// @Param data query request.PageInfo true "分页获取教材审批列表"
 // @Success 200 {string} string "{"success":true,"data":{},"msg":"获取成功"}"
 // @Router /subjects/getSubjectsList [get]
 export const getSubjectsList = (params) => {
@@ -96,10 +96,10 @@ export const getSubjectsList = (params) => {
 }
 
 // @Tags Subjects
-// @Summary 不需要鉴权的subjects表接口
+// @Summary 不需要鉴权的教材审批接口
 // @Accept application/json
 // @Produce application/json
-// @Param data query courseReq.SubjectsSearch true "分页获取subjects表列表"
+// @Param data query courseReq.SubjectsSearch true "分页获取教材审批列表"
 // @Success 200 {object} response.Response{data=object,msg=string} "获取成功"
 // @Router /subjects/getSubjectsPublic [get]
 export const getSubjectsPublic = () => {

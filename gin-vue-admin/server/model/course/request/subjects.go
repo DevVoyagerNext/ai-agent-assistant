@@ -8,8 +8,9 @@ import (
 
 type SubjectsSearch struct{
       Id  *int `json:"id" form:"id"` 
+      CreatorId  *int `json:"creatorId" form:"creatorId"` 
       Name  *string `json:"name" form:"name"` 
       NameDraft  *string `json:"nameDraft" form:"nameDraft"` 
-      Status  *bool `json:"status" form:"status"` 
+      Status  *string `json:"status" form:"status"` 
     request.PageInfo
 }

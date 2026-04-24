@@ -5,7 +5,7 @@ import Toast from '../components/Toast.vue'
 import Skeleton from '../components/Skeleton.vue'
 import { 
   ArrowLeft, LogOut, RefreshCcw, 
-  Activity, BookOpen, Share2, Book, Users, Star, Layers, FolderHeart,
+  Activity, BookOpen, Share2, Book, Users, Star, Layers, FolderHeart, Plus,
   Folder, FileText, ToggleRight, ToggleLeft, Edit3, X, Loader2, ChevronRight, ChevronLeft, Clock, Save, FolderPlus, FilePlus, Trash2, Bot
 } from 'lucide-vue-next'
 import { useUserProfile } from '../composables/useUserProfile'
@@ -14,7 +14,7 @@ import {
   updatePrivateNoteTitle, updatePrivateNotePublic, 
   updateCollectFolderPublic, updateCollectFolderName,
   getSubjectsInFolder, getPrivateNoteDetail, updatePrivateNoteContent,
-  createPrivateNote, sharePrivateNote, updateShareNoteStatus, updateShareNoteExpire, deleteSharedNote
+  createPrivateNote, sharePrivateNote, updateShareNoteStatus, updateShareNoteExpire, deleteSharedNote, createSubject
 } from '../api/user'
 
 const router = useRouter()
@@ -607,6 +607,32 @@ const scrollTo = (id: string) => {
     el.scrollIntoView({ behavior: 'smooth' })
   }
 }
+
+// 创建教材逻辑
+const creatingSubject = ref(false)
+
+const handleCreateSubject = async () => {
+  if (creatingSubject.value) return
+  creatingSubject.value = true
+
+  try {
+    const res = await createSubject({
+      nameDraft: '未命名新教材'
+    })
+    if (res.data?.code === 200 && res.data.data?.subjectId) {
+      showToast('教材创建成功，即将前往编辑页面', 'success')
+      setTimeout(() => {
+        router.push(`/author/subject/${res.data.data.subjectId}`)
+      }, 500)
+    } else {
+      showToast(res.data?.msg || '创建失败', 'error')
+    }
+  } catch (err: any) {
+    showToast(err?.response?.data?.msg || '创建失败', 'error')
+  } finally {
+    creatingSubject.value = false
+  }
+}
 </script>
 
 <template>
@@ -728,8 +754,10 @@ const scrollTo = (id: string) => {
         <!-- Activity Card -->
         <div id="activity" class="card">
           <div class="card-header">
-            <Activity :size="20" class="icon-green" />
-            <h2>活跃度</h2>
+            <div class="header-title-wrap">
+              <Activity :size="20" class="icon-green" />
+              <h2>活跃度</h2>
+            </div>
           </div>
           
           <div v-if="loadingActivities" class="activity-skeleton">
@@ -741,8 +769,10 @@ const scrollTo = (id: string) => {
         <!-- Collect Folders -->
         <div id="collections" class="card">
           <div class="card-header clickable-header" @click="router.push('/me/collections')">
-            <FolderHeart :size="20" class="icon-pink" />
-            <h2>我的收藏夹</h2>
+            <div class="header-title-wrap">
+              <FolderHeart :size="20" class="icon-pink" />
+              <h2>我的收藏夹</h2>
+            </div>
             <ChevronRight :size="18" class="header-arrow" />
           </div>
           
@@ -787,8 +817,10 @@ const scrollTo = (id: string) => {
         <!-- Learned Subjects Card -->
         <div id="recent" class="card">
           <div class="card-header clickable-header" @click="router.push('/me/recent-learning')">
-            <Layers :size="20" class="icon-teal" />
-            <h2>最近学习 (在学/已学)</h2>
+            <div class="header-title-wrap">
+              <Layers :size="20" class="icon-teal" />
+              <h2>最近学习 (在学/已学)</h2>
+            </div>
             <ChevronRight :size="18" class="header-arrow" />
           </div>
           
@@ -831,8 +863,15 @@ const scrollTo = (id: string) => {
         <!-- Created Subjects -->
         <div id="created" class="card">
           <div class="card-header">
-            <Layers :size="20" class="icon-blue" />
-            <h2>创建的教材</h2>
+            <div class="header-title-wrap">
+              <Layers :size="20" class="icon-blue" />
+              <h2>创建的教材</h2>
+            </div>
+            <button class="create-subject-btn" @click="handleCreateSubject" :disabled="creatingSubject">
+              <Loader2 v-if="creatingSubject" :size="16" class="spin" />
+              <Plus v-else :size="16" />
+              创建教材
+            </button>
           </div>
           
           <div v-if="loadingCreatedSubjects" class="list-skeleton">
@@ -910,8 +949,10 @@ const scrollTo = (id: string) => {
         <!-- Liked Subjects -->
         <div id="liked" class="card">
           <div class="card-header clickable-header" @click="router.push('/me/liked-subjects')">
-            <Star :size="20" class="icon-orange" />
-            <h2>点赞的教材</h2>
+            <div class="header-title-wrap">
+              <Star :size="20" class="icon-orange" />
+              <h2>点赞的教材</h2>
+            </div>
             <ChevronRight :size="18" class="header-arrow" />
           </div>
           
@@ -945,8 +986,10 @@ const scrollTo = (id: string) => {
         <!-- Private Notes -->
         <div id="private" class="card">
           <div class="card-header clickable-header" @click="router.push('/me/private-notes')">
-            <BookOpen :size="20" class="icon-teal" />
-            <h2>私人笔记</h2>
+            <div class="header-title-wrap">
+              <BookOpen :size="20" class="icon-teal" />
+              <h2>私人笔记</h2>
+            </div>
             <ChevronRight :size="18" class="header-arrow" />
           </div>
           
@@ -1004,9 +1047,12 @@ const scrollTo = (id: string) => {
 
         <!-- Shared Notes -->
         <div id="shared" class="card">
-          <div class="card-header">
-            <Share2 :size="20" class="icon-purple" />
-            <h2>分享笔记</h2>
+          <div class="card-header clickable-header" @click="router.push('/me/shared-notes')">
+            <div class="header-title-wrap">
+              <Share2 :size="20" class="icon-purple" />
+              <h2>分享笔记</h2>
+            </div>
+            <ChevronRight :size="18" class="header-arrow" />
           </div>
           
           <div v-if="loadingSharedNotes" class="list-skeleton">
@@ -2056,8 +2102,38 @@ const scrollTo = (id: string) => {
 .card-header {
   display: flex;
   align-items: center;
-  gap: 12px;
+  justify-content: space-between;
   margin-bottom: 24px;
+}
+
+.header-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.create-subject-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background-color: #3b82f6;
+  color: #fff;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.create-subject-btn:hover:not(:disabled) {
+  background-color: #2563eb;
+}
+
+.create-subject-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .clickable-header {

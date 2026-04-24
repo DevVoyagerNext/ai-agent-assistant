@@ -14,13 +14,13 @@ type SubjectsApi struct {}
 
 
 
-// CreateSubjects 创建subjects表
+// CreateSubjects 创建教材审批
 // @Tags Subjects
-// @Summary 创建subjects表
+// @Summary 创建教材审批
 // @Security ApiKeyAuth
 // @Accept application/json
 // @Produce application/json
-// @Param data body course.Subjects true "创建subjects表"
+// @Param data body course.Subjects true "创建教材审批"
 // @Success 200 {object} response.Response{msg=string} "创建成功"
 // @Router /subjects/createSubjects [post]
 func (subjectsApi *SubjectsApi) CreateSubjects(c *gin.Context) {
@@ -42,13 +42,13 @@ func (subjectsApi *SubjectsApi) CreateSubjects(c *gin.Context) {
     response.OkWithMessage("创建成功", c)
 }
 
-// DeleteSubjects 删除subjects表
+// DeleteSubjects 删除教材审批
 // @Tags Subjects
-// @Summary 删除subjects表
+// @Summary 删除教材审批
 // @Security ApiKeyAuth
 // @Accept application/json
 // @Produce application/json
-// @Param data body course.Subjects true "删除subjects表"
+// @Param data body course.Subjects true "删除教材审批"
 // @Success 200 {object} response.Response{msg=string} "删除成功"
 // @Router /subjects/deleteSubjects [delete]
 func (subjectsApi *SubjectsApi) DeleteSubjects(c *gin.Context) {
@@ -65,9 +65,9 @@ func (subjectsApi *SubjectsApi) DeleteSubjects(c *gin.Context) {
 	response.OkWithMessage("删除成功", c)
 }
 
-// DeleteSubjectsByIds 批量删除subjects表
+// DeleteSubjectsByIds 批量删除教材审批
 // @Tags Subjects
-// @Summary 批量删除subjects表
+// @Summary 批量删除教材审批
 // @Security ApiKeyAuth
 // @Accept application/json
 // @Produce application/json
@@ -87,13 +87,13 @@ func (subjectsApi *SubjectsApi) DeleteSubjectsByIds(c *gin.Context) {
 	response.OkWithMessage("批量删除成功", c)
 }
 
-// UpdateSubjects 更新subjects表
+// UpdateSubjects 更新教材审批
 // @Tags Subjects
-// @Summary 更新subjects表
+// @Summary 更新教材审批
 // @Security ApiKeyAuth
 // @Accept application/json
 // @Produce application/json
-// @Param data body course.Subjects true "更新subjects表"
+// @Param data body course.Subjects true "更新教材审批"
 // @Success 200 {object} response.Response{msg=string} "更新成功"
 // @Router /subjects/updateSubjects [put]
 func (subjectsApi *SubjectsApi) UpdateSubjects(c *gin.Context) {
@@ -115,13 +115,13 @@ func (subjectsApi *SubjectsApi) UpdateSubjects(c *gin.Context) {
 	response.OkWithMessage("更新成功", c)
 }
 
-// FindSubjects 用id查询subjects表
+// FindSubjects 用id查询教材审批
 // @Tags Subjects
-// @Summary 用id查询subjects表
+// @Summary 用id查询教材审批
 // @Security ApiKeyAuth
 // @Accept application/json
 // @Produce application/json
-// @Param id query int true "用id查询subjects表"
+// @Param id query int true "用id查询教材审批"
 // @Success 200 {object} response.Response{data=course.Subjects,msg=string} "查询成功"
 // @Router /subjects/findSubjects [get]
 func (subjectsApi *SubjectsApi) FindSubjects(c *gin.Context) {
@@ -137,13 +137,13 @@ func (subjectsApi *SubjectsApi) FindSubjects(c *gin.Context) {
 	}
 	response.OkWithData(resubjects, c)
 }
-// GetSubjectsList 分页获取subjects表列表
+// GetSubjectsList 分页获取教材审批列表
 // @Tags Subjects
-// @Summary 分页获取subjects表列表
+// @Summary 分页获取教材审批列表
 // @Security ApiKeyAuth
 // @Accept application/json
 // @Produce application/json
-// @Param data query courseReq.SubjectsSearch true "分页获取subjects表列表"
+// @Param data query courseReq.SubjectsSearch true "分页获取教材审批列表"
 // @Success 200 {object} response.Response{data=response.PageResult,msg=string} "获取成功"
 // @Router /subjects/getSubjectsList [get]
 func (subjectsApi *SubjectsApi) GetSubjectsList(c *gin.Context) {
@@ -170,9 +170,9 @@ func (subjectsApi *SubjectsApi) GetSubjectsList(c *gin.Context) {
     }, "获取成功", c)
 }
 
-// GetSubjectsPublic 不需要鉴权的subjects表接口
+// GetSubjectsPublic 不需要鉴权的教材审批接口
 // @Tags Subjects
-// @Summary 不需要鉴权的subjects表接口
+// @Summary 不需要鉴权的教材审批接口
 // @Accept application/json
 // @Produce application/json
 // @Success 200 {object} response.Response{data=object,msg=string} "获取成功"
@@ -185,6 +185,6 @@ func (subjectsApi *SubjectsApi) GetSubjectsPublic(c *gin.Context) {
     // 示例为返回了一个固定的消息接口，一般本接口用于C端服务，需要自己实现业务逻辑
     subjectsService.GetSubjectsPublic(ctx)
     response.OkWithDetailed(gin.H{
-       "info": "不需要鉴权的subjects表接口信息",
+       "info": "不需要鉴权的教材审批接口信息",
     }, "获取成功", c)
 }

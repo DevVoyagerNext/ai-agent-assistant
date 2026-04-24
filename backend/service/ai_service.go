@@ -8,14 +8,104 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
-	"github.com/sashabaranov/go-openai"
+	einoOpenAI "github.com/cloudwego/eino-ext/components/model/openai"
+	"github.com/cloudwego/eino/schema"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
 type AIService struct{}
+
+func (s *AIService) newChatModel(ctx context.Context) (*einoOpenAI.ChatModel, error) {
+	aiConfig := global.GVA_CONFIG.AI
+	if aiConfig.APIKey == "" || aiConfig.BaseURL == "" {
+		global.GVA_LOG.Error("AI config is missing")
+		return nil, errors.New("AI 服务未配置")
+	}
+
+	chatModel, err := einoOpenAI.NewChatModel(ctx, &einoOpenAI.ChatModelConfig{
+		APIKey:  aiConfig.APIKey,
+		BaseURL: aiConfig.BaseURL,
+		Model:   aiConfig.Model,
+	})
+	if err != nil {
+		global.GVA_LOG.Error("Failed to initialize Eino chat model", zap.Error(err))
+		return nil, errors.New("初始化 AI 模型失败")
+	}
+
+	return chatModel, nil
+}
+
+func (s *AIService) buildConversationMessages(systemPrompt string, historyMsgs []model.Message, prompt string) []*schema.Message {
+	messages := []*schema.Message{
+		schema.SystemMessage(systemPrompt),
+	}
+
+	for _, historyMsg := range historyMsgs {
+		role := schema.RoleType(historyMsg.Role)
+		if role == "" {
+			continue
+		}
+		messages = append(messages, &schema.Message{
+			Role:    role,
+			Content: historyMsg.Content,
+		})
+	}
+
+	messages = append(messages, schema.UserMessage(prompt))
+	return messages
+}
+
+func (s *AIService) extractMessageText(msg *schema.Message) string {
+	if msg == nil {
+		return ""
+	}
+	if msg.Content != "" {
+		return msg.Content
+	}
+
+	var builder strings.Builder
+	for _, part := range msg.AssistantGenMultiContent {
+		if part.Type == schema.ChatMessagePartTypeText && part.Text != "" {
+			builder.WriteString(part.Text)
+		}
+	}
+	return builder.String()
+}
+
+func (s *AIService) extractReasoningText(msg *schema.Message) string {
+	if msg == nil {
+		return ""
+	}
+	if msg.ReasoningContent != "" {
+		return msg.ReasoningContent
+	}
+
+	var builder strings.Builder
+	for _, part := range msg.AssistantGenMultiContent {
+		if part.Type == schema.ChatMessagePartTypeReasoning && part.Reasoning != nil {
+			builder.WriteString(part.Reasoning.Text)
+		}
+	}
+	return builder.String()
+}
+
+func (s *AIService) generateText(ctx context.Context, messages []*schema.Message) (string, error) {
+	chatModel, err := s.newChatModel(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	resp, err := chatModel.Generate(ctx, messages)
+	if err != nil {
+		return "", err
+	}
+
+	return strings.TrimSpace(s.extractMessageText(resp)), nil
+}
 
 // UpdateSessionTitle 修改会话标题
 func (s *AIService) UpdateSessionTitle(ctx context.Context, userId uint, sessionId int64, title string) error {
@@ -134,16 +224,10 @@ func (s *AIService) GetSessionMessages(ctx context.Context, userId uint, session
 
 // Chat 处理与 AI 模型的单次对话（流式）
 func (s *AIService) Chat(ctx context.Context, userId uint, req dto.AIChatReq) (<-chan dto.ChatStreamChunk, int64, int64, error) {
-	aiConfig := global.GVA_CONFIG.AI
-	if aiConfig.APIKey == "" || aiConfig.BaseURL == "" {
-		global.GVA_LOG.Error("AI config is missing")
-		return nil, 0, 0, errors.New("AI 服务未配置")
+	chatModel, err := s.newChatModel(ctx)
+	if err != nil {
+		return nil, 0, 0, err
 	}
-
-	config := openai.DefaultConfig(aiConfig.APIKey)
-	config.BaseURL = aiConfig.BaseURL
-
-	client := openai.NewClientWithConfig(config)
 
 	var session model.Session
 	db := global.GVA_DB.WithContext(ctx)
@@ -155,7 +239,7 @@ func (s *AIService) Chat(ctx context.Context, userId uint, req dto.AIChatReq) (<
 		session = model.Session{
 			UserID:  int64(userId),
 			Title:   "新对话",
-			ModelID: aiConfig.Model,
+			ModelID: global.GVA_CONFIG.AI.Model,
 		}
 		if err := db.Create(&session).Error; err != nil {
 			global.GVA_LOG.Error("Failed to create AI session", zap.Error(err))
@@ -184,16 +268,9 @@ func (s *AIService) Chat(ctx context.Context, userId uint, req dto.AIChatReq) (<
 	}
 
 	// 组装消息列表
-	messages := []openai.ChatCompletionMessage{
-		{
-			Role:    openai.ChatMessageRoleSystem,
-			Content: systemPrompt,
-		},
-	}
-
 	// 获取最近4轮历史对话 (8条消息)
+	var historyMsgs []model.Message
 	if !isNewSession {
-		var historyMsgs []model.Message
 		// 取最近 8 条（4轮），按时间降序查出后，再反转顺序加入
 		db.Where("session_id = ? AND status = 'active'", session.ID).
 			Order("created_at desc").
@@ -205,31 +282,13 @@ func (s *AIService) Chat(ctx context.Context, userId uint, req dto.AIChatReq) (<
 			opp := len(historyMsgs) - 1 - i
 			historyMsgs[i], historyMsgs[opp] = historyMsgs[opp], historyMsgs[i]
 		}
-
-		for _, m := range historyMsgs {
-			messages = append(messages, openai.ChatCompletionMessage{
-				Role:    m.Role,
-				Content: m.Content,
-			})
-		}
 	}
 
-	// 加入当前用户的 prompt
-	messages = append(messages, openai.ChatCompletionMessage{
-		Role:    openai.ChatMessageRoleUser,
-		Content: req.Prompt,
-	})
+	messages := s.buildConversationMessages(systemPrompt, historyMsgs, req.Prompt)
 
-	// 调用 AI (流式)
-	reqStream := openai.ChatCompletionRequest{
-		Model:    aiConfig.Model,
-		Messages: messages,
-		Stream:   true,
-	}
-
-	stream, err := client.CreateChatCompletionStream(ctx, reqStream)
+	stream, err := chatModel.Stream(ctx, messages)
 	if err != nil {
-		global.GVA_LOG.Error("AI API stream call failed", zap.Error(err))
+		global.GVA_LOG.Error("Eino AI stream call failed", zap.Error(err))
 		if isNewSession {
 			db.Unscoped().Where("id = ?", session.ID).Delete(&model.Session{})
 		}
@@ -240,7 +299,7 @@ func (s *AIService) Chat(ctx context.Context, userId uint, req dto.AIChatReq) (<
 	firstResponse, err := stream.Recv()
 	if err != nil {
 		stream.Close()
-		global.GVA_LOG.Error("AI API stream receive failed on first chunk", zap.Error(err))
+		global.GVA_LOG.Error("Eino AI stream receive failed on first chunk", zap.Error(err))
 		if isNewSession {
 			db.Unscoped().Where("id = ?", session.ID).Delete(&model.Session{})
 		}
@@ -251,7 +310,7 @@ func (s *AIService) Chat(ctx context.Context, userId uint, req dto.AIChatReq) (<
 	userMsg := model.Message{
 		SessionID: session.ID,
 		ParentID:  req.ParentID,
-		Role:      openai.ChatMessageRoleUser,
+		Role:      string(schema.User),
 		Content:   req.Prompt,
 	}
 	db.Create(&userMsg)
@@ -260,7 +319,7 @@ func (s *AIService) Chat(ctx context.Context, userId uint, req dto.AIChatReq) (<
 	aiMsg := model.Message{
 		SessionID: session.ID,
 		ParentID:  &userMsg.ID,
-		Role:      openai.ChatMessageRoleAssistant,
+		Role:      string(schema.Assistant),
 		Content:   "", // 留空，流式输出完成后再更新
 	}
 	db.Create(&aiMsg)
@@ -274,15 +333,12 @@ func (s *AIService) Chat(ctx context.Context, userId uint, req dto.AIChatReq) (<
 		var fullReply string
 
 		// 先处理已经收到的第一个 chunk
-		if len(firstResponse.Choices) > 0 {
-			delta := firstResponse.Choices[0].Delta
-			if delta.ReasoningContent != "" {
-				msgChan <- dto.ChatStreamChunk{Type: "reasoning", Content: delta.ReasoningContent}
-			}
-			if delta.Content != "" {
-				fullReply += delta.Content
-				msgChan <- dto.ChatStreamChunk{Type: "message", Content: delta.Content}
-			}
+		if reasoning := s.extractReasoningText(firstResponse); reasoning != "" {
+			msgChan <- dto.ChatStreamChunk{Type: "reasoning", Content: reasoning}
+		}
+		if content := s.extractMessageText(firstResponse); content != "" {
+			fullReply += content
+			msgChan <- dto.ChatStreamChunk{Type: "message", Content: content}
 		}
 
 		for {
@@ -296,19 +352,15 @@ func (s *AIService) Chat(ctx context.Context, userId uint, req dto.AIChatReq) (<
 				break
 			}
 
-			if len(response.Choices) > 0 {
-				delta := response.Choices[0].Delta
+			// 处理思考过程 (Reasoning Content)
+			if reasoning := s.extractReasoningText(response); reasoning != "" {
+				msgChan <- dto.ChatStreamChunk{Type: "reasoning", Content: reasoning}
+			}
 
-				// 处理思考过程 (Reasoning Content)
-				if delta.ReasoningContent != "" {
-					msgChan <- dto.ChatStreamChunk{Type: "reasoning", Content: delta.ReasoningContent}
-				}
-
-				// 处理正式回复 (Content)
-				if delta.Content != "" {
-					fullReply += delta.Content
-					msgChan <- dto.ChatStreamChunk{Type: "message", Content: delta.Content}
-				}
+			// 处理正式回复 (Content)
+			if content := s.extractMessageText(response); content != "" {
+				fullReply += content
+				msgChan <- dto.ChatStreamChunk{Type: "message", Content: content}
 			}
 		}
 
@@ -330,24 +382,17 @@ func (s *AIService) Chat(ctx context.Context, userId uint, req dto.AIChatReq) (<
 			go func(sId int64, prompt string) {
 				titleCtx := context.Background()
 				titlePrompt := fmt.Sprintf("请根据以下用户的提问，生成一个简短的对话标题（不超过15个字），不要包含任何标点符号：\n\n%s", prompt)
-				titleResp, err := client.CreateChatCompletion(
-					titleCtx,
-					openai.ChatCompletionRequest{
-						Model: aiConfig.Model,
-						Messages: []openai.ChatCompletionMessage{
-							{Role: openai.ChatMessageRoleUser, Content: titlePrompt},
-						},
-					},
-				)
-				if err == nil && len(titleResp.Choices) > 0 {
-					title := titleResp.Choices[0].Message.Content
+				title, err := s.generateText(titleCtx, []*schema.Message{
+					schema.UserMessage(titlePrompt),
+				})
+				if err == nil && title != "" {
 					global.GVA_DB.Model(&model.Session{}).Where("id = ?", sId).Update("title", title)
 				}
 			}(session.ID, req.Prompt)
 		} else {
 			// 检查是否需要生成摘要 (经过每4轮对话)
 			var count int64
-			query := db.Model(&model.Message{}).Where("session_id = ? AND role = ?", session.ID, openai.ChatMessageRoleUser)
+			query := db.Model(&model.Message{}).Where("session_id = ? AND role = ?", session.ID, string(schema.User))
 			if session.LastSummaryMessageID > 0 {
 				query = query.Where("id > ?", session.LastSummaryMessageID)
 			}
@@ -355,47 +400,40 @@ func (s *AIService) Chat(ctx context.Context, userId uint, req dto.AIChatReq) (<
 
 			if count >= 4 {
 				// 触发摘要总结
-				go func(s model.Session, c *openai.Client, latestUserMsgId int64) {
+				go func(sessionModel model.Session, latestUserMsgId int64) {
 					summaryCtx := context.Background()
 					// 获取自上次总结以来的新对话
 					var msgsToSummarize []model.Message
-					q := global.GVA_DB.Where("session_id = ? AND status = 'active'", s.ID)
-					if s.LastSummaryMessageID > 0 {
-						q = q.Where("id > ?", s.LastSummaryMessageID)
+					q := global.GVA_DB.Where("session_id = ? AND status = 'active'", sessionModel.ID)
+					if sessionModel.LastSummaryMessageID > 0 {
+						q = q.Where("id > ?", sessionModel.LastSummaryMessageID)
 					}
 					q.Order("created_at asc").Find(&msgsToSummarize)
 
 					contentToSummarize := ""
-					if s.Summary != "" {
-						contentToSummarize += fmt.Sprintf("【之前的对话背景摘要】\n%s\n\n", s.Summary)
+					if sessionModel.Summary != "" {
+						contentToSummarize += fmt.Sprintf("【之前的对话背景摘要】\n%s\n\n", sessionModel.Summary)
 					}
 					contentToSummarize += "【最新的对话记录】\n"
 					for _, m := range msgsToSummarize {
 						roleName := "用户"
-						if m.Role == openai.ChatMessageRoleAssistant {
+						if m.Role == string(schema.Assistant) {
 							roleName = "AI"
 						}
 						contentToSummarize += fmt.Sprintf("[%s]: %s\n", roleName, m.Content)
 					}
 					contentToSummarize += "\n请结合【之前的对话背景摘要】和【最新的对话记录】，重新生成一份全局的简明摘要。提取核心背景、用户意图和关键结论，以便作为后续对话的上下文。注意：总结字数请严格控制在500字以内！"
 
-					summaryResp, err := c.CreateChatCompletion(
-						summaryCtx,
-						openai.ChatCompletionRequest{
-							Model: aiConfig.Model,
-							Messages: []openai.ChatCompletionMessage{
-								{Role: openai.ChatMessageRoleUser, Content: contentToSummarize},
-							},
-						},
-					)
-					if err == nil && len(summaryResp.Choices) > 0 {
-						newSummary := summaryResp.Choices[0].Message.Content
-						global.GVA_DB.Model(&model.Session{}).Where("id = ?", s.ID).Updates(map[string]interface{}{
+					newSummary, err := s.generateText(summaryCtx, []*schema.Message{
+						schema.UserMessage(contentToSummarize),
+					})
+					if err == nil && newSummary != "" {
+						global.GVA_DB.Model(&model.Session{}).Where("id = ?", sessionModel.ID).Updates(map[string]interface{}{
 							"summary":                 newSummary,
 							"last_summary_message_id": latestUserMsgId,
 						})
 					}
-				}(session, client, userMsg.ID)
+				}(session, userMsg.ID)
 			}
 		}
 	}()

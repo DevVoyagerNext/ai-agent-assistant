@@ -20,4 +20,5 @@ func initBizRouter(routers ...*gin.RouterGroup) {
 		courseRouter := router.RouterGroupApp.Course
 		courseRouter.InitSubjectsRouter(privateGroup, publicGroup)
 	}
+
 }
