@@ -44,3 +44,5 @@ ai:
   base-url: "https://api.siliconflow.cn/v1"
   api-key: "your_ai_api_key_here"
   model: "Pro/moonshotai/Kimi-K2.5"
+  allow-intranet-fetch: false
+  allow-localhost-fetch: false

@@ -163,6 +163,20 @@ func (s *AIService) newChatAgent(ctx context.Context, userID uint) (*react.Agent
 		ToolsConfig: compose.ToolsNodeConfig{
 			Tools:               tools,
 			ExecuteSequentially: true,
+			ToolCallMiddlewares: []compose.ToolMiddleware{
+				{
+					Invokable: func(next compose.InvokableToolEndpoint) compose.InvokableToolEndpoint {
+						return func(ctx context.Context, input *compose.ToolInput) (*compose.ToolOutput, error) {
+							output, err := next(ctx, input)
+							if err != nil {
+								emitAIToolEvent(ctx, "工具执行失败："+err.Error())
+								return &compose.ToolOutput{Result: err.Error()}, nil
+							}
+							return output, nil
+						}
+					},
+				},
+			},
 		},
 		MaxStep: 8,
 	})

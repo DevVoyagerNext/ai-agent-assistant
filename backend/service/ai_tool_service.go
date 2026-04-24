@@ -1,6 +1,7 @@
 package service
 
 import (
+	"backend/global"
 	"bytes"
 	"context"
 	"errors"
@@ -99,17 +100,11 @@ func (s *AIService) newAITools(userID uint) ([]tool.BaseTool, error) {
 func (s *AIService) fetchWebPageTool(ctx context.Context, input fetchWebPageInput) (fetchWebPageResult, error) {
 	emitAIToolEvent(ctx, "正在抓取网页内容...")
 
-	fetchURL, err := normalizeFetchURL(input.URL)
-	if err != nil {
-		return fetchWebPageResult{}, err
-	}
+	rawURL := strings.TrimSpace(input.URL)
+	hasScheme := strings.Contains(rawURL, "://")
 
-	parsedURL, err := neturl.Parse(fetchURL)
+	fetchURL, err := normalizeFetchURL(rawURL)
 	if err != nil {
-		return fetchWebPageResult{}, errors.New("网页地址格式不正确")
-	}
-
-	if err := validateSafeURL(ctx, parsedURL); err != nil {
 		return fetchWebPageResult{}, err
 	}
 
@@ -123,17 +118,41 @@ func (s *AIService) fetchWebPageTool(ctx context.Context, input fetchWebPageInpu
 		},
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fetchURL, nil)
-	if err != nil {
-		return fetchWebPageResult{}, errors.New("创建网页请求失败")
-	}
-	req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; AIAgentAssistant/1.0; +https://example.local)")
-	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,text/plain;q=0.8,*/*;q=0.7")
-	req.Header.Set("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
+	doRequest := func(targetURL string) (*http.Response, *neturl.URL, error) {
+		parsed, err := neturl.Parse(targetURL)
+		if err != nil {
+			return nil, nil, errors.New("网页地址格式不正确")
+		}
+		if err := validateSafeURL(ctx, parsed); err != nil {
+			return nil, nil, err
+		}
 
-	resp, err := client.Do(req)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, targetURL, nil)
+		if err != nil {
+			return nil, nil, errors.New("创建网页请求失败")
+		}
+		req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; AIAgentAssistant/1.0; +https://example.local)")
+		req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,text/plain;q=0.8,*/*;q=0.7")
+		req.Header.Set("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
+
+		resp, err := client.Do(req)
+		if err != nil {
+			return nil, nil, err
+		}
+		return resp, parsed, nil
+	}
+
+	resp, parsedURL, err := doRequest(fetchURL)
+	if err != nil && !hasScheme && strings.HasPrefix(fetchURL, "https://") {
+		emitAIToolEvent(ctx, "HTTPS 抓取失败，尝试使用 HTTP...")
+		httpURL := "http://" + strings.TrimPrefix(fetchURL, "https://")
+		resp, parsedURL, err = doRequest(httpURL)
+		if err == nil {
+			fetchURL = httpURL
+		}
+	}
 	if err != nil {
-		return fetchWebPageResult{}, errors.New("抓取网页失败，请稍后重试")
+		return fetchWebPageResult{}, errors.New("抓取网页失败，请检查链接是否可访问或补充 http/https 协议")
 	}
 	defer resp.Body.Close()
 
@@ -269,17 +288,36 @@ func validateSafeURL(ctx context.Context, parsedURL *neturl.URL) error {
 		return errors.New("网页地址为空")
 	}
 
+	aiConfig := global.GVA_CONFIG.AI
+	allowIntranet := aiConfig.AllowIntranetFetch
+	allowLocalhost := aiConfig.AllowLocalhostFetch
+
 	host := strings.TrimSpace(parsedURL.Hostname())
 	if host == "" {
 		return errors.New("网页地址缺少主机名")
 	}
 	if strings.EqualFold(host, "localhost") || strings.HasSuffix(strings.ToLower(host), ".local") {
-		return errors.New("不允许抓取本地或内网地址")
+		if allowLocalhost {
+			return nil
+		}
+		return errors.New("不允许抓取本地地址（如需启用请在 settings.yaml 设置 ai.allow-localhost-fetch: true）")
 	}
 
 	if ip := net.ParseIP(host); ip != nil {
-		if isPrivateIP(ip) {
-			return errors.New("不允许抓取本地或内网地址")
+		if isLinkLocalIP(ip) {
+			return errors.New("不允许抓取链路本地地址")
+		}
+		if ip.IsLoopback() || ip.IsUnspecified() {
+			if allowLocalhost {
+				return nil
+			}
+			return errors.New("不允许抓取本地地址（如需启用请在 settings.yaml 设置 ai.allow-localhost-fetch: true）")
+		}
+		if ip.IsPrivate() {
+			if allowIntranet {
+				return nil
+			}
+			return errors.New("不允许抓取内网地址（如需启用请在 settings.yaml 设置 ai.allow-intranet-fetch: true）")
 		}
 		return nil
 	}
@@ -292,18 +330,31 @@ func validateSafeURL(ctx context.Context, parsedURL *neturl.URL) error {
 		return errors.New("网页地址解析结果为空")
 	}
 	for _, addr := range addrs {
-		if isPrivateIP(addr.IP) {
-			return errors.New("不允许抓取本地或内网地址")
+		ip := addr.IP
+		if isLinkLocalIP(ip) {
+			return errors.New("不允许抓取链路本地地址")
+		}
+		if ip.IsLoopback() || ip.IsUnspecified() {
+			if !allowLocalhost {
+				return errors.New("不允许抓取本地地址（如需启用请在 settings.yaml 设置 ai.allow-localhost-fetch: true）")
+			}
+			continue
+		}
+		if ip.IsPrivate() {
+			if !allowIntranet {
+				return errors.New("不允许抓取内网地址（如需启用请在 settings.yaml 设置 ai.allow-intranet-fetch: true）")
+			}
+			continue
 		}
 	}
 	return nil
 }
 
-func isPrivateIP(ip net.IP) bool {
+func isLinkLocalIP(ip net.IP) bool {
 	if ip == nil {
 		return true
 	}
-	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified()
+	return ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast()
 }
 
 func extractReadableHTML(body []byte) (string, string, error) {
