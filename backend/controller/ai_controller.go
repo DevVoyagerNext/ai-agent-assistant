@@ -154,17 +154,17 @@ func (con *AIController) GetSessionMessages(c *gin.Context) {
 	response.Ok(res, c)
 }
 
-// DownloadExport 下载 AI 生成的 PDF 导出文件
-func (con *AIController) DownloadExport(c *gin.Context) {
-	fileName := strings.TrimSpace(c.Param("fileName"))
-	if fileName == "" {
-		response.FailWithMsg(errmsg.CodeError, "导出文件名不能为空", c)
+// DownloadExportByTicket 通过一次性下载凭证下载 AI 生成的 PDF 导出文件
+func (con *AIController) DownloadExportByTicket(c *gin.Context) {
+	ticket := strings.TrimSpace(c.Param("ticket"))
+	if ticket == "" {
+		response.FailWithMsg(errmsg.CodeError, "下载凭证不能为空", c)
 		return
 	}
 
-	userId, err := con.authService.GetUserID(c)
-	if err != nil || userId == 0 {
-		response.FailWithCode(errmsg.UserTokenNotExist, c)
+	userId, fileName, err := con.aiService.ConsumeExportDownloadTicket(c.Request.Context(), ticket)
+	if err != nil {
+		response.FailWithMsg(errmsg.CodeError, err.Error(), c)
 		return
 	}
 

@@ -4,6 +4,7 @@ import (
 	"backend/global"
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -28,6 +29,7 @@ import (
 const (
 	maxWebFetchBytes       = 2 << 20
 	maxWebPageContentRunes = 12000
+	exportTicketTTL        = 5 * time.Minute
 	pdfPageWidthMM         = 210.0
 	pdfPageHeightMM        = 297.0
 	pdfMarginLeftMM        = 15.0
@@ -68,9 +70,9 @@ type exportSummaryPDFInput struct {
 }
 
 type exportSummaryPDFResult struct {
-	FileName    string `json:"fileName"`
-	DownloadURL string `json:"downloadUrl"`
-	SavedAt     string `json:"savedAt"`
+	FileName           string `json:"fileName"`
+	OneTimeDownloadURL string `json:"oneTimeDownloadUrl"`
+	SavedAt            string `json:"savedAt"`
 }
 
 func (s *AIService) newAITools(userID uint) ([]tool.BaseTool, error) {
@@ -85,7 +87,7 @@ func (s *AIService) newAITools(userID uint) ([]tool.BaseTool, error) {
 
 	exportTool, err := toolutils.InferTool(
 		"export_summary_pdf",
-		"用于把已经整理好的总结内容导出为 PDF，并返回可下载地址。适用于用户明确要求导出 PDF、生成 PDF 或保存总结结果的场景。输入应为最终总结内容，而不是原始网页全文。",
+		"用于把已经整理好的总结内容导出为 PDF，并返回一次性下载地址。适用于用户明确要求导出 PDF、生成 PDF 或保存总结结果的场景。输入应为最终总结内容，而不是原始网页全文。",
 		func(ctx context.Context, input exportSummaryPDFInput) (exportSummaryPDFResult, error) {
 			return s.exportSummaryPDFTool(ctx, userID, input)
 		},
@@ -220,13 +222,66 @@ func (s *AIService) exportSummaryPDFTool(ctx context.Context, userID uint, input
 		return exportSummaryPDFResult{}, err
 	}
 
+	oneTimeURL := ""
+	ticket, ticketErr := s.createExportDownloadTicket(ctx, userID, fileName)
+	if ticketErr == nil && ticket != "" {
+		oneTimeURL = "/v1/ai/exports/tickets/" + neturl.PathEscape(ticket)
+	}
+
 	result := exportSummaryPDFResult{
-		FileName:    fileName,
-		DownloadURL: "/v1/ai/exports/" + neturl.PathEscape(fileName),
-		SavedAt:     time.Now().Format(time.RFC3339),
+		FileName:           fileName,
+		OneTimeDownloadURL: oneTimeURL,
+		SavedAt:            time.Now().Format(time.RFC3339),
 	}
 	emitAIToolEvent(ctx, "PDF 导出完成")
 	return result, nil
+}
+
+type exportTicketPayload struct {
+	UserID   uint   `json:"userId"`
+	FileName string `json:"fileName"`
+}
+
+func (s *AIService) createExportDownloadTicket(ctx context.Context, userID uint, fileName string) (string, error) {
+	_ = s
+	ticket := strings.ReplaceAll(uuid.NewString(), "-", "")
+	payload := exportTicketPayload{UserID: userID, FileName: fileName}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return "", errors.New("生成下载凭证失败")
+	}
+	key := "ai:export_ticket:" + ticket
+	if err := global.GVA_REDIS.Set(ctx, key, string(data), exportTicketTTL).Err(); err != nil {
+		return "", errors.New("保存下载凭证失败")
+	}
+	return ticket, nil
+}
+
+// ConsumeExportDownloadTicket 消费一次性下载凭证并返回对应的 userID 与 fileName。
+func (s *AIService) ConsumeExportDownloadTicket(ctx context.Context, ticket string) (uint, string, error) {
+	_ = s
+	safeTicket := strings.TrimSpace(ticket)
+	if safeTicket == "" {
+		return 0, "", errors.New("下载凭证不能为空")
+	}
+	key := "ai:export_ticket:" + safeTicket
+	script := `local v = redis.call("GET", KEYS[1]); if not v then return "" end; redis.call("DEL", KEYS[1]); return v;`
+	res, err := global.GVA_REDIS.Eval(ctx, script, []string{key}).Result()
+	if err != nil {
+		return 0, "", errors.New("读取下载凭证失败")
+	}
+	val, _ := res.(string)
+	if strings.TrimSpace(val) == "" {
+		return 0, "", errors.New("下载链接已失效")
+	}
+	var payload exportTicketPayload
+	if err := json.Unmarshal([]byte(val), &payload); err != nil {
+		return 0, "", errors.New("下载凭证格式错误")
+	}
+	if payload.UserID == 0 || strings.TrimSpace(payload.FileName) == "" {
+		return 0, "", errors.New("下载凭证无效")
+	}
+	return payload.UserID, payload.FileName, nil
 }
 
 // GetExportFilePath 获取当前用户的 AI 导出文件绝对路径。
