@@ -2,9 +2,11 @@ package dto
 
 // AIChatReq AI 聊天请求参数
 type AIChatReq struct {
-	Prompt    string `json:"prompt" form:"prompt" binding:"required,max=1000"`
-	SessionID int64  `json:"sessionId" form:"sessionId"` // 可选，不传或为0表示新会话
-	ParentID  *int64 `json:"parentId" form:"parentId"`   // 可选，用于分支对话
+	Prompt         string `json:"prompt" form:"prompt" binding:"required,max=1000"`
+	SessionID      int64  `json:"sessionId" form:"sessionId"`                                        // 可选，不传或为0表示新会话
+	ParentID       *int64 `json:"parentId" form:"parentId"`                                          // 可选，用于分支对话
+	CurrentPageURL string `json:"currentPageUrl" form:"currentPageUrl" binding:"omitempty,max=2048"` // 可选，当前网页链接（AI 可用它决定是否抓取网页）
+	SelectedText   string `json:"selectedText" form:"selectedText" binding:"omitempty,max=5000"`     // 可选，用户选中的文本（AI 可优先总结这段）
 }
 
 // ChatStreamChunk 用于流式返回时区分工具状态、思考过程和正式回复

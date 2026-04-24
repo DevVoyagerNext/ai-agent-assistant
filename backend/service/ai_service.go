@@ -130,6 +130,23 @@ func (s *AIService) buildChatSystemPrompt(session model.Session) string {
 	return systemPrompt
 }
 
+func (s *AIService) buildUserPrompt(req dto.AIChatReq) string {
+	var builder strings.Builder
+	if strings.TrimSpace(req.CurrentPageURL) != "" {
+		builder.WriteString("当前页面URL：")
+		builder.WriteString(strings.TrimSpace(req.CurrentPageURL))
+		builder.WriteString("\n")
+	}
+	if strings.TrimSpace(req.SelectedText) != "" {
+		builder.WriteString("用户选中的原文：\n")
+		builder.WriteString(strings.TrimSpace(req.SelectedText))
+		builder.WriteString("\n")
+	}
+	builder.WriteString("用户指令：")
+	builder.WriteString(strings.TrimSpace(req.Prompt))
+	return builder.String()
+}
+
 func (s *AIService) newChatAgent(ctx context.Context, userID uint) (*react.Agent, error) {
 	chatModel, err := s.newChatModel(ctx)
 	if err != nil {
@@ -323,7 +340,8 @@ func (s *AIService) Chat(ctx context.Context, userId uint, req dto.AIChatReq) (<
 		}
 	}
 
-	messages := s.buildConversationMessages(systemPrompt, historyMsgs, req.Prompt)
+	userPrompt := s.buildUserPrompt(req)
+	messages := s.buildConversationMessages(systemPrompt, historyMsgs, userPrompt)
 
 	msgChan := make(chan dto.ChatStreamChunk, 64)
 	agentCtx := withAIToolEventSender(ctx, func(content string) {

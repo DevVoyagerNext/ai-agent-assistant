@@ -32,6 +32,8 @@ export interface AIChatReq {
   prompt: string
   sessionId?: number
   parentId?: number
+  currentPageUrl?: string
+  selectedText?: string
   files?: File[]
 }
 

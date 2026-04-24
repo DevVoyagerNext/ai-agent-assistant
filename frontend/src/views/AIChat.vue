@@ -473,6 +473,13 @@ const sendMessage = async () => {
   if (parentId) {
     reqData.append('parentId', parentId.toString())
   }
+
+  // 附加当前页面 URL 和选中的文本
+  reqData.append('currentPageUrl', window.location.href)
+  const selection = window.getSelection()
+  if (selection && selection.toString().trim()) {
+    reqData.append('selectedText', selection.toString().trim())
+  }
   
   inputContent.value = ''
   isSending.value = true

@@ -19,6 +19,12 @@ export const sendAIChat = (data: AIChatReq) => {
   if (data.parentId) {
     formData.append('parentId', data.parentId.toString())
   }
+  if (data.currentPageUrl) {
+    formData.append('currentPageUrl', data.currentPageUrl)
+  }
+  if (data.selectedText) {
+    formData.append('selectedText', data.selectedText)
+  }
   
   if (data.files && data.files.length > 0) {
     data.files.forEach(file => {

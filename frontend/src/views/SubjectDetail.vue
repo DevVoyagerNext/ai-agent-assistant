@@ -907,6 +907,13 @@ const sendAIMessage = async () => {
     if (currentSessionId.value) reqData.append('sessionId', currentSessionId.value.toString())
     if (parentId) reqData.append('parentId', parentId.toString())
 
+    // 附加当前页面 URL 和选中的文本
+    reqData.append('currentPageUrl', window.location.href)
+    const selection = window.getSelection()
+    if (selection && selection.toString().trim()) {
+      reqData.append('selectedText', selection.toString().trim())
+    }
+
     const response = await fetch('http://localhost:8080/v1/ai/chat', {
       method: 'POST',
       headers: { 'x-token': token },
