@@ -50,6 +50,9 @@ const (
 	pdfQuoteFontSize       = 11.0
 	pdfListIndentMM        = 6.0
 	pdfQuoteIndentMM       = 5.0
+	pdfTableFontSize       = 10.5
+	pdfTableLineHeightMM   = 5.5
+	pdfTableCellPaddingMM  = 1.2
 )
 
 var (
@@ -91,10 +94,12 @@ type exportSummaryPDFResult struct {
 }
 
 type markdownBlock struct {
-	Kind  string
-	Level int
-	Lines []string
-	Text  string
+	Kind        string
+	Level       int
+	Lines       []string
+	Text        string
+	TableHeader []string
+	TableRows   [][]string
 }
 
 func (s *AIService) newAITools(userID uint) ([]tool.BaseTool, error) {
@@ -650,6 +655,10 @@ func writeMarkdownContentToPDF(pdf *gopdf.GoPdf, fontName string, left, top, bot
 					return err
 				}
 			}
+		case "table":
+			if err := writeMarkdownTableToPDF(pdf, fontName, left, top, bottom, width, y, block.TableHeader, block.TableRows); err != nil {
+				return err
+			}
 		default:
 			if err := writePDFWrappedParagraph(pdf, fontName, pdfBodyFontSize, pdfBodyLineHeightMM, left, top, bottom, width, y, cleanMarkdownInline(block.Text)); err != nil {
 				return err
@@ -712,7 +721,8 @@ func parseMarkdownBlocks(content string) []markdownBlock {
 		codeLines = nil
 	}
 
-	for _, rawLine := range lines {
+	for i := 0; i < len(lines); i++ {
+		rawLine := lines[i]
 		line := strings.TrimRight(rawLine, " \t")
 		trimmed := strings.TrimSpace(line)
 
@@ -752,6 +762,33 @@ func parseMarkdownBlocks(content string) []markdownBlock {
 				Text:  matches[2],
 			})
 			continue
+		}
+
+		if isMarkdownTableRow(trimmed) && i+1 < len(lines) && isMarkdownTableSeparator(strings.TrimSpace(lines[i+1])) {
+			flushParagraph()
+			flushList()
+			flushQuote()
+
+			header := parseMarkdownTableRow(trimmed)
+			var rows [][]string
+			i += 2
+			for ; i < len(lines); i++ {
+				tableLine := strings.TrimSpace(lines[i])
+				if !isMarkdownTableRow(tableLine) {
+					i--
+					break
+				}
+				rows = append(rows, parseMarkdownTableRow(tableLine))
+			}
+
+			if len(header) > 0 {
+				blocks = append(blocks, markdownBlock{
+					Kind:        "table",
+					TableHeader: header,
+					TableRows:   rows,
+				})
+				continue
+			}
 		}
 
 		if matches := markdownUnorderedRE.FindStringSubmatch(line); len(matches) == 2 {
@@ -799,6 +836,53 @@ func parseMarkdownBlocks(content string) []markdownBlock {
 	return blocks
 }
 
+func isMarkdownTableRow(line string) bool {
+	trimmed := strings.TrimSpace(line)
+	if trimmed == "" {
+		return false
+	}
+	return strings.Count(trimmed, "|") >= 2
+}
+
+func isMarkdownTableSeparator(line string) bool {
+	trimmed := strings.TrimSpace(line)
+	if trimmed == "" {
+		return false
+	}
+	if !isMarkdownTableRow(trimmed) {
+		return false
+	}
+
+	cells := parseMarkdownTableRow(trimmed)
+	if len(cells) == 0 {
+		return false
+	}
+	for _, cell := range cells {
+		cell = strings.TrimSpace(cell)
+		if cell == "" {
+			return false
+		}
+		for _, r := range cell {
+			if r != '-' && r != ':' {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func parseMarkdownTableRow(line string) []string {
+	trimmed := strings.TrimSpace(line)
+	trimmed = strings.TrimPrefix(trimmed, "|")
+	trimmed = strings.TrimSuffix(trimmed, "|")
+	parts := strings.Split(trimmed, "|")
+	result := make([]string, 0, len(parts))
+	for _, part := range parts {
+		result = append(result, cleanMarkdownInline(part))
+	}
+	return result
+}
+
 func cleanMarkdownInline(text string) string {
 	cleaned := strings.TrimSpace(text)
 	if cleaned == "" {
@@ -813,6 +897,119 @@ func cleanMarkdownInline(text string) string {
 	cleaned = strings.ReplaceAll(cleaned, "&gt;", ">")
 	cleaned = strings.ReplaceAll(cleaned, "&amp;", "&")
 	return strings.Join(strings.Fields(cleaned), " ")
+}
+
+func writeMarkdownTableToPDF(pdf *gopdf.GoPdf, fontName string, left, top, bottom, width float64, y *float64, header []string, rows [][]string) error {
+	columnCount := len(header)
+	if columnCount == 0 {
+		return nil
+	}
+	for _, row := range rows {
+		if len(row) > columnCount {
+			columnCount = len(row)
+		}
+	}
+	if columnCount == 0 {
+		return nil
+	}
+
+	normalizedHeader := normalizeTableRow(header, columnCount)
+	normalizedRows := make([][]string, 0, len(rows))
+	for _, row := range rows {
+		normalizedRows = append(normalizedRows, normalizeTableRow(row, columnCount))
+	}
+
+	columnWidth := width / float64(columnCount)
+	tableTop := *y
+
+	if err := drawMarkdownTableRow(pdf, fontName, left, top, bottom, y, columnWidth, normalizedHeader, true); err != nil {
+		return err
+	}
+	for _, row := range normalizedRows {
+		if err := drawMarkdownTableRow(pdf, fontName, left, top, bottom, y, columnWidth, row, false); err != nil {
+			return err
+		}
+	}
+
+	if *y == tableTop {
+		*y += pdfTableLineHeightMM
+	}
+	*y += pdfParagraphSpacingMM
+	return nil
+}
+
+func normalizeTableRow(row []string, columnCount int) []string {
+	normalized := make([]string, columnCount)
+	for i := 0; i < columnCount; i++ {
+		if i < len(row) {
+			normalized[i] = cleanMarkdownInline(row[i])
+		}
+	}
+	return normalized
+}
+
+func drawMarkdownTableRow(pdf *gopdf.GoPdf, fontName string, left, top, bottom float64, y *float64, columnWidth float64, row []string, isHeader bool) error {
+	fontSize := pdfTableFontSize
+	lineHeight := pdfTableLineHeightMM
+	if isHeader {
+		fontSize = pdfBodyFontSize
+		lineHeight = pdfBodyLineHeightMM
+	}
+
+	if err := pdf.SetFont(fontName, "", fontSize); err != nil {
+		return errors.New("设置 PDF 字体失败")
+	}
+
+	cellLines := make([][]string, len(row))
+	maxLineCount := 1
+	textWidth := columnWidth - pdfTableCellPaddingMM*2
+	if textWidth <= 1 {
+		textWidth = columnWidth
+	}
+
+	for i, cell := range row {
+		lines, err := pdf.SplitTextWithWordWrap(defaultIfEmpty(cell, " "), textWidth)
+		if err != nil {
+			return errors.New("计算 PDF 表格换行失败")
+		}
+		if len(lines) == 0 {
+			lines = []string{" "}
+		}
+		cellLines[i] = lines
+		if len(lines) > maxLineCount {
+			maxLineCount = len(lines)
+		}
+	}
+
+	rowHeight := float64(maxLineCount)*lineHeight + pdfTableCellPaddingMM*2
+	if *y+rowHeight > pdfPageHeightMM-bottom {
+		pdf.AddPage()
+		*y = top
+		if err := pdf.SetFont(fontName, "", fontSize); err != nil {
+			return errors.New("设置 PDF 字体失败")
+		}
+	}
+
+	pdf.SetLineWidth(0.1)
+	for col := 0; col < len(row); col++ {
+		x := left + float64(col)*columnWidth
+		pdf.Line(x, *y, x+columnWidth, *y)
+		pdf.Line(x, *y+rowHeight, x+columnWidth, *y+rowHeight)
+		pdf.Line(x, *y, x, *y+rowHeight)
+		pdf.Line(x+columnWidth, *y, x+columnWidth, *y+rowHeight)
+
+		textY := *y + pdfTableCellPaddingMM
+		for _, line := range cellLines[col] {
+			pdf.SetXY(x+pdfTableCellPaddingMM, textY)
+			if err := pdf.Cell(&gopdf.Rect{W: textWidth, H: lineHeight}, line); err != nil {
+				return errors.New("写入 PDF 表格内容失败")
+			}
+			textY += lineHeight
+		}
+	}
+
+	*y += rowHeight
+	return nil
 }
 
 func writePDFWrappedParagraph(pdf *gopdf.GoPdf, fontName string, fontSize, lineHeight, left, top, bottom, width float64, y *float64, text string) error {
