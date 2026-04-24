@@ -121,6 +121,7 @@ func (s *AIService) buildChatSystemPrompt(session model.Session) string {
 2. ` + "`export_summary_pdf`" + `：可用于将整理好的总结内容导出为 PDF 并返回下载地址。
 
 请根据用户问题自行思考是否需要调用工具、调用哪个工具，以及如何基于工具结果继续观察、分析和回答。
+当用户要求阅读、总结当前页面，或当前上下文已经提供了页面 URL 时，请直接调用工具执行，不要只口头描述“我将去抓取”或“我准备导出”而不实际调用工具。
 如果工具返回了 PDF 下载地址，请在最终答复中明确告诉用户文件已生成，并以 Markdown 链接的形式提供下载地址，确保用户可以直接点击下载。`
 
 	if session.Summary != "" {
@@ -147,7 +148,27 @@ func (s *AIService) buildUserPrompt(req dto.AIChatReq) string {
 	return builder.String()
 }
 
-func (s *AIService) streamToolCallChecker(_ context.Context, sr *schema.StreamReader[*schema.Message]) (bool, error) {
+func (s *AIService) strictStreamToolCallChecker(_ context.Context, sr *schema.StreamReader[*schema.Message]) (bool, error) {
+	defer sr.Close()
+
+	for {
+		msg, err := sr.Recv()
+		if errors.Is(err, io.EOF) {
+			return false, nil
+		}
+		if err != nil {
+			return false, err
+		}
+		if msg == nil {
+			continue
+		}
+		if len(msg.ToolCalls) > 0 {
+			return true, nil
+		}
+	}
+}
+
+func (s *AIService) fastStreamToolCallChecker(_ context.Context, sr *schema.StreamReader[*schema.Message]) (bool, error) {
 	defer sr.Close()
 
 	for {
@@ -171,7 +192,30 @@ func (s *AIService) streamToolCallChecker(_ context.Context, sr *schema.StreamRe
 	}
 }
 
-func (s *AIService) newChatAgent(ctx context.Context, userID uint) (*react.Agent, error) {
+func (s *AIService) shouldUseStrictToolChecker(req dto.AIChatReq) bool {
+	prompt := strings.ToLower(strings.TrimSpace(req.Prompt))
+	if strings.TrimSpace(req.CurrentPageURL) != "" {
+		return true
+	}
+	keywords := []string{
+		"总结页面",
+		"总结这个页面",
+		"阅读页面",
+		"网页",
+		"页面",
+		"导出pdf",
+		"导出 pdf",
+		"pdf",
+	}
+	for _, keyword := range keywords {
+		if strings.Contains(prompt, keyword) {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *AIService) newChatAgent(ctx context.Context, userID uint, useStrictToolChecker bool) (*react.Agent, error) {
 	chatModel, err := s.newChatModel(ctx)
 	if err != nil {
 		return nil, err
@@ -182,9 +226,14 @@ func (s *AIService) newChatAgent(ctx context.Context, userID uint) (*react.Agent
 		return nil, errors.New("初始化 AI 工具失败")
 	}
 
+	checker := s.fastStreamToolCallChecker
+	if useStrictToolChecker {
+		checker = s.strictStreamToolCallChecker
+	}
+
 	agent, err := react.NewAgent(ctx, &react.AgentConfig{
 		ToolCallingModel:      chatModel,
-		StreamToolCallChecker: s.streamToolCallChecker,
+		StreamToolCallChecker: checker,
 		ToolsConfig: compose.ToolsNodeConfig{
 			Tools:               tools,
 			ExecuteSequentially: true,
@@ -329,7 +378,7 @@ func (s *AIService) GetSessionMessages(ctx context.Context, userId uint, session
 
 // Chat 处理与 AI 模型的单次对话（流式）
 func (s *AIService) Chat(ctx context.Context, userId uint, req dto.AIChatReq) (<-chan dto.ChatStreamChunk, int64, int64, error) {
-	chatAgent, err := s.newChatAgent(ctx, userId)
+	chatAgent, err := s.newChatAgent(ctx, userId, s.shouldUseStrictToolChecker(req))
 	if err != nil {
 		return nil, 0, 0, err
 	}
