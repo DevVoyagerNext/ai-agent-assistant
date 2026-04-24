@@ -287,6 +287,51 @@ const normalizeMessageChunk = (chunk: string) => {
   }
 }
 
+const extractPdfDownloadUrl = (content: string) => {
+  const markdownLinkMatch = content.match(/\[[^\]]*\.pdf[^\]]*\]\((\/v1\/ai\/exports\/[^)\s]+\.pdf)\)/i)
+  if (markdownLinkMatch?.[1]) {
+    return markdownLinkMatch[1]
+  }
+
+  const bareUrlMatch = content.match(/(^|[\s(])(\/v1\/ai\/exports\/[^\s)"']+\.pdf)/i)
+  if (bareUrlMatch?.[2]) {
+    return bareUrlMatch[2]
+  }
+
+  return ''
+}
+
+const triggerPdfDownload = async (downloadUrl: string) => {
+  if (!downloadUrl) return
+
+  try {
+    const token = localStorage.getItem('token') || ''
+    const res = await fetch(`http://localhost:8080${downloadUrl}`, {
+      headers: {
+        'x-token': token
+      }
+    })
+    
+    if (!res.ok) {
+      throw new Error(`下载失败: ${res.status}`)
+    }
+
+    const blob = await res.blob()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    // 尝试从 URL 提取文件名
+    const fileNameMatch = downloadUrl.match(/\/([^/]+\.pdf)$/i)
+    a.download = fileNameMatch ? fileNameMatch[1] : 'export.pdf'
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(url)
+  } catch (error) {
+    console.error('PDF 下载失败:', error)
+  }
+}
+
 const extractSSEEvents = (buffer: string) => {
   const events: { event: string; data: string }[] = []
   let rest = buffer
@@ -479,26 +524,15 @@ const sendAIMessage = async () => {
           scrollToBottom()
         } else if (event.event === 'tool') {
           const toolText = normalizeMessageChunk(event.data)
-          if (!assistantMsg.toolLogs) {
-            assistantMsg.toolLogs = []
-          }
-          assistantMsg.toolLogs.push(toolText)
+          assistantMsg.toolLogs = [toolText]
           scrollToBottom()
         } else if (event.event === 'done') {
           streamFinished = true
           aiSending.value = false
           
           // Check for download URL in the final message content
-          const downloadUrlMatch = assistantMsg.content.match(/\/v1\/ai\/exports\/[^\s)"']+\.pdf/)
-          if (downloadUrlMatch) {
-            const downloadUrl = downloadUrlMatch[0]
-            const a = document.createElement("a")
-            a.href = `http://localhost:8080${downloadUrl}`
-            a.download = ""
-            document.body.appendChild(a)
-            a.click()
-            a.remove()
-          }
+          const downloadUrl = extractPdfDownloadUrl(assistantMsg.content)
+          triggerPdfDownload(downloadUrl)
           
           abortController.abort()
           return
