@@ -19,11 +19,16 @@ export const sendAIChat = (data: AIChatReq) => {
   if (data.parentId) {
     formData.append('parentId', data.parentId.toString())
   }
-  if (data.currentPageUrl) {
-    formData.append('currentPageUrl', data.currentPageUrl)
+
+  const currentPageUrl = data.currentPageUrl || (typeof window !== 'undefined' ? window.location.href : '')
+  if (currentPageUrl) {
+    formData.append('currentPageUrl', currentPageUrl)
   }
-  if (data.selectedText) {
-    formData.append('selectedText', data.selectedText)
+
+  const selectedText = data.selectedText?.trim()
+    || (typeof window !== 'undefined' ? window.getSelection()?.toString().trim() || '' : '')
+  if (selectedText) {
+    formData.append('selectedText', selectedText)
   }
   
   if (data.files && data.files.length > 0) {

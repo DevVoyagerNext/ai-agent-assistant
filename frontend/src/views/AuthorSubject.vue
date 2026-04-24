@@ -124,9 +124,27 @@ const hasMoreSessions = ref(true)
 const loadingMessages = ref(false)
 const hasMoreMessages = ref(true)
 const reasoningCollapsedMap = reactive<Record<number, boolean>>({})
+const latestSelectedText = ref('')
 let activeChatAbortController: AbortController | null = null
 const copyToast = ref('')
 let copyToastTimer: ReturnType<typeof setTimeout> | null = null
+
+const getCurrentSelectionText = () => window.getSelection()?.toString().trim() || ''
+
+const syncSelectedText = () => {
+  latestSelectedText.value = getCurrentSelectionText()
+}
+
+const appendAIContext = (formData: FormData) => {
+  formData.set('currentPageUrl', window.location.href)
+
+  const selectedText = latestSelectedText.value || getCurrentSelectionText()
+  if (selectedText) {
+    formData.set('selectedText', selectedText)
+  } else {
+    formData.delete('selectedText')
+  }
+}
 
 const currentAISessionTitle = computed(() => {
   if (!currentSessionId.value) return '新对话'
@@ -419,13 +437,7 @@ const sendAIMessage = async () => {
     reqData.append('prompt', prompt)
     if (currentSessionId.value) reqData.append('sessionId', currentSessionId.value.toString())
     if (parentId) reqData.append('parentId', parentId.toString())
-
-    // 附加当前页面 URL 和选中的文本
-    reqData.append('currentPageUrl', window.location.href)
-    const selection = window.getSelection()
-    if (selection && selection.toString().trim()) {
-      reqData.append('selectedText', selection.toString().trim())
-    }
+    appendAIContext(reqData)
 
     const response = await fetch('http://localhost:8080/v1/ai/chat', {
       method: 'POST',
@@ -507,11 +519,14 @@ const sendAIMessage = async () => {
 // 初始化加载会话
 onMounted(() => {
   loadSessions(true)
+  document.addEventListener('selectionchange', syncSelectedText)
+  syncSelectedText()
 })
 
 onBeforeUnmount(() => {
   activeChatAbortController?.abort()
   if (copyToastTimer) clearTimeout(copyToastTimer)
+  document.removeEventListener('selectionchange', syncSelectedText)
   window.removeEventListener('mousemove', onDragLeft)
   window.removeEventListener('mousemove', onDragRight)
   window.removeEventListener('mouseup', stopDrag)

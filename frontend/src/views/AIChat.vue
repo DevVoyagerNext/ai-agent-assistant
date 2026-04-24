@@ -154,7 +154,25 @@ const loadingMessages = ref(false)
 const inputContent = ref('')
 const isSending = ref(false)
 const messagesContainer = ref<HTMLElement | null>(null)
+const latestSelectedText = ref('')
 let activeChatAbortController: AbortController | null = null
+
+const getCurrentSelectionText = () => window.getSelection()?.toString().trim() || ''
+
+const syncSelectedText = () => {
+  latestSelectedText.value = getCurrentSelectionText()
+}
+
+const appendAIContext = (formData: FormData) => {
+  formData.set('currentPageUrl', window.location.href)
+
+  const selectedText = latestSelectedText.value || getCurrentSelectionText()
+  if (selectedText) {
+    formData.set('selectedText', selectedText)
+  } else {
+    formData.delete('selectedText')
+  }
+}
 
 // ===== Reasoning Collapse State =====
 // 记录哪些消息的深度思考区域是被折叠的
@@ -202,6 +220,8 @@ onMounted(async () => {
 
   // Add global event listener for copying code blocks
   messagesContainer.value?.addEventListener('click', handleCodeCopy)
+  document.addEventListener('selectionchange', syncSelectedText)
+  syncSelectedText()
 })
 
 onBeforeUnmount(() => {
@@ -209,6 +229,7 @@ onBeforeUnmount(() => {
     activeChatAbortController.abort()
   }
   messagesContainer.value?.removeEventListener('click', handleCodeCopy)
+  document.removeEventListener('selectionchange', syncSelectedText)
 })
 
 // ===== Toast Logic =====
@@ -473,13 +494,7 @@ const sendMessage = async () => {
   if (parentId) {
     reqData.append('parentId', parentId.toString())
   }
-
-  // 附加当前页面 URL 和选中的文本
-  reqData.append('currentPageUrl', window.location.href)
-  const selection = window.getSelection()
-  if (selection && selection.toString().trim()) {
-    reqData.append('selectedText', selection.toString().trim())
-  }
+  appendAIContext(reqData)
   
   inputContent.value = ''
   isSending.value = true
