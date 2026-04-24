@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"io"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 )
@@ -151,4 +152,28 @@ func (con *AIController) GetSessionMessages(c *gin.Context) {
 	}
 
 	response.Ok(res, c)
+}
+
+// DownloadExport 下载 AI 生成的 PDF 导出文件
+func (con *AIController) DownloadExport(c *gin.Context) {
+	fileName := strings.TrimSpace(c.Param("fileName"))
+	if fileName == "" {
+		response.FailWithMsg(errmsg.CodeError, "导出文件名不能为空", c)
+		return
+	}
+
+	userId, err := con.authService.GetUserID(c)
+	if err != nil || userId == 0 {
+		response.FailWithCode(errmsg.UserTokenNotExist, c)
+		return
+	}
+
+	filePath, err := con.aiService.GetExportFilePath(c.Request.Context(), userId, fileName)
+	if err != nil {
+		response.FailWithMsg(errmsg.CodeError, err.Error(), c)
+		return
+	}
+
+	c.Header("Cache-Control", "no-store")
+	c.FileAttachment(filePath, fileName)
 }

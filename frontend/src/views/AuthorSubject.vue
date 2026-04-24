@@ -36,7 +36,9 @@ import {
   ArrowDownCircle,
   Copy,
   List,
-  AlignVerticalSpaceAround
+  AlignVerticalSpaceAround,
+  Wrench,
+  Loader2
 } from 'lucide-vue-next'
 import {
   getAISessions,
@@ -456,9 +458,29 @@ const sendAIMessage = async () => {
         } else if (event.event === 'reasoning') {
           assistantMsg.reasoning = (assistantMsg.reasoning || '') + normalizeMessageChunk(event.data)
           scrollToBottom()
+        } else if (event.event === 'tool') {
+          const toolText = normalizeMessageChunk(event.data)
+          if (!assistantMsg.toolLogs) {
+            assistantMsg.toolLogs = []
+          }
+          assistantMsg.toolLogs.push(toolText)
+          scrollToBottom()
         } else if (event.event === 'done') {
           streamFinished = true
           aiSending.value = false
+          
+          // Check for download URL in the final message content
+          const downloadUrlMatch = assistantMsg.content.match(/\/v1\/ai\/exports\/[^\s)"']+\.pdf/)
+          if (downloadUrlMatch) {
+            const downloadUrl = downloadUrlMatch[0]
+            const a = document.createElement("a")
+            a.href = `http://localhost:8080${downloadUrl}`
+            a.download = ""
+            document.body.appendChild(a)
+            a.click()
+            a.remove()
+          }
+          
           abortController.abort()
           return
         }
@@ -1398,7 +1420,17 @@ const visibleTreeNodes = computed<VisibleTreeNode[]>(() => {
                   <div class="message-content">
                     <div class="message-bubble-container">
                       <div class="message-bubble">
-                        <div v-if="msg.role === 'assistant' && msg.reasoning" class="ai-reasoning">
+                      
+                      <!-- Tool Block -->
+                      <div v-if="msg.toolLogs && msg.toolLogs.length > 0" class="tool-block">
+                        <div v-for="(log, idx) in msg.toolLogs" :key="idx" class="tool-item">
+                          <Loader2 v-if="isStreamingAssistantMessage(msg) && idx === msg.toolLogs.length - 1 && !msg.content" class="spin" :size="12" />
+                          <Wrench v-else :size="12" />
+                          <span>{{ log }}</span>
+                        </div>
+                      </div>
+
+                      <div v-if="msg.role === 'assistant' && msg.reasoning" class="ai-reasoning">
                           <div class="reasoning-header" @click="toggleReasoning(msg.id)">
                             <LoaderCircle
                               v-if="isStreamingAssistantMessage(msg) && !msg.content"
@@ -2416,6 +2448,25 @@ const visibleTreeNodes = computed<VisibleTreeNode[]>(() => {
   border: 1px solid rgba(63, 58, 53, 0.06);
   box-shadow: 0 8px 24px rgba(63, 58, 53, 0.05);
   border-top-left-radius: 6px;
+}
+
+/* Tool Block Styles */
+.tool-block {
+  margin-bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.tool-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: #3b82f6;
+  background: rgba(59, 130, 246, 0.1);
+  padding: 6px 12px;
+  border-radius: 6px;
 }
 
 .ai-message.user .message-bubble {

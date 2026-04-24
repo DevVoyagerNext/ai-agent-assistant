@@ -18,6 +18,7 @@ export interface AIChatMessage {
   role: 'user' | 'assistant'
   content: string
   reasoning?: string
+  toolLogs?: string[]
   status: 'active' | 'deleted' | 'hidden'
   createdAt: string
 }

@@ -17,5 +17,6 @@ func (r *AIRouter) InitAuthAIRouter(Router *gin.RouterGroup) {
 		aiRouter.GET("/sessions", aiController.GetUserSessions)                 // 获取用户的历史会话列表
 		aiRouter.PUT("/sessions/:id/title", aiController.UpdateSessionTitle)    // 修改会话标题
 		aiRouter.GET("/sessions/:id/messages", aiController.GetSessionMessages) // 获取具体会话的消息列表
+		aiRouter.GET("/exports/:fileName", aiController.DownloadExport)         // 下载 AI 导出的 PDF 文件
 	}
 }

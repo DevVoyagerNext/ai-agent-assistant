@@ -12,6 +12,8 @@ import (
 	"time"
 
 	einoOpenAI "github.com/cloudwego/eino-ext/components/model/openai"
+	"github.com/cloudwego/eino/compose"
+	"github.com/cloudwego/eino/flow/agent/react"
 	"github.com/cloudwego/eino/schema"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -105,6 +107,53 @@ func (s *AIService) generateText(ctx context.Context, messages []*schema.Message
 	}
 
 	return strings.TrimSpace(s.extractMessageText(resp)), nil
+}
+
+func (s *AIService) buildChatSystemPrompt(session model.Session) string {
+	systemPrompt := `你现在是一位顶尖的全能型高级教师。你不仅学识渊博，更精通教学之道。在回答学生的问题时，请务必做到以下几点：
+1. 深入浅出：知识讲解既要有专业的深度与丰富的细节，又要通俗易懂；
+2. 逻辑严密：条理极其清晰，结构分明，善于使用序号、分类或对比来组织内容；
+3. 启发思考：不仅给出答案，还要引导学生思考背后的原理，培养其举一反三的能力。
+请始终保持专业、耐心且富有启发性的教育者语气进行解答。
+
+另外你还具备两个外部工具：
+1. ` + "`fetch_web_page`" + `：可用于访问网页并提取标题与正文；
+2. ` + "`export_summary_pdf`" + `：可用于将整理好的总结内容导出为 PDF 并返回下载地址。
+
+请根据用户问题自行思考是否需要调用工具、调用哪个工具，以及如何基于工具结果继续观察、分析和回答。
+如果工具返回了 PDF 下载地址，请在最终答复中明确告诉用户文件已生成，并给出下载地址。`
+
+	if session.Summary != "" {
+		systemPrompt += fmt.Sprintf("\n\n以下是之前的对话摘要，请作为背景参考：\n%s", session.Summary)
+	}
+
+	return systemPrompt
+}
+
+func (s *AIService) newChatAgent(ctx context.Context, userID uint) (*react.Agent, error) {
+	chatModel, err := s.newChatModel(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	tools, err := s.newAITools(userID)
+	if err != nil {
+		return nil, errors.New("初始化 AI 工具失败")
+	}
+
+	agent, err := react.NewAgent(ctx, &react.AgentConfig{
+		ToolCallingModel: chatModel,
+		ToolsConfig: compose.ToolsNodeConfig{
+			Tools:               tools,
+			ExecuteSequentially: true,
+		},
+		MaxStep: 8,
+	})
+	if err != nil {
+		return nil, errors.New("初始化 AI 智能体失败")
+	}
+
+	return agent, nil
 }
 
 // UpdateSessionTitle 修改会话标题
@@ -224,7 +273,7 @@ func (s *AIService) GetSessionMessages(ctx context.Context, userId uint, session
 
 // Chat 处理与 AI 模型的单次对话（流式）
 func (s *AIService) Chat(ctx context.Context, userId uint, req dto.AIChatReq) (<-chan dto.ChatStreamChunk, int64, int64, error) {
-	chatModel, err := s.newChatModel(ctx)
+	chatAgent, err := s.newChatAgent(ctx, userId)
 	if err != nil {
 		return nil, 0, 0, err
 	}
@@ -255,17 +304,7 @@ func (s *AIService) Chat(ctx context.Context, userId uint, req dto.AIChatReq) (<
 		}
 	}
 
-	// 教师系统提示词
-	systemPrompt := `你现在是一位顶尖的全能型高级教师。你不仅学识渊博，更精通教学之道。在回答学生的问题时，请务必做到以下几点：
-1. 深入浅出：知识讲解既要有专业的深度与丰富的细节，又要通俗易懂；
-2. 逻辑严密：条理极其清晰，结构分明，善于使用序号、分类或对比来组织内容；
-3. 启发思考：不仅给出答案，还要引导学生思考背后的原理，培养其举一反三的能力。
-请始终保持专业、耐心且富有启发性的教育者语气进行解答。`
-
-	// 如果存在会话摘要，则添加到系统提示词中
-	if session.Summary != "" {
-		systemPrompt += fmt.Sprintf("\n\n以下是之前的对话摘要，请作为背景参考：\n%s", session.Summary)
-	}
+	systemPrompt := s.buildChatSystemPrompt(session)
 
 	// 组装消息列表
 	// 获取最近4轮历史对话 (8条消息)
@@ -286,9 +325,14 @@ func (s *AIService) Chat(ctx context.Context, userId uint, req dto.AIChatReq) (<
 
 	messages := s.buildConversationMessages(systemPrompt, historyMsgs, req.Prompt)
 
-	stream, err := chatModel.Stream(ctx, messages)
+	msgChan := make(chan dto.ChatStreamChunk, 64)
+	agentCtx := withAIToolEventSender(ctx, func(content string) {
+		msgChan <- dto.ChatStreamChunk{Type: "tool", Content: content}
+	})
+
+	stream, err := chatAgent.Stream(agentCtx, messages)
 	if err != nil {
-		global.GVA_LOG.Error("Eino AI stream call failed", zap.Error(err))
+		global.GVA_LOG.Error("Eino AI agent stream call failed", zap.Error(err))
 		if isNewSession {
 			db.Unscoped().Where("id = ?", session.ID).Delete(&model.Session{})
 		}
@@ -323,8 +367,6 @@ func (s *AIService) Chat(ctx context.Context, userId uint, req dto.AIChatReq) (<
 		Content:   "", // 留空，流式输出完成后再更新
 	}
 	db.Create(&aiMsg)
-
-	msgChan := make(chan dto.ChatStreamChunk)
 
 	go func() {
 		defer stream.Close()
