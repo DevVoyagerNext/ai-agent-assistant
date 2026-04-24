@@ -225,7 +225,11 @@ func (s *AIService) exportSummaryPDFTool(ctx context.Context, userID uint, input
 	oneTimeURL := ""
 	ticket, ticketErr := s.createExportDownloadTicket(ctx, userID, fileName)
 	if ticketErr == nil && ticket != "" {
-		oneTimeURL = "/v1/ai/exports/tickets/" + neturl.PathEscape(ticket)
+		baseURL := strings.TrimSuffix(global.GVA_CONFIG.System.BaseURL, "/")
+		if baseURL == "" {
+			baseURL = "http://localhost:8080" // 兜底方案
+		}
+		oneTimeURL = baseURL + "/v1/ai/exports/tickets/" + neturl.PathEscape(ticket)
 	}
 
 	result := exportSummaryPDFResult{

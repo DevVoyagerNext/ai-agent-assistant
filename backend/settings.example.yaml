@@ -1,3 +1,6 @@
+system:
+  base-url: "http://localhost:8080" # 后端服务公网访问地址，用于生成导出文件的完整下载链接
+
 mysql:
   host: 127.0.0.1
   port: 3306

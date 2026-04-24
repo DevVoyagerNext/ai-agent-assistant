@@ -524,7 +524,10 @@ const sendAIMessage = async () => {
           scrollToBottom()
         } else if (event.event === 'tool') {
           const toolText = normalizeMessageChunk(event.data)
-          assistantMsg.toolLogs = [toolText]
+          if (!assistantMsg.toolLogs) {
+            assistantMsg.toolLogs = []
+          }
+          assistantMsg.toolLogs.push(toolText)
           scrollToBottom()
         } else if (event.event === 'done') {
           streamFinished = true
@@ -1479,10 +1482,16 @@ const visibleTreeNodes = computed<VisibleTreeNode[]>(() => {
                       
                       <!-- Tool Block -->
                       <div v-if="msg.toolLogs && msg.toolLogs.length > 0" class="tool-block">
-                        <div v-for="(log, idx) in msg.toolLogs" :key="idx" class="tool-item">
-                          <Loader2 v-if="isStreamingAssistantMessage(msg) && idx === msg.toolLogs.length - 1 && !msg.content" class="spin" :size="12" />
+                        <div class="tool-summary">
+                          <Loader2 v-if="isStreamingAssistantMessage(msg) && !msg.content" class="spin" :size="12" />
                           <Wrench v-else :size="12" />
-                          <span>{{ log }}</span>
+                          <span>工具调用过程 ({{ msg.toolLogs.length }} 步)</span>
+                        </div>
+                        <div class="tool-logs">
+                          <div v-for="(log, idx) in msg.toolLogs" :key="idx" class="tool-item">
+                            <span class="tool-dot"></span>
+                            <span>{{ log }}</span>
+                          </div>
                         </div>
                       </div>
 
@@ -1530,6 +1539,7 @@ const visibleTreeNodes = computed<VisibleTreeNode[]>(() => {
                         <div
                           v-if="msg.role === 'assistant' && msg.content"
                           class="markdown-body"
+                          :class="{ 'is-streaming': isStreamingAssistantMessage(msg) }"
                           v-html="renderMarkdown(msg.content, isStreamingAssistantMessage(msg))"
                         ></div>
 
@@ -2511,18 +2521,45 @@ const visibleTreeNodes = computed<VisibleTreeNode[]>(() => {
   margin-bottom: 12px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 8px;
+  background: rgba(59, 130, 246, 0.05);
+  border: 1px solid rgba(59, 130, 246, 0.1);
+  padding: 10px 12px;
+  border-radius: 8px;
+}
+
+.tool-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: #3b82f6;
+  font-weight: 500;
+}
+
+.tool-logs {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-left: 6px;
+  border-left: 2px solid rgba(59, 130, 246, 0.2);
+  margin-left: 6px;
 }
 
 .tool-item {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 13px;
-  color: #3b82f6;
-  background: rgba(59, 130, 246, 0.1);
-  padding: 6px 12px;
-  border-radius: 6px;
+  font-size: 12px;
+  color: #64748b;
+}
+
+.tool-dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #3b82f6;
+  flex-shrink: 0;
 }
 
 .ai-message.user .message-bubble {
@@ -2530,6 +2567,21 @@ const visibleTreeNodes = computed<VisibleTreeNode[]>(() => {
   color: white;
   border-top-right-radius: 6px;
   box-shadow: 0 10px 24px rgba(63, 58, 53, 0.12);
+}
+
+/* Typing Cursor Effect */
+.is-streaming::after {
+  content: '▋';
+  display: inline-block;
+  animation: blink 1s step-end infinite;
+  color: #3b82f6;
+  margin-left: 2px;
+  vertical-align: baseline;
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
 }
 
 .ai-message.user :deep(.markdown-body) {

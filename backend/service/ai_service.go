@@ -121,7 +121,7 @@ func (s *AIService) buildChatSystemPrompt(session model.Session) string {
 2. ` + "`export_summary_pdf`" + `：可用于将整理好的总结内容导出为 PDF 并返回下载地址。
 
 请根据用户问题自行思考是否需要调用工具、调用哪个工具，以及如何基于工具结果继续观察、分析和回答。
-如果工具返回了 PDF 下载地址，请在最终答复中明确告诉用户文件已生成，并给出下载地址。`
+如果工具返回了 PDF 下载地址，请在最终答复中明确告诉用户文件已生成，并以 Markdown 链接的形式提供下载地址，确保用户可以直接点击下载。`
 
 	if session.Summary != "" {
 		systemPrompt += fmt.Sprintf("\n\n以下是之前的对话摘要，请作为背景参考：\n%s", session.Summary)
