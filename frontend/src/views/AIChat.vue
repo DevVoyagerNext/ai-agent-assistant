@@ -179,9 +179,16 @@ const appendAIContext = (formData: FormData) => {
 // key: messageId, value: boolean (true = collapsed)
 const reasoningCollapsedMap = ref<Record<number, boolean>>({})
 
+// 记录哪些消息的工具调用区域是被折叠的
+const toolCollapsedMap = ref<Record<number, boolean>>({})
+
 // 切换折叠状态
 const toggleReasoning = (msgId: number) => {
   reasoningCollapsedMap.value[msgId] = !reasoningCollapsedMap.value[msgId]
+}
+
+const toggleToolLogs = (msgId: number) => {
+  toolCollapsedMap.value[msgId] = !toolCollapsedMap.value[msgId]
 }
 
 // 检查某个思考过程是否应折叠
@@ -200,6 +207,14 @@ const isReasoningCollapsed = (msg: AIChatMessage) => {
     return true
   }
   
+  return false
+}
+
+const isToolCollapsed = (msg: AIChatMessage) => {
+  if (toolCollapsedMap.value[msg.id] !== undefined) {
+    return toolCollapsedMap.value[msg.id]
+  }
+  // 默认不折叠
   return false
 }
 
@@ -477,6 +492,83 @@ type SSEEvent = {
   data: string
 }
 
+type StreamQueueState = {
+  content: string
+  reasoning: string
+  running: boolean
+}
+
+const STREAM_RENDER_CHUNK_SIZE = 1
+const STREAM_RENDER_DELAY_MS = 18
+const streamQueueMap = new WeakMap<AIChatMessage, StreamQueueState>()
+
+const waitForStreamPaint = async () => {
+  await nextTick()
+  await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
+  await new Promise(resolve => setTimeout(resolve, STREAM_RENDER_DELAY_MS))
+}
+
+const getStreamQueue = (msg: AIChatMessage) => {
+  let queue = streamQueueMap.get(msg)
+  if (!queue) {
+    queue = {
+      content: '',
+      reasoning: '',
+      running: false
+    }
+    streamQueueMap.set(msg, queue)
+  }
+  return queue
+}
+
+const drainStreamQueue = async (msg: AIChatMessage) => {
+  const queue = getStreamQueue(msg)
+  if (queue.running) return
+
+  queue.running = true
+  try {
+    while (queue.reasoning || queue.content) {
+      if (queue.reasoning) {
+        const nextChunk = queue.reasoning.slice(0, STREAM_RENDER_CHUNK_SIZE)
+        queue.reasoning = queue.reasoning.slice(STREAM_RENDER_CHUNK_SIZE)
+        msg.reasoning = (msg.reasoning || '') + nextChunk
+      } else if (queue.content) {
+        const nextChunk = queue.content.slice(0, STREAM_RENDER_CHUNK_SIZE)
+        queue.content = queue.content.slice(STREAM_RENDER_CHUNK_SIZE)
+        msg.content += nextChunk
+      }
+
+      scrollToBottom()
+      await waitForStreamPaint()
+    }
+  } finally {
+    queue.running = false
+    if (!queue.reasoning && !queue.content) {
+      streamQueueMap.delete(msg)
+    }
+  }
+}
+
+const enqueueStreamText = (msg: AIChatMessage, field: 'content' | 'reasoning', text: string) => {
+  if (!text) return
+
+  const queue = getStreamQueue(msg)
+  queue[field] += text
+  void drainStreamQueue(msg)
+}
+
+const waitForStreamQueueDrain = async (msg: AIChatMessage) => {
+  while (true) {
+    const queue = streamQueueMap.get(msg)
+    if (!queue || (!queue.running && !queue.reasoning && !queue.content)) {
+      streamQueueMap.delete(msg)
+      return
+    }
+
+    await new Promise(resolve => setTimeout(resolve, 16))
+  }
+}
+
 const extractSSEEvents = (buffer: string) => {
   const events: SSEEvent[] = []
   let rest = buffer
@@ -618,11 +710,9 @@ const sendMessage = async () => {
           }
           void loadSessions(true)
         } else if (event.event === 'message') {
-          assistantMsg.content += normalizeMessageChunk(event.data)
-          scrollToBottom()
+          enqueueStreamText(assistantMsg, 'content', normalizeMessageChunk(event.data))
         } else if (event.event === 'reasoning') {
-          assistantMsg.reasoning = (assistantMsg.reasoning || '') + normalizeMessageChunk(event.data)
-          scrollToBottom()
+          enqueueStreamText(assistantMsg, 'reasoning', normalizeMessageChunk(event.data))
         } else if (event.event === 'tool') {
           const toolText = normalizeMessageChunk(event.data)
           if (!assistantMsg.toolLogs) {
@@ -630,8 +720,10 @@ const sendMessage = async () => {
           }
           assistantMsg.toolLogs.push(toolText)
           scrollToBottom()
+          await waitForStreamPaint()
         } else if (event.event === 'done') {
           streamFinished = true
+          await waitForStreamQueueDrain(assistantMsg)
           isSending.value = false
           
           // Check for download URL in the final message content
@@ -841,12 +933,14 @@ const adjustTextareaHeight = () => {
                 
                 <!-- Tool Block -->
                 <div v-if="msg.toolLogs && msg.toolLogs.length > 0" class="tool-block">
-                  <div class="tool-summary">
+                  <div class="tool-summary" @click="toggleToolLogs(msg.id)">
                     <Loader2 v-if="isStreamingAssistantMessage(msg) && !msg.content" class="spin icon-sm" :size="14" />
                     <Wrench v-else class="icon-sm" :size="14" />
                     <span>工具调用过程 ({{ msg.toolLogs.length }} 步)</span>
+                    <ChevronDown v-if="isToolCollapsed(msg)" class="icon-sm chevron" :size="14" />
+                    <ChevronUp v-else class="icon-sm chevron" :size="14" />
                   </div>
-                  <div class="tool-logs">
+                  <div v-show="!isToolCollapsed(msg)" class="tool-logs">
                     <div v-for="(log, idx) in msg.toolLogs" :key="idx" class="tool-item">
                       <span class="tool-dot"></span>
                       <span>{{ log }}</span>
@@ -877,7 +971,10 @@ const adjustTextareaHeight = () => {
                 </div>
 
                 <!-- Typing Indicator for Assistant when content is empty and no reasoning yet -->
-                <div v-if="msg.role === 'assistant' && msg.content === '' && !msg.reasoning && isSending" class="typing">
+                <div
+                  v-if="msg.role === 'assistant' && msg.content === '' && !msg.reasoning && (!msg.toolLogs || msg.toolLogs.length === 0) && isSending"
+                  class="typing"
+                >
                   <span class="dot"></span><span class="dot"></span><span class="dot"></span>
                 </div>
                 

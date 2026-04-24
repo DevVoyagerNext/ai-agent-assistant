@@ -43,9 +43,24 @@ const (
 	pdfTitleFontSize       = 18.0
 	pdfMetaFontSize        = 10.0
 	pdfBodyFontSize        = 12.0
+	pdfHeading1FontSize    = 16.0
+	pdfHeading2FontSize    = 14.0
+	pdfHeading3FontSize    = 13.0
+	pdfCodeFontSize        = 10.5
+	pdfQuoteFontSize       = 11.0
+	pdfListIndentMM        = 6.0
+	pdfQuoteIndentMM       = 5.0
 )
 
-var fileNameCleaner = regexp.MustCompile(`[^a-zA-Z0-9\p{Han}_-]+`)
+var (
+	fileNameCleaner     = regexp.MustCompile(`[^a-zA-Z0-9\p{Han}_-]+`)
+	markdownHeadingRE   = regexp.MustCompile(`^(#{1,6})\s+(.*)$`)
+	markdownUnorderedRE = regexp.MustCompile(`^\s*[-*+]\s+(.*)$`)
+	markdownOrderedRE   = regexp.MustCompile(`^\s*(\d+)\.\s+(.*)$`)
+	markdownLinkRE      = regexp.MustCompile(`\[(.*?)\]\((.*?)\)`)
+	markdownImageRE     = regexp.MustCompile(`!\[(.*?)\]\((.*?)\)`)
+	markdownEmphasisRE  = regexp.MustCompile("(\\*\\*|__|\\*|_|~~|`)")
+)
 
 type aiToolEventSender func(content string)
 
@@ -73,6 +88,13 @@ type exportSummaryPDFResult struct {
 	FileName           string `json:"fileName"`
 	OneTimeDownloadURL string `json:"oneTimeDownloadUrl"`
 	SavedAt            string `json:"savedAt"`
+}
+
+type markdownBlock struct {
+	Kind  string
+	Level int
+	Lines []string
+	Text  string
 }
 
 func (s *AIService) newAITools(userID uint) ([]tool.BaseTool, error) {
@@ -565,7 +587,7 @@ func renderSummaryPDF(filePath, title, sourceURL, content string) error {
 	}
 
 	y += 3
-	if err := writePDFWrappedParagraph(&pdf, "ai_summary_font", pdfBodyFontSize, pdfBodyLineHeightMM, pdfMarginLeftMM, pdfMarginTopMM, pdfMarginBottomMM, contentWidth, &y, content); err != nil {
+	if err := writeMarkdownContentToPDF(&pdf, "ai_summary_font", pdfMarginLeftMM, pdfMarginTopMM, pdfMarginBottomMM, contentWidth, &y, content); err != nil {
 		return err
 	}
 
@@ -573,6 +595,224 @@ func renderSummaryPDF(filePath, title, sourceURL, content string) error {
 		return errors.New("写入 PDF 文件失败")
 	}
 	return nil
+}
+
+func writeMarkdownContentToPDF(pdf *gopdf.GoPdf, fontName string, left, top, bottom, width float64, y *float64, content string) error {
+	blocks := parseMarkdownBlocks(content)
+	if len(blocks) == 0 {
+		return writePDFWrappedParagraph(pdf, fontName, pdfBodyFontSize, pdfBodyLineHeightMM, left, top, bottom, width, y, cleanMarkdownInline(content))
+	}
+
+	for _, block := range blocks {
+		switch block.Kind {
+		case "heading":
+			fontSize := pdfHeading3FontSize
+			lineHeight := pdfBodyLineHeightMM
+			if block.Level <= 1 {
+				fontSize = pdfHeading1FontSize
+				lineHeight = 8.0
+			} else if block.Level == 2 {
+				fontSize = pdfHeading2FontSize
+				lineHeight = 7.0
+			}
+			*y += 1.5
+			if err := writePDFWrappedParagraph(pdf, fontName, fontSize, lineHeight, left, top, bottom, width, y, cleanMarkdownInline(block.Text)); err != nil {
+				return err
+			}
+			*y += 1
+		case "unordered_list":
+			for _, line := range block.Lines {
+				if err := writePDFWrappedParagraph(pdf, fontName, pdfBodyFontSize, pdfBodyLineHeightMM, left+pdfListIndentMM, top, bottom, width-pdfListIndentMM, y, "- "+cleanMarkdownInline(line)); err != nil {
+					return err
+				}
+			}
+		case "ordered_list":
+			for idx, line := range block.Lines {
+				prefix := fmt.Sprintf("%d. ", idx+1)
+				if err := writePDFWrappedParagraph(pdf, fontName, pdfBodyFontSize, pdfBodyLineHeightMM, left+pdfListIndentMM, top, bottom, width-pdfListIndentMM, y, prefix+cleanMarkdownInline(line)); err != nil {
+					return err
+				}
+			}
+		case "blockquote":
+			for _, line := range block.Lines {
+				if err := writePDFWrappedParagraph(pdf, fontName, pdfQuoteFontSize, pdfBodyLineHeightMM, left+pdfQuoteIndentMM, top, bottom, width-pdfQuoteIndentMM, y, "引用: "+cleanMarkdownInline(line)); err != nil {
+					return err
+				}
+			}
+		case "code":
+			for _, line := range block.Lines {
+				codeLine := strings.ReplaceAll(line, "\t", "    ")
+				if strings.TrimSpace(codeLine) == "" {
+					*y += pdfBodyLineHeightMM / 2
+					continue
+				}
+				if err := writePDFWrappedParagraph(pdf, fontName, pdfCodeFontSize, pdfBodyLineHeightMM, left+pdfListIndentMM, top, bottom, width-pdfListIndentMM, y, codeLine); err != nil {
+					return err
+				}
+			}
+		default:
+			if err := writePDFWrappedParagraph(pdf, fontName, pdfBodyFontSize, pdfBodyLineHeightMM, left, top, bottom, width, y, cleanMarkdownInline(block.Text)); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+func parseMarkdownBlocks(content string) []markdownBlock {
+	lines := strings.Split(strings.ReplaceAll(content, "\r\n", "\n"), "\n")
+	blocks := make([]markdownBlock, 0, len(lines))
+	var paragraph []string
+	var listLines []string
+	var listKind string
+	var quoteLines []string
+	var codeLines []string
+	inCodeBlock := false
+
+	flushParagraph := func() {
+		if len(paragraph) == 0 {
+			return
+		}
+		blocks = append(blocks, markdownBlock{
+			Kind: "paragraph",
+			Text: strings.Join(paragraph, " "),
+		})
+		paragraph = nil
+	}
+	flushList := func() {
+		if len(listLines) == 0 {
+			return
+		}
+		blocks = append(blocks, markdownBlock{
+			Kind:  listKind,
+			Lines: append([]string(nil), listLines...),
+		})
+		listLines = nil
+		listKind = ""
+	}
+	flushQuote := func() {
+		if len(quoteLines) == 0 {
+			return
+		}
+		blocks = append(blocks, markdownBlock{
+			Kind:  "blockquote",
+			Lines: append([]string(nil), quoteLines...),
+		})
+		quoteLines = nil
+	}
+	flushCode := func() {
+		if len(codeLines) == 0 {
+			return
+		}
+		blocks = append(blocks, markdownBlock{
+			Kind:  "code",
+			Lines: append([]string(nil), codeLines...),
+		})
+		codeLines = nil
+	}
+
+	for _, rawLine := range lines {
+		line := strings.TrimRight(rawLine, " \t")
+		trimmed := strings.TrimSpace(line)
+
+		if strings.HasPrefix(trimmed, "```") {
+			flushParagraph()
+			flushList()
+			flushQuote()
+			if inCodeBlock {
+				flushCode()
+				inCodeBlock = false
+			} else {
+				inCodeBlock = true
+				codeLines = nil
+			}
+			continue
+		}
+
+		if inCodeBlock {
+			codeLines = append(codeLines, line)
+			continue
+		}
+
+		if trimmed == "" {
+			flushParagraph()
+			flushList()
+			flushQuote()
+			continue
+		}
+
+		if matches := markdownHeadingRE.FindStringSubmatch(trimmed); len(matches) == 3 {
+			flushParagraph()
+			flushList()
+			flushQuote()
+			blocks = append(blocks, markdownBlock{
+				Kind:  "heading",
+				Level: len(matches[1]),
+				Text:  matches[2],
+			})
+			continue
+		}
+
+		if matches := markdownUnorderedRE.FindStringSubmatch(line); len(matches) == 2 {
+			flushParagraph()
+			flushQuote()
+			if listKind != "" && listKind != "unordered_list" {
+				flushList()
+			}
+			listKind = "unordered_list"
+			listLines = append(listLines, matches[1])
+			continue
+		}
+
+		if matches := markdownOrderedRE.FindStringSubmatch(line); len(matches) == 3 {
+			flushParagraph()
+			flushQuote()
+			if listKind != "" && listKind != "ordered_list" {
+				flushList()
+			}
+			listKind = "ordered_list"
+			listLines = append(listLines, matches[2])
+			continue
+		}
+
+		if strings.HasPrefix(trimmed, ">") {
+			flushParagraph()
+			flushList()
+			quoteLine := strings.TrimSpace(strings.TrimPrefix(trimmed, ">"))
+			quoteLines = append(quoteLines, quoteLine)
+			continue
+		}
+
+		flushList()
+		flushQuote()
+		paragraph = append(paragraph, trimmed)
+	}
+
+	if inCodeBlock {
+		flushCode()
+	}
+	flushParagraph()
+	flushList()
+	flushQuote()
+
+	return blocks
+}
+
+func cleanMarkdownInline(text string) string {
+	cleaned := strings.TrimSpace(text)
+	if cleaned == "" {
+		return ""
+	}
+
+	cleaned = markdownImageRE.ReplaceAllString(cleaned, "$1 ($2)")
+	cleaned = markdownLinkRE.ReplaceAllString(cleaned, "$1 ($2)")
+	cleaned = markdownEmphasisRE.ReplaceAllString(cleaned, "")
+	cleaned = strings.ReplaceAll(cleaned, "&nbsp;", " ")
+	cleaned = strings.ReplaceAll(cleaned, "&lt;", "<")
+	cleaned = strings.ReplaceAll(cleaned, "&gt;", ">")
+	cleaned = strings.ReplaceAll(cleaned, "&amp;", "&")
+	return strings.Join(strings.Fields(cleaned), " ")
 }
 
 func writePDFWrappedParagraph(pdf *gopdf.GoPdf, fontName string, fontSize, lineHeight, left, top, bottom, width float64, y *float64, text string) error {

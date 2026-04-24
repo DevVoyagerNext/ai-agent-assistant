@@ -164,6 +164,10 @@ func (s *AIService) streamToolCallChecker(_ context.Context, sr *schema.StreamRe
 		if len(msg.ToolCalls) > 0 {
 			return true, nil
 		}
+		// 一旦已经开始输出思考或正文，就不要继续阻塞前端等待后续 chunk。
+		if s.extractReasoningText(msg) != "" || s.extractMessageText(msg) != "" {
+			return false, nil
+		}
 	}
 }
 

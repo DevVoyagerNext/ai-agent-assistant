@@ -58,10 +58,12 @@ func (con *AIController) Chat(c *gin.Context) {
 			// 将字符串转换为 Base64 编码发送，既能完美保留空格和换行，又无需 JSON 序列化的开销
 			encodedMsg := base64.StdEncoding.EncodeToString([]byte(chunk.Content))
 			c.SSEvent(chunk.Type, encodedMsg)
+			c.Writer.Flush()
 			return true
 		}
 		// 通道关闭，发送结束标记
 		c.SSEvent("done", "[DONE]")
+		c.Writer.Flush()
 		return false
 	})
 }

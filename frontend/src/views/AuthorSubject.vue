@@ -124,6 +124,7 @@ const hasMoreSessions = ref(true)
 const loadingMessages = ref(false)
 const hasMoreMessages = ref(true)
 const reasoningCollapsedMap = reactive<Record<number, boolean>>({})
+const toolCollapsedMap = reactive<Record<number, boolean>>({})
 const latestSelectedText = ref('')
 let activeChatAbortController: AbortController | null = null
 const copyToast = ref('')
@@ -161,6 +162,10 @@ const toggleReasoning = (messageId: number) => {
   reasoningCollapsedMap[messageId] = !reasoningCollapsedMap[messageId]
 }
 
+const toggleToolLogs = (messageId: number) => {
+  toolCollapsedMap[messageId] = !toolCollapsedMap[messageId]
+}
+
 const isReasoningCollapsed = (msg: AIChatMessage) => {
   if (reasoningCollapsedMap[msg.id] !== undefined) {
     return reasoningCollapsedMap[msg.id]
@@ -172,6 +177,10 @@ const isReasoningCollapsed = (msg: AIChatMessage) => {
   }
 
   return false
+}
+
+const isToolCollapsed = (msg: AIChatMessage) => {
+  return !!toolCollapsedMap[msg.id]
 }
 
 // 加载会话列表
@@ -329,6 +338,83 @@ const triggerPdfDownload = async (downloadUrl: string) => {
     URL.revokeObjectURL(url)
   } catch (error) {
     console.error('PDF 下载失败:', error)
+  }
+}
+
+type StreamQueueState = {
+  content: string
+  reasoning: string
+  running: boolean
+}
+
+const STREAM_RENDER_CHUNK_SIZE = 1
+const STREAM_RENDER_DELAY_MS = 18
+const streamQueueMap = new WeakMap<AIChatMessage, StreamQueueState>()
+
+const waitForStreamPaint = async () => {
+  await nextTick()
+  await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
+  await new Promise(resolve => setTimeout(resolve, STREAM_RENDER_DELAY_MS))
+}
+
+const getStreamQueue = (msg: AIChatMessage) => {
+  let queue = streamQueueMap.get(msg)
+  if (!queue) {
+    queue = {
+      content: '',
+      reasoning: '',
+      running: false
+    }
+    streamQueueMap.set(msg, queue)
+  }
+  return queue
+}
+
+const drainStreamQueue = async (msg: AIChatMessage) => {
+  const queue = getStreamQueue(msg)
+  if (queue.running) return
+
+  queue.running = true
+  try {
+    while (queue.reasoning || queue.content) {
+      if (queue.reasoning) {
+        const nextChunk = queue.reasoning.slice(0, STREAM_RENDER_CHUNK_SIZE)
+        queue.reasoning = queue.reasoning.slice(STREAM_RENDER_CHUNK_SIZE)
+        msg.reasoning = (msg.reasoning || '') + nextChunk
+      } else if (queue.content) {
+        const nextChunk = queue.content.slice(0, STREAM_RENDER_CHUNK_SIZE)
+        queue.content = queue.content.slice(STREAM_RENDER_CHUNK_SIZE)
+        msg.content += nextChunk
+      }
+
+      scrollToBottom()
+      await waitForStreamPaint()
+    }
+  } finally {
+    queue.running = false
+    if (!queue.reasoning && !queue.content) {
+      streamQueueMap.delete(msg)
+    }
+  }
+}
+
+const enqueueStreamText = (msg: AIChatMessage, field: 'content' | 'reasoning', text: string) => {
+  if (!text) return
+
+  const queue = getStreamQueue(msg)
+  queue[field] += text
+  void drainStreamQueue(msg)
+}
+
+const waitForStreamQueueDrain = async (msg: AIChatMessage) => {
+  while (true) {
+    const queue = streamQueueMap.get(msg)
+    if (!queue || (!queue.running && !queue.reasoning && !queue.content)) {
+      streamQueueMap.delete(msg)
+      return
+    }
+
+    await new Promise(resolve => setTimeout(resolve, 16))
   }
 }
 
@@ -517,11 +603,9 @@ const sendAIMessage = async () => {
             loadSessions(true)
           }
         } else if (event.event === 'message') {
-          assistantMsg.content += normalizeMessageChunk(event.data)
-          scrollToBottom()
+          enqueueStreamText(assistantMsg, 'content', normalizeMessageChunk(event.data))
         } else if (event.event === 'reasoning') {
-          assistantMsg.reasoning = (assistantMsg.reasoning || '') + normalizeMessageChunk(event.data)
-          scrollToBottom()
+          enqueueStreamText(assistantMsg, 'reasoning', normalizeMessageChunk(event.data))
         } else if (event.event === 'tool') {
           const toolText = normalizeMessageChunk(event.data)
           if (!assistantMsg.toolLogs) {
@@ -529,8 +613,10 @@ const sendAIMessage = async () => {
           }
           assistantMsg.toolLogs.push(toolText)
           scrollToBottom()
+          await waitForStreamPaint()
         } else if (event.event === 'done') {
           streamFinished = true
+          await waitForStreamQueueDrain(assistantMsg)
           aiSending.value = false
           
           // Check for download URL in the final message content
@@ -1482,12 +1568,14 @@ const visibleTreeNodes = computed<VisibleTreeNode[]>(() => {
                       
                       <!-- Tool Block -->
                       <div v-if="msg.toolLogs && msg.toolLogs.length > 0" class="tool-block">
-                        <div class="tool-summary">
+                        <div class="tool-summary" @click="toggleToolLogs(msg.id)">
                           <Loader2 v-if="isStreamingAssistantMessage(msg) && !msg.content" class="spin" :size="12" />
                           <Wrench v-else :size="12" />
                           <span>工具调用过程 ({{ msg.toolLogs.length }} 步)</span>
+                          <ChevronDown v-if="isToolCollapsed(msg)" :size="12" class="collapse-icon" />
+                          <ChevronUp v-else :size="12" class="collapse-icon" />
                         </div>
-                        <div class="tool-logs">
+                        <div v-show="!isToolCollapsed(msg)" class="tool-logs">
                           <div v-for="(log, idx) in msg.toolLogs" :key="idx" class="tool-item">
                             <span class="tool-dot"></span>
                             <span>{{ log }}</span>
@@ -1520,7 +1608,7 @@ const visibleTreeNodes = computed<VisibleTreeNode[]>(() => {
                         </div>
 
                         <div
-                          v-if="msg.role === 'assistant' && !msg.content && !msg.reasoning && isStreamingAssistantMessage(msg)"
+                          v-if="msg.role === 'assistant' && !msg.content && !msg.reasoning && (!msg.toolLogs || msg.toolLogs.length === 0) && isStreamingAssistantMessage(msg)"
                           class="message-typing"
                         >
                           <span class="dot"></span>
