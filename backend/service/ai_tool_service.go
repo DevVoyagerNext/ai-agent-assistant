@@ -17,6 +17,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/PuerkitoBio/goquery"
@@ -54,6 +55,7 @@ const (
 	pdfTableFontSize       = 10.5
 	pdfTableLineHeightMM   = 5.5
 	pdfTableCellPaddingMM  = 1.2
+	pdfCodeBlockPaddingMM  = 1.8
 )
 
 var (
@@ -64,6 +66,7 @@ var (
 	markdownLinkRE      = regexp.MustCompile(`\[(.*?)\]\((.*?)\)`)
 	markdownImageRE     = regexp.MustCompile(`!\[(.*?)\]\((.*?)\)`)
 	markdownEmphasisRE  = regexp.MustCompile("(\\*\\*|__|\\*|_|~~|`)")
+	bareURLRE           = regexp.MustCompile(`https?://[^\s<>()]+`)
 )
 
 type aiToolEventSender func(content string)
@@ -102,6 +105,26 @@ type markdownBlock struct {
 	Text        string
 	TableHeader []string
 	TableRows   [][]string
+}
+
+type markdownInlineSegment struct {
+	Text string
+	Kind string
+	URL  string
+}
+
+type pdfColor struct {
+	R uint8
+	G uint8
+	B uint8
+}
+
+type pdfTextStyle struct {
+	FontSize    float64
+	TextColor   pdfColor
+	FillColor   *pdfColor
+	Underline   bool
+	ExternalURL string
 }
 
 func (s *AIService) newAITools(userID uint) ([]tool.BaseTool, error) {
@@ -591,7 +614,7 @@ func renderSummaryPDF(filePath, title, sourceURL, content string) error {
 		metaLines = append(metaLines, "来源链接："+strings.TrimSpace(sourceURL))
 	}
 	for _, line := range metaLines {
-		if err := writePDFWrappedParagraph(&pdf, "ai_summary_font", pdfMetaFontSize, pdfMetaLineHeightMM, pdfMarginLeftMM, pdfMarginTopMM, pdfMarginBottomMM, contentWidth, &y, line); err != nil {
+		if err := writeMarkdownInlineParagraphToPDF(&pdf, "ai_summary_font", pdfMetaFontSize, pdfMetaLineHeightMM, pdfMarginLeftMM, pdfMarginLeftMM, pdfMarginTopMM, pdfMarginBottomMM, contentWidth, contentWidth, &y, line); err != nil {
 			return err
 		}
 	}
@@ -610,7 +633,7 @@ func renderSummaryPDF(filePath, title, sourceURL, content string) error {
 func writeMarkdownContentToPDF(pdf *gopdf.GoPdf, fontName string, left, top, bottom, width float64, y *float64, content string) error {
 	blocks := parseMarkdownBlocks(content)
 	if len(blocks) == 0 {
-		return writePDFWrappedParagraph(pdf, fontName, pdfBodyFontSize, pdfBodyLineHeightMM, left, top, bottom, width, y, cleanMarkdownInline(content))
+		return writeMarkdownInlineParagraphToPDF(pdf, fontName, pdfBodyFontSize, pdfBodyLineHeightMM, left, left, top, bottom, width, width, y, content)
 	}
 
 	for _, block := range blocks {
@@ -626,20 +649,20 @@ func writeMarkdownContentToPDF(pdf *gopdf.GoPdf, fontName string, left, top, bot
 				lineHeight = 7.0
 			}
 			*y += 1.5
-			if err := writePDFWrappedParagraph(pdf, fontName, fontSize, lineHeight, left, top, bottom, width, y, cleanMarkdownInline(block.Text)); err != nil {
+			if err := writeMarkdownInlineParagraphToPDF(pdf, fontName, fontSize, lineHeight, left, left, top, bottom, width, width, y, block.Text); err != nil {
 				return err
 			}
 			*y += 1
 		case "unordered_list":
 			for _, line := range block.Lines {
-				if err := writeMarkdownListItemToPDF(pdf, fontName, pdfBodyFontSize, pdfBodyLineHeightMM, left, top, bottom, width, y, "-", cleanMarkdownInline(line)); err != nil {
+				if err := writeMarkdownListItemToPDF(pdf, fontName, pdfBodyFontSize, pdfBodyLineHeightMM, left, top, bottom, width, y, "-", line); err != nil {
 					return err
 				}
 			}
 		case "ordered_list":
 			for idx, line := range block.Lines {
 				prefix := fmt.Sprintf("%d.", idx+1)
-				if err := writeMarkdownListItemToPDF(pdf, fontName, pdfBodyFontSize, pdfBodyLineHeightMM, left, top, bottom, width, y, prefix, cleanMarkdownInline(line)); err != nil {
+				if err := writeMarkdownListItemToPDF(pdf, fontName, pdfBodyFontSize, pdfBodyLineHeightMM, left, top, bottom, width, y, prefix, line); err != nil {
 					return err
 				}
 			}
@@ -649,27 +672,20 @@ func writeMarkdownContentToPDF(pdf *gopdf.GoPdf, fontName string, left, top, bot
 			}
 		case "blockquote":
 			for _, line := range block.Lines {
-				if err := writePDFWrappedParagraph(pdf, fontName, pdfQuoteFontSize, pdfBodyLineHeightMM, left+pdfQuoteIndentMM, top, bottom, width-pdfQuoteIndentMM, y, "引用: "+cleanMarkdownInline(line)); err != nil {
+				if err := writeMarkdownInlineParagraphToPDF(pdf, fontName, pdfQuoteFontSize, pdfBodyLineHeightMM, left+pdfQuoteIndentMM, left+pdfQuoteIndentMM, top, bottom, width-pdfQuoteIndentMM, width-pdfQuoteIndentMM, y, "引用: "+line); err != nil {
 					return err
 				}
 			}
 		case "code":
-			for _, line := range block.Lines {
-				codeLine := strings.ReplaceAll(line, "\t", "    ")
-				if strings.TrimSpace(codeLine) == "" {
-					*y += pdfBodyLineHeightMM / 2
-					continue
-				}
-				if err := writePDFWrappedParagraph(pdf, fontName, pdfCodeFontSize, pdfBodyLineHeightMM, left+pdfListIndentMM, top, bottom, width-pdfListIndentMM, y, codeLine); err != nil {
-					return err
-				}
+			if err := writeMarkdownCodeBlockToPDF(pdf, fontName, left, top, bottom, width, y, block.Lines); err != nil {
+				return err
 			}
 		case "table":
 			if err := writeMarkdownTableToPDF(pdf, fontName, left, top, bottom, width, y, block.TableHeader, block.TableRows); err != nil {
 				return err
 			}
 		default:
-			if err := writePDFWrappedParagraph(pdf, fontName, pdfBodyFontSize, pdfBodyLineHeightMM, left, top, bottom, width, y, cleanMarkdownInline(block.Text)); err != nil {
+			if err := writeMarkdownInlineParagraphToPDF(pdf, fontName, pdfBodyFontSize, pdfBodyLineHeightMM, left, left, top, bottom, width, width, y, block.Text); err != nil {
 				return err
 			}
 		}
@@ -918,19 +934,197 @@ func parseMarkdownTableRow(line string) []string {
 }
 
 func cleanMarkdownInline(text string) string {
+	return cleanMarkdownPlainText(text)
+}
+
+func cleanMarkdownPlainText(text string) string {
 	cleaned := strings.TrimSpace(text)
 	if cleaned == "" {
 		return ""
 	}
 
 	cleaned = markdownImageRE.ReplaceAllString(cleaned, "$1 ($2)")
-	cleaned = markdownLinkRE.ReplaceAllString(cleaned, "$1 ($2)")
+	cleaned = markdownLinkRE.ReplaceAllString(cleaned, "$1")
 	cleaned = markdownEmphasisRE.ReplaceAllString(cleaned, "")
 	cleaned = strings.ReplaceAll(cleaned, "&nbsp;", " ")
 	cleaned = strings.ReplaceAll(cleaned, "&lt;", "<")
 	cleaned = strings.ReplaceAll(cleaned, "&gt;", ">")
 	cleaned = strings.ReplaceAll(cleaned, "&amp;", "&")
+	replacer := strings.NewReplacer(
+		`\*`, "*",
+		`\_`, "_",
+		`\[`, "[",
+		`\]`, "]",
+		`\(`, "(",
+		`\)`, ")",
+		`\-`, "-",
+		`\#`, "#",
+		`\+`, "+",
+		`\!`, "!",
+		`\~`, "~",
+		"\\`", "`",
+	)
+	cleaned = replacer.Replace(cleaned)
 	return strings.Join(strings.Fields(cleaned), " ")
+}
+
+func parseMarkdownInlineSegments(text string) []markdownInlineSegment {
+	raw := strings.TrimSpace(text)
+	if raw == "" {
+		return nil
+	}
+
+	segments := make([]markdownInlineSegment, 0, 8)
+	for len(raw) > 0 {
+		switch {
+		case strings.HasPrefix(raw, "!["):
+			if alt, url, rest, ok := parseMarkdownImageToken(raw); ok {
+				imageText := cleanMarkdownPlainText(alt)
+				if imageText == "" {
+					imageText = "图片"
+				}
+				if linkURL := strings.TrimSpace(url); linkURL != "" {
+					segments = append(segments, markdownInlineSegment{Text: imageText, Kind: "link", URL: linkURL})
+				} else {
+					segments = append(segments, markdownInlineSegment{Text: imageText, Kind: "plain"})
+				}
+				raw = rest
+				continue
+			}
+		case strings.HasPrefix(raw, "["):
+			if label, url, rest, ok := parseMarkdownLinkToken(raw); ok {
+				linkText := cleanMarkdownPlainText(label)
+				if linkText == "" {
+					linkText = strings.TrimSpace(url)
+				}
+				if linkText != "" {
+					segments = append(segments, markdownInlineSegment{Text: linkText, Kind: "link", URL: strings.TrimSpace(url)})
+				}
+				raw = rest
+				continue
+			}
+		case strings.HasPrefix(raw, "`"):
+			if end := strings.Index(raw[1:], "`"); end >= 0 {
+				codeText := strings.TrimSpace(raw[1 : end+1])
+				if codeText != "" {
+					segments = append(segments, markdownInlineSegment{Text: codeText, Kind: "inline_code"})
+				}
+				raw = raw[end+2:]
+				continue
+			}
+		case strings.HasPrefix(raw, "$"):
+			if end := strings.Index(raw[1:], "$"); end >= 0 {
+				mathText := strings.TrimSpace(raw[:end+2])
+				if mathText != "" {
+					segments = append(segments, markdownInlineSegment{Text: mathText, Kind: "math"})
+				}
+				raw = raw[end+2:]
+				continue
+			}
+		}
+
+		next := len(raw)
+		for _, marker := range []string{"![", "[", "`", "$"} {
+			if idx := strings.Index(raw, marker); idx >= 0 && idx < next {
+				next = idx
+			}
+		}
+
+		plainText := cleanMarkdownPlainText(raw[:next])
+		segments = append(segments, splitPlainTextWithBareLinks(plainText)...)
+		raw = raw[next:]
+	}
+
+	return compactMarkdownInlineSegments(segments)
+}
+
+func compactMarkdownInlineSegments(segments []markdownInlineSegment) []markdownInlineSegment {
+	compacted := make([]markdownInlineSegment, 0, len(segments))
+	for _, segment := range segments {
+		segment.Text = strings.TrimSpace(segment.Text)
+		if segment.Text == "" {
+			continue
+		}
+		if len(compacted) > 0 {
+			last := &compacted[len(compacted)-1]
+			if last.Kind == segment.Kind && last.URL == segment.URL {
+				last.Text += " " + segment.Text
+				continue
+			}
+		}
+		compacted = append(compacted, segment)
+	}
+	return compacted
+}
+
+func splitPlainTextWithBareLinks(text string) []markdownInlineSegment {
+	if strings.TrimSpace(text) == "" {
+		return nil
+	}
+
+	matches := bareURLRE.FindAllStringIndex(text, -1)
+	if len(matches) == 0 {
+		return []markdownInlineSegment{{Text: text, Kind: "plain"}}
+	}
+
+	segments := make([]markdownInlineSegment, 0, len(matches)*2+1)
+	last := 0
+	for _, match := range matches {
+		if match[0] > last {
+			plain := strings.TrimSpace(text[last:match[0]])
+			if plain != "" {
+				segments = append(segments, markdownInlineSegment{Text: plain, Kind: "plain"})
+			}
+		}
+		urlText := strings.TrimSpace(text[match[0]:match[1]])
+		urlText = strings.TrimRightFunc(urlText, func(r rune) bool {
+			return unicode.IsPunct(r) && r != '/' && r != ':' && r != '.' && r != '_' && r != '-' && r != '?' && r != '&' && r != '=' && r != '#'
+		})
+		if urlText != "" {
+			segments = append(segments, markdownInlineSegment{Text: urlText, Kind: "link", URL: urlText})
+		}
+		last = match[1]
+	}
+	if last < len(text) {
+		plain := strings.TrimSpace(text[last:])
+		if plain != "" {
+			segments = append(segments, markdownInlineSegment{Text: plain, Kind: "plain"})
+		}
+	}
+	return segments
+}
+
+func parseMarkdownLinkToken(text string) (label, url, rest string, ok bool) {
+	labelEnd := strings.Index(text, "]")
+	if labelEnd <= 0 || labelEnd+1 >= len(text) || text[labelEnd+1] != '(' {
+		return "", "", "", false
+	}
+	urlEnd := strings.Index(text[labelEnd+2:], ")")
+	if urlEnd < 0 {
+		return "", "", "", false
+	}
+	urlEnd += labelEnd + 2
+	return text[1:labelEnd], text[labelEnd+2 : urlEnd], text[urlEnd+1:], true
+}
+
+func parseMarkdownImageToken(text string) (alt, url, rest string, ok bool) {
+	if !strings.HasPrefix(text, "![") {
+		return "", "", "", false
+	}
+	labelEnd := strings.Index(text[2:], "]")
+	if labelEnd < 0 {
+		return "", "", "", false
+	}
+	labelEnd += 2
+	if labelEnd+1 >= len(text) || text[labelEnd+1] != '(' {
+		return "", "", "", false
+	}
+	urlEnd := strings.Index(text[labelEnd+2:], ")")
+	if urlEnd < 0 {
+		return "", "", "", false
+	}
+	urlEnd += labelEnd + 2
+	return text[2:labelEnd], text[labelEnd+2 : urlEnd], text[urlEnd+1:], true
 }
 
 func writeMarkdownTableToPDF(pdf *gopdf.GoPdf, fontName string, left, top, bottom, width float64, y *float64, header []string, rows [][]string) error {
@@ -1097,38 +1291,255 @@ func writeMarkdownListItemToPDF(pdf *gopdf.GoPdf, fontName string, fontSize, lin
 		contentWidth = width
 		contentLeft = left
 	}
-
-	lines, err := pdf.SplitTextWithWordWrap(defaultIfEmpty(text, " "), contentWidth)
-	if err != nil {
-		return errors.New("计算 PDF 列表换行失败")
+	if err := ensurePDFLineSpace(pdf, top, bottom, y, lineHeight); err != nil {
+		return err
 	}
-	if len(lines) == 0 {
-		lines = []string{" "}
+	if marker != "" {
+		pdf.SetXY(left, *y)
+		if err := pdf.Cell(&gopdf.Rect{W: pdfListMarkerWidthMM, H: lineHeight}, marker); err != nil {
+			return errors.New("写入 PDF 列表标记失败")
+		}
+	}
+	return writeMarkdownInlineParagraphToPDF(pdf, fontName, fontSize, lineHeight, contentLeft, contentLeft, top, bottom, contentWidth, contentWidth, y, text)
+}
+
+func writeMarkdownInlineParagraphToPDF(pdf *gopdf.GoPdf, fontName string, fontSize, lineHeight, firstLineLeft, otherLineLeft, top, bottom, firstLineWidth, otherLineWidth float64, y *float64, text string) error {
+	segments := parseMarkdownInlineSegments(text)
+	if len(segments) == 0 {
+		segments = []markdownInlineSegment{{Text: cleanMarkdownPlainText(text), Kind: "plain"}}
 	}
 
-	for idx, line := range lines {
-		if *y+lineHeight > pdfPageHeightMM-bottom {
-			pdf.AddPage()
-			*y = top
-			if err := pdf.SetFont(fontName, "", fontSize); err != nil {
-				return errors.New("设置 PDF 字体失败")
+	lineIndex := 0
+	currentX := firstLineLeft
+	lineLeft := firstLineLeft
+	lineWidth := firstLineWidth
+
+	startNewLine := func() error {
+		*y += lineHeight
+		lineIndex++
+		lineLeft = otherLineLeft
+		lineWidth = otherLineWidth
+		currentX = lineLeft
+		return ensurePDFLineSpace(pdf, top, bottom, y, lineHeight)
+	}
+
+	if err := ensurePDFLineSpace(pdf, top, bottom, y, lineHeight); err != nil {
+		return err
+	}
+
+	for _, segment := range segments {
+		style := buildPDFTextStyle(segment.Kind, fontSize, segment.URL)
+		remaining := segment.Text
+		for strings.TrimSpace(remaining) != "" {
+			if currentX-lineLeft >= lineWidth {
+				if err := startNewLine(); err != nil {
+					return err
+				}
+			}
+
+			if currentX == lineLeft {
+				remaining = strings.TrimLeftFunc(remaining, unicode.IsSpace)
+			}
+			if remaining == "" {
+				break
+			}
+
+			availableWidth := lineWidth - (currentX - lineLeft)
+			chunk, rest, err := extractWrappedTextChunk(pdf, fontName, style.FontSize, remaining, availableWidth)
+			if err != nil {
+				return err
+			}
+			if chunk == "" {
+				if err := startNewLine(); err != nil {
+					return err
+				}
+				continue
+			}
+
+			chunkWidth, err := writeStyledTextChunkToPDF(pdf, fontName, lineHeight, currentX, *y, chunk, style)
+			if err != nil {
+				return err
+			}
+			currentX += chunkWidth
+			remaining = rest
+			if strings.TrimSpace(remaining) != "" {
+				if err := startNewLine(); err != nil {
+					return err
+				}
 			}
 		}
+	}
 
-		if idx == 0 && marker != "" {
-			pdf.SetXY(left, *y)
-			if err := pdf.Cell(&gopdf.Rect{W: pdfListMarkerWidthMM, H: lineHeight}, marker); err != nil {
-				return errors.New("写入 PDF 列表标记失败")
-			}
-		}
-
-		pdf.SetXY(contentLeft, *y)
-		if err := pdf.Cell(&gopdf.Rect{W: contentWidth, H: lineHeight}, line); err != nil {
-			return errors.New("写入 PDF 列表内容失败")
-		}
+	if lineIndex == 0 && currentX == lineLeft {
 		*y += lineHeight
 	}
+	*y += pdfParagraphSpacingMM
+	pdf.SetTextColor(0, 0, 0)
+	return nil
+}
 
+func buildPDFTextStyle(kind string, fontSize float64, externalURL string) pdfTextStyle {
+	style := pdfTextStyle{
+		FontSize:  fontSize,
+		TextColor: pdfColor{R: 0, G: 0, B: 0},
+	}
+
+	switch kind {
+	case "link":
+		style.TextColor = pdfColor{R: 26, G: 115, B: 232}
+		style.Underline = true
+		style.ExternalURL = externalURL
+	case "inline_code":
+		style.TextColor = pdfColor{R: 180, G: 35, B: 24}
+		style.FillColor = &pdfColor{R: 245, G: 245, B: 245}
+	case "math":
+		style.TextColor = pdfColor{R: 105, G: 52, B: 171}
+		style.FillColor = &pdfColor{R: 247, G: 243, B: 255}
+	default:
+	}
+
+	return style
+}
+
+func ensurePDFLineSpace(pdf *gopdf.GoPdf, top, bottom float64, y *float64, lineHeight float64) error {
+	if *y+lineHeight <= pdfPageHeightMM-bottom {
+		return nil
+	}
+	pdf.AddPage()
+	*y = top
+	return nil
+}
+
+func extractWrappedTextChunk(pdf *gopdf.GoPdf, fontName string, fontSize float64, text string, maxWidth float64) (string, string, error) {
+	if strings.TrimSpace(text) == "" {
+		return "", "", nil
+	}
+	if maxWidth <= 1 {
+		return "", text, nil
+	}
+	if err := pdf.SetFont(fontName, "", fontSize); err != nil {
+		return "", "", errors.New("设置 PDF 字体失败")
+	}
+
+	runes := []rune(text)
+	lastBreak := -1
+	for idx := range runes {
+		candidate := string(runes[:idx+1])
+		width, err := pdf.MeasureTextWidth(candidate)
+		if err != nil {
+			return "", "", errors.New("测量 PDF 文本宽度失败")
+		}
+		if width <= maxWidth {
+			if unicode.IsSpace(runes[idx]) {
+				lastBreak = idx + 1
+			}
+			continue
+		}
+
+		breakPos := idx
+		if lastBreak > 0 {
+			breakPos = lastBreak
+		}
+		if breakPos <= 0 {
+			breakPos = 1
+		}
+
+		fit := strings.TrimRightFunc(string(runes[:breakPos]), unicode.IsSpace)
+		rest := strings.TrimLeftFunc(string(runes[breakPos:]), unicode.IsSpace)
+		if fit == "" && len(runes) > 0 {
+			fit = string(runes[:1])
+			rest = strings.TrimLeftFunc(string(runes[1:]), unicode.IsSpace)
+		}
+		return fit, rest, nil
+	}
+
+	return string(runes), "", nil
+}
+
+func writeStyledTextChunkToPDF(pdf *gopdf.GoPdf, fontName string, lineHeight, x, y float64, text string, style pdfTextStyle) (float64, error) {
+	if err := pdf.SetFont(fontName, "", style.FontSize); err != nil {
+		return 0, errors.New("设置 PDF 字体失败")
+	}
+
+	textWidth, err := pdf.MeasureTextWidth(text)
+	if err != nil {
+		return 0, errors.New("测量 PDF 文本宽度失败")
+	}
+
+	if style.FillColor != nil {
+		pdf.SetFillColor(style.FillColor.R, style.FillColor.G, style.FillColor.B)
+		pdf.RectFromUpperLeftWithStyle(x-0.2, y+0.4, textWidth+0.8, lineHeight-0.8, "F")
+	}
+
+	pdf.SetTextColor(style.TextColor.R, style.TextColor.G, style.TextColor.B)
+	pdf.SetXY(x, y)
+	if err := pdf.Cell(&gopdf.Rect{W: textWidth + 0.2, H: lineHeight}, text); err != nil {
+		return 0, errors.New("写入 PDF 内容失败")
+	}
+
+	if style.Underline {
+		pdf.SetStrokeColor(style.TextColor.R, style.TextColor.G, style.TextColor.B)
+		underlineY := y + lineHeight - 0.8
+		pdf.SetLineWidth(0.18)
+		pdf.Line(x, underlineY, x+textWidth, underlineY)
+	}
+	if strings.TrimSpace(style.ExternalURL) != "" {
+		pdf.AddExternalLink(strings.TrimSpace(style.ExternalURL), x, y, textWidth, lineHeight)
+	}
+	return textWidth, nil
+}
+
+func writeMarkdownCodeBlockToPDF(pdf *gopdf.GoPdf, fontName string, left, top, bottom, width float64, y *float64, lines []string) error {
+	codeLeft := left + pdfListIndentMM
+	codeWidth := width - pdfListIndentMM
+	if codeWidth <= 1 {
+		codeLeft = left
+		codeWidth = width
+	}
+
+	contentWidth := codeWidth - pdfCodeBlockPaddingMM*2
+	if contentWidth <= 1 {
+		contentWidth = codeWidth
+	}
+
+	if err := pdf.SetFont(fontName, "", pdfCodeFontSize); err != nil {
+		return errors.New("设置 PDF 字体失败")
+	}
+
+	for idx, rawLine := range lines {
+		lineText := strings.ReplaceAll(rawLine, "\t", "    ")
+		if strings.TrimSpace(lineText) == "" {
+			lineText = " "
+		}
+
+		wrappedLines, err := pdf.SplitTextWithWordWrap(lineText, contentWidth)
+		if err != nil {
+			return errors.New("计算 PDF 代码块换行失败")
+		}
+		if len(wrappedLines) == 0 {
+			wrappedLines = []string{" "}
+		}
+
+		for _, wrappedLine := range wrappedLines {
+			if err := ensurePDFLineSpace(pdf, top, bottom, y, pdfBodyLineHeightMM); err != nil {
+				return err
+			}
+			pdf.SetFillColor(246, 248, 250)
+			pdf.RectFromUpperLeftWithStyle(codeLeft, *y, codeWidth, pdfBodyLineHeightMM, "F")
+			pdf.SetTextColor(31, 35, 40)
+			pdf.SetXY(codeLeft+pdfCodeBlockPaddingMM, *y)
+			if err := pdf.Cell(&gopdf.Rect{W: contentWidth, H: pdfBodyLineHeightMM}, wrappedLine); err != nil {
+				return errors.New("写入 PDF 代码块内容失败")
+			}
+			*y += pdfBodyLineHeightMM
+		}
+
+		if idx == len(lines)-1 {
+			break
+		}
+	}
+
+	pdf.SetTextColor(0, 0, 0)
 	*y += pdfParagraphSpacingMM
 	return nil
 }
