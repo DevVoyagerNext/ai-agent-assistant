@@ -49,6 +49,7 @@ const (
 	pdfCodeFontSize        = 10.5
 	pdfQuoteFontSize       = 11.0
 	pdfListIndentMM        = 6.0
+	pdfListMarkerWidthMM   = 5.0
 	pdfQuoteIndentMM       = 5.0
 	pdfTableFontSize       = 10.5
 	pdfTableLineHeightMM   = 5.5
@@ -631,16 +632,20 @@ func writeMarkdownContentToPDF(pdf *gopdf.GoPdf, fontName string, left, top, bot
 			*y += 1
 		case "unordered_list":
 			for _, line := range block.Lines {
-				if err := writePDFWrappedParagraph(pdf, fontName, pdfBodyFontSize, pdfBodyLineHeightMM, left+pdfListIndentMM, top, bottom, width-pdfListIndentMM, y, "- "+cleanMarkdownInline(line)); err != nil {
+				if err := writeMarkdownListItemToPDF(pdf, fontName, pdfBodyFontSize, pdfBodyLineHeightMM, left, top, bottom, width, y, "-", cleanMarkdownInline(line)); err != nil {
 					return err
 				}
 			}
 		case "ordered_list":
 			for idx, line := range block.Lines {
-				prefix := fmt.Sprintf("%d. ", idx+1)
-				if err := writePDFWrappedParagraph(pdf, fontName, pdfBodyFontSize, pdfBodyLineHeightMM, left+pdfListIndentMM, top, bottom, width-pdfListIndentMM, y, prefix+cleanMarkdownInline(line)); err != nil {
+				prefix := fmt.Sprintf("%d.", idx+1)
+				if err := writeMarkdownListItemToPDF(pdf, fontName, pdfBodyFontSize, pdfBodyLineHeightMM, left, top, bottom, width, y, prefix, cleanMarkdownInline(line)); err != nil {
 					return err
 				}
+			}
+		case "horizontal_rule":
+			if err := drawMarkdownHorizontalRule(pdf, left, top, bottom, width, y); err != nil {
+				return err
 			}
 		case "blockquote":
 			for _, line := range block.Lines {
@@ -768,6 +773,14 @@ func parseMarkdownBlocks(content string) []markdownBlock {
 			continue
 		}
 
+		if isMarkdownHorizontalRule(trimmed) {
+			flushParagraph()
+			flushList()
+			flushQuote()
+			blocks = append(blocks, markdownBlock{Kind: "horizontal_rule"})
+			continue
+		}
+
 		if isMarkdownTableRow(trimmed) && i+1 < len(lines) && isMarkdownTableSeparator(strings.TrimSpace(lines[i+1])) {
 			flushParagraph()
 			flushList()
@@ -838,6 +851,23 @@ func parseMarkdownBlocks(content string) []markdownBlock {
 	flushQuote()
 
 	return blocks
+}
+
+func isMarkdownHorizontalRule(line string) bool {
+	trimmed := strings.TrimSpace(line)
+	if len(trimmed) < 3 {
+		return false
+	}
+	if strings.Trim(trimmed, "-") == "" {
+		return true
+	}
+	if strings.Trim(trimmed, "_") == "" {
+		return true
+	}
+	if strings.Trim(trimmed, "*") == "" {
+		return true
+	}
+	return false
 }
 
 func isMarkdownTableRow(line string) bool {
@@ -1053,6 +1083,68 @@ func writePDFWrappedParagraph(pdf *gopdf.GoPdf, fontName string, fontSize, lineH
 		*y += pdfParagraphSpacingMM
 	}
 
+	return nil
+}
+
+func writeMarkdownListItemToPDF(pdf *gopdf.GoPdf, fontName string, fontSize, lineHeight, left, top, bottom, width float64, y *float64, marker, text string) error {
+	if err := pdf.SetFont(fontName, "", fontSize); err != nil {
+		return errors.New("设置 PDF 字体失败")
+	}
+
+	contentLeft := left + pdfListMarkerWidthMM
+	contentWidth := width - pdfListMarkerWidthMM
+	if contentWidth <= 1 {
+		contentWidth = width
+		contentLeft = left
+	}
+
+	lines, err := pdf.SplitTextWithWordWrap(defaultIfEmpty(text, " "), contentWidth)
+	if err != nil {
+		return errors.New("计算 PDF 列表换行失败")
+	}
+	if len(lines) == 0 {
+		lines = []string{" "}
+	}
+
+	for idx, line := range lines {
+		if *y+lineHeight > pdfPageHeightMM-bottom {
+			pdf.AddPage()
+			*y = top
+			if err := pdf.SetFont(fontName, "", fontSize); err != nil {
+				return errors.New("设置 PDF 字体失败")
+			}
+		}
+
+		if idx == 0 && marker != "" {
+			pdf.SetXY(left, *y)
+			if err := pdf.Cell(&gopdf.Rect{W: pdfListMarkerWidthMM, H: lineHeight}, marker); err != nil {
+				return errors.New("写入 PDF 列表标记失败")
+			}
+		}
+
+		pdf.SetXY(contentLeft, *y)
+		if err := pdf.Cell(&gopdf.Rect{W: contentWidth, H: lineHeight}, line); err != nil {
+			return errors.New("写入 PDF 列表内容失败")
+		}
+		*y += lineHeight
+	}
+
+	*y += pdfParagraphSpacingMM
+	return nil
+}
+
+func drawMarkdownHorizontalRule(pdf *gopdf.GoPdf, left, top, bottom, width float64, y *float64) error {
+	ruleSpacing := pdfParagraphSpacingMM + 1
+	ruleY := *y + ruleSpacing
+	if ruleY > pdfPageHeightMM-bottom {
+		pdf.AddPage()
+		*y = top
+		ruleY = *y + ruleSpacing
+	}
+
+	pdf.SetLineWidth(0.2)
+	pdf.Line(left, ruleY, left+width, ruleY)
+	*y = ruleY + ruleSpacing
 	return nil
 }
 
