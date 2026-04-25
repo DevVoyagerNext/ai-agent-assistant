@@ -170,26 +170,6 @@ func (s *AIService) fastStreamToolCallChecker(_ context.Context, sr *schema.Stre
 	}
 }
 
-func (s *AIService) shouldUseStrictToolChecker(req dto.AIChatReq) bool {
-	prompt := strings.ToLower(strings.TrimSpace(req.Prompt))
-	keywords := []string{
-		"总结页面",
-		"总结这个页面",
-		"阅读页面",
-		"网页",
-		"页面",
-		"导出pdf",
-		"导出 pdf",
-		"pdf",
-	}
-	for _, keyword := range keywords {
-		if strings.Contains(prompt, keyword) {
-			return true
-		}
-	}
-	return false
-}
-
 func (s *AIService) newChatAgent(ctx context.Context, userID uint) (*react.Agent, error) {
 	chatModel, err := s.newChatModel(ctx)
 	if err != nil {
@@ -511,45 +491,6 @@ func (s *AIService) Chat(ctx context.Context, userId uint, req dto.AIChatReq) (<
 		Content:   "", // 留空，流式输出完成后再更新
 	}
 	db.Create(&aiMsg)
-
-	if s.shouldUseStrictToolChecker(req) {
-		go func() {
-			defer close(msgChan)
-
-			agentCtx := withAIToolEventSender(ctx, func(content string) {
-				msgChan <- dto.ChatStreamChunk{Type: "tool", Content: content}
-			})
-			agentCtx = withAICurrentPageURL(agentCtx, req.CurrentPageURL)
-
-			finalResp, err := chatAgent.Generate(agentCtx, messages)
-			if err != nil {
-				global.GVA_LOG.Error("Eino AI agent generate failed", zap.Error(err))
-				msgChan <- dto.ChatStreamChunk{Type: "tool", Content: "工具链执行失败，请稍后重试"}
-				global.GVA_DB.Unscoped().Where("id IN ?", []int64{userMsg.ID, aiMsg.ID}).Delete(&model.Message{})
-				if isNewSession {
-					global.GVA_DB.Unscoped().Where("id = ?", session.ID).Delete(&model.Session{})
-				}
-				return
-			}
-
-			reasoningText := s.extractReasoningText(finalResp)
-			messageText := s.extractMessageText(finalResp)
-			if strings.TrimSpace(messageText) == "" {
-				msgChan <- dto.ChatStreamChunk{Type: "tool", Content: "AI 未生成最终答案，请稍后重试"}
-				global.GVA_DB.Unscoped().Where("id IN ?", []int64{userMsg.ID, aiMsg.ID}).Delete(&model.Message{})
-				if isNewSession {
-					global.GVA_DB.Unscoped().Where("id = ?", session.ID).Delete(&model.Session{})
-				}
-				return
-			}
-
-			s.emitStreamChunks(msgChan, "reasoning", reasoningText)
-			s.emitStreamChunks(msgChan, "message", messageText)
-			global.GVA_DB.Model(&model.Message{}).Where("id = ?", aiMsg.ID).Update("content", messageText)
-			s.finalizeChatSideEffects(db, session, isNewSession, req.Prompt, userMsg.ID)
-		}()
-		return msgChan, session.ID, aiMsg.ID, nil
-	}
 
 	agentCtx := withAIToolEventSender(ctx, func(content string) {
 		msgChan <- dto.ChatStreamChunk{Type: "tool", Content: content}
