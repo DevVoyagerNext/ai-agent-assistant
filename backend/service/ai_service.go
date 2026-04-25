@@ -109,7 +109,7 @@ func (s *AIService) generateText(ctx context.Context, messages []*schema.Message
 	return strings.TrimSpace(s.extractMessageText(resp)), nil
 }
 
-func (s *AIService) buildChatSystemPrompt(session model.Session) string {
+func (s *AIService) buildChatSystemPrompt(session model.Session, hasCurrentPageURL bool) string {
 	systemPrompt := `你现在是一位顶尖的全能型高级教师。你不仅学识渊博，更精通教学之道。在回答学生的问题时，请务必做到以下几点：
 1. 深入浅出：知识讲解既要有专业的深度与丰富的细节，又要通俗易懂；
 2. 逻辑严密：条理极其清晰，结构分明，善于使用序号、分类或对比来组织内容；
@@ -121,8 +121,11 @@ func (s *AIService) buildChatSystemPrompt(session model.Session) string {
 2. ` + "`export_summary_pdf`" + `：可用于将整理好的总结内容导出为 PDF 并返回下载地址。
 
 请根据用户问题自行思考是否需要调用工具、调用哪个工具，以及如何基于工具结果继续观察、分析和回答。
-当用户要求阅读、总结当前页面，或当前上下文已经提供了页面 URL 时，请直接调用工具执行，不要只口头描述“我将去抓取”或“我准备导出”而不实际调用工具。
 如果工具返回了 PDF 下载地址，请在最终答复中明确告诉用户文件已生成，并以 Markdown 链接的形式提供下载地址，确保用户可以直接点击下载。`
+
+	if hasCurrentPageURL {
+		systemPrompt += "\n当前会话存在一个可供工具使用的当前页面 URL，但不会直接展示给你。只有当你判断用户问题确实需要读取当前页面时，才调用 `fetch_web_page`；此时如果要读取当前页面，请将 `url` 置空，让系统自动使用当前页面 URL。不要仅因为存在当前页面 URL 就主动总结页面。"
+	}
 
 	if session.Summary != "" {
 		systemPrompt += fmt.Sprintf("\n\n以下是之前的对话摘要，请作为背景参考：\n%s", session.Summary)
@@ -133,11 +136,6 @@ func (s *AIService) buildChatSystemPrompt(session model.Session) string {
 
 func (s *AIService) buildUserPrompt(req dto.AIChatReq) string {
 	var builder strings.Builder
-	if strings.TrimSpace(req.CurrentPageURL) != "" {
-		builder.WriteString("当前页面URL：")
-		builder.WriteString(strings.TrimSpace(req.CurrentPageURL))
-		builder.WriteString("\n")
-	}
 	if strings.TrimSpace(req.SelectedText) != "" {
 		builder.WriteString("用户选中的原文：\n")
 		builder.WriteString(strings.TrimSpace(req.SelectedText))
@@ -174,9 +172,6 @@ func (s *AIService) fastStreamToolCallChecker(_ context.Context, sr *schema.Stre
 
 func (s *AIService) shouldUseStrictToolChecker(req dto.AIChatReq) bool {
 	prompt := strings.ToLower(strings.TrimSpace(req.Prompt))
-	if strings.TrimSpace(req.CurrentPageURL) != "" {
-		return true
-	}
 	keywords := []string{
 		"总结页面",
 		"总结这个页面",
@@ -477,7 +472,7 @@ func (s *AIService) Chat(ctx context.Context, userId uint, req dto.AIChatReq) (<
 		}
 	}
 
-	systemPrompt := s.buildChatSystemPrompt(session)
+	systemPrompt := s.buildChatSystemPrompt(session, strings.TrimSpace(req.CurrentPageURL) != "")
 
 	// 组装消息列表
 	// 获取最近4轮历史对话 (8条消息)
@@ -524,6 +519,7 @@ func (s *AIService) Chat(ctx context.Context, userId uint, req dto.AIChatReq) (<
 			agentCtx := withAIToolEventSender(ctx, func(content string) {
 				msgChan <- dto.ChatStreamChunk{Type: "tool", Content: content}
 			})
+			agentCtx = withAICurrentPageURL(agentCtx, req.CurrentPageURL)
 
 			finalResp, err := chatAgent.Generate(agentCtx, messages)
 			if err != nil {
@@ -558,6 +554,7 @@ func (s *AIService) Chat(ctx context.Context, userId uint, req dto.AIChatReq) (<
 	agentCtx := withAIToolEventSender(ctx, func(content string) {
 		msgChan <- dto.ChatStreamChunk{Type: "tool", Content: content}
 	})
+	agentCtx = withAICurrentPageURL(agentCtx, req.CurrentPageURL)
 
 	stream, err := chatAgent.Stream(agentCtx, messages)
 	if err != nil {

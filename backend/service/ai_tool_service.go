@@ -68,6 +68,7 @@ var (
 type aiToolEventSender func(content string)
 
 type aiToolEventSenderCtxKey struct{}
+type aiCurrentPageURLCtxKey struct{}
 
 type fetchWebPageInput struct {
 	URL string `json:"url"`
@@ -130,6 +131,9 @@ func (s *AIService) fetchWebPageTool(ctx context.Context, input fetchWebPageInpu
 	emitAIToolEvent(ctx, "正在抓取网页内容...")
 
 	rawURL := strings.TrimSpace(input.URL)
+	if rawURL == "" {
+		rawURL = currentPageURLFromContext(ctx)
+	}
 	hasScheme := strings.Contains(rawURL, "://")
 
 	fetchURL, err := normalizeFetchURL(rawURL)
@@ -1072,6 +1076,25 @@ func findCJKFontPath() (string, error) {
 
 func withAIToolEventSender(ctx context.Context, sender aiToolEventSender) context.Context {
 	return context.WithValue(ctx, aiToolEventSenderCtxKey{}, sender)
+}
+
+func withAICurrentPageURL(ctx context.Context, currentPageURL string) context.Context {
+	trimmed := strings.TrimSpace(currentPageURL)
+	if ctx == nil || trimmed == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, aiCurrentPageURLCtxKey{}, trimmed)
+}
+
+func currentPageURLFromContext(ctx context.Context) string {
+	if ctx == nil {
+		return ""
+	}
+	currentPageURL, ok := ctx.Value(aiCurrentPageURLCtxKey{}).(string)
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(currentPageURL)
 }
 
 func emitAIToolEvent(ctx context.Context, content string) {
