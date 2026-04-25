@@ -124,7 +124,7 @@ func (s *AIService) buildChatSystemPrompt(session model.Session, hasCurrentPageU
 如果工具返回了 PDF 下载地址，请在最终答复中明确告诉用户文件已生成，并以 Markdown 链接的形式提供下载地址，确保用户可以直接点击下载。`
 
 	if hasCurrentPageURL {
-		systemPrompt += "\n当前会话存在一个可供工具使用的当前页面 URL，但不会直接展示给你。只有当你判断用户问题确实需要读取当前页面时，才调用 `fetch_web_page`；此时如果要读取当前页面，请将 `url` 置空，让系统自动使用当前页面 URL。不要仅因为存在当前页面 URL 就主动总结页面。"
+		systemPrompt += "\n当前会话存在一个可供工具使用的当前页面 URL，但这不代表用户要你总结当前页面。只有当用户明确要求你基于当前页面、当前网页、上文页面、页面内容或用户选中文本来分析时，才调用 `fetch_web_page`；此时如果要读取当前页面，请将 `url` 置空，让系统自动使用当前页面 URL。若用户只是询问某个主题、概念或框架本身，例如“总结 eino 框架”，不要擅自把问题绑定到当前页面。"
 	}
 
 	if session.Summary != "" {
