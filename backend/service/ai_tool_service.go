@@ -1309,17 +1309,17 @@ func writeMarkdownInlineParagraphToPDF(pdf *gopdf.GoPdf, fontName string, fontSi
 		segments = []markdownInlineSegment{{Text: cleanMarkdownPlainText(text), Kind: "plain"}}
 	}
 
-	lineIndex := 0
 	currentX := firstLineLeft
 	lineLeft := firstLineLeft
 	lineWidth := firstLineWidth
+	hasRenderedLine := false
 
 	startNewLine := func() error {
 		*y += lineHeight
-		lineIndex++
 		lineLeft = otherLineLeft
 		lineWidth = otherLineWidth
 		currentX = lineLeft
+		hasRenderedLine = false
 		return ensurePDFLineSpace(pdf, top, bottom, y, lineHeight)
 	}
 
@@ -1361,6 +1361,7 @@ func writeMarkdownInlineParagraphToPDF(pdf *gopdf.GoPdf, fontName string, fontSi
 				return err
 			}
 			currentX += chunkWidth
+			hasRenderedLine = true
 			remaining = rest
 			if strings.TrimSpace(remaining) != "" {
 				if err := startNewLine(); err != nil {
@@ -1370,7 +1371,9 @@ func writeMarkdownInlineParagraphToPDF(pdf *gopdf.GoPdf, fontName string, fontSi
 		}
 	}
 
-	if lineIndex == 0 && currentX == lineLeft {
+	if hasRenderedLine {
+		*y += lineHeight
+	} else if currentX == lineLeft {
 		*y += lineHeight
 	}
 	*y += pdfParagraphSpacingMM
