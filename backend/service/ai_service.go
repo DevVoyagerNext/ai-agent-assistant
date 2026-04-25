@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"strings"
 	"time"
 
@@ -121,6 +120,7 @@ func (s *AIService) buildChatSystemPrompt(session model.Session, hasCurrentPageU
 2. ` + "`export_summary_pdf`" + `：可用于将整理好的总结内容导出为 PDF 并返回下载地址。
 
 请根据用户问题自行思考是否需要调用工具、调用哪个工具，以及如何基于工具结果继续观察、分析和回答。
+如果一个请求需要多个工具，请先完成全部必要的工具调用，再输出面向用户的正式正文。不要在工具尚未执行完成前就先输出“我现在为你生成 PDF”这类正文说明。
 如果工具返回了 PDF 下载地址，请在最终答复中明确告诉用户文件已生成，并以 Markdown 链接的形式提供下载地址，确保用户可以直接点击下载。`
 
 	if hasCurrentPageURL {
@@ -146,30 +146,6 @@ func (s *AIService) buildUserPrompt(req dto.AIChatReq) string {
 	return builder.String()
 }
 
-func (s *AIService) fastStreamToolCallChecker(_ context.Context, sr *schema.StreamReader[*schema.Message]) (bool, error) {
-	defer sr.Close()
-
-	for {
-		msg, err := sr.Recv()
-		if errors.Is(err, io.EOF) {
-			return false, nil
-		}
-		if err != nil {
-			return false, err
-		}
-		if msg == nil {
-			continue
-		}
-		if len(msg.ToolCalls) > 0 {
-			return true, nil
-		}
-		// 一旦已经开始输出思考或正文，就不要继续阻塞前端等待后续 chunk。
-		if s.extractReasoningText(msg) != "" || s.extractMessageText(msg) != "" {
-			return false, nil
-		}
-	}
-}
-
 func (s *AIService) newChatAgent(ctx context.Context, userID uint) (*react.Agent, error) {
 	chatModel, err := s.newChatModel(ctx)
 	if err != nil {
@@ -182,8 +158,7 @@ func (s *AIService) newChatAgent(ctx context.Context, userID uint) (*react.Agent
 	}
 
 	agent, err := react.NewAgent(ctx, &react.AgentConfig{
-		ToolCallingModel:      chatModel,
-		StreamToolCallChecker: s.fastStreamToolCallChecker,
+		ToolCallingModel: chatModel,
 		ToolsConfig: compose.ToolsNodeConfig{
 			Tools:               tools,
 			ExecuteSequentially: true,
@@ -497,79 +472,33 @@ func (s *AIService) Chat(ctx context.Context, userId uint, req dto.AIChatReq) (<
 	})
 	agentCtx = withAICurrentPageURL(agentCtx, req.CurrentPageURL)
 
-	stream, err := chatAgent.Stream(agentCtx, messages)
-	if err != nil {
-		global.GVA_LOG.Error("Eino AI agent stream call failed", zap.Error(err))
-		global.GVA_DB.Unscoped().Where("id IN ?", []int64{userMsg.ID, aiMsg.ID}).Delete(&model.Message{})
-		if isNewSession {
-			db.Unscoped().Where("id = ?", session.ID).Delete(&model.Session{})
-		}
-		return nil, 0, 0, errors.New("AI 服务调用失败")
-	}
-
-	// 阻塞读取第一个数据块，确保 AI 真的有响应，避免空占位存入数据库
-	firstResponse, err := stream.Recv()
-	if err != nil {
-		stream.Close()
-		global.GVA_LOG.Error("Eino AI stream receive failed on first chunk", zap.Error(err))
-		global.GVA_DB.Unscoped().Where("id IN ?", []int64{userMsg.ID, aiMsg.ID}).Delete(&model.Message{})
-		if isNewSession {
-			db.Unscoped().Where("id = ?", session.ID).Delete(&model.Session{})
-		}
-		return nil, 0, 0, errors.New("AI 服务响应失败")
-	}
-
 	go func() {
-		defer stream.Close()
 		defer close(msgChan)
-
-		var fullReply string
-
-		// 先处理已经收到的第一个 chunk
-		if reasoning := s.extractReasoningText(firstResponse); reasoning != "" {
-			msgChan <- dto.ChatStreamChunk{Type: "reasoning", Content: reasoning}
-		}
-		if content := s.extractMessageText(firstResponse); content != "" {
-			fullReply += content
-			msgChan <- dto.ChatStreamChunk{Type: "message", Content: content}
-		}
-
-		for {
-			response, err := stream.Recv()
-			if errors.Is(err, io.EOF) {
-				break
-			}
-			if err != nil {
-				// 即使出错（比如 context canceled），也保存已经生成的部分内容
-				global.GVA_LOG.Warn("AI stream interrupted", zap.Error(err))
-				break
-			}
-
-			// 处理思考过程 (Reasoning Content)
-			if reasoning := s.extractReasoningText(response); reasoning != "" {
-				msgChan <- dto.ChatStreamChunk{Type: "reasoning", Content: reasoning}
-			}
-
-			// 处理正式回复 (Content)
-			if content := s.extractMessageText(response); content != "" {
-				fullReply += content
-				msgChan <- dto.ChatStreamChunk{Type: "message", Content: content}
-			}
-		}
-
-		// 流式结束或异常中断后，更新完整内容到数据库
-		if fullReply != "" {
-			global.GVA_DB.Model(&model.Message{}).Where("id = ?", aiMsg.ID).Update("content", fullReply)
-		} else {
-			// 如果 AI 没有任何回复（发送失败或异常中断），清理掉刚才占位的数据库记录
+		finalResp, err := chatAgent.Generate(agentCtx, messages)
+		if err != nil {
+			global.GVA_LOG.Error("Eino AI agent generate failed", zap.Error(err))
+			msgChan <- dto.ChatStreamChunk{Type: "tool", Content: "工具链执行失败，请稍后重试"}
 			global.GVA_DB.Unscoped().Where("id IN ?", []int64{userMsg.ID, aiMsg.ID}).Delete(&model.Message{})
-			// 如果是新建的会话，且第一条消息就失败了，同时清理空会话
 			if isNewSession {
 				global.GVA_DB.Unscoped().Where("id = ?", session.ID).Delete(&model.Session{})
 			}
-			return // 直接返回，不再执行后续的生成标题或摘要逻辑
+			return
 		}
 
+		reasoningText := s.extractReasoningText(finalResp)
+		messageText := s.extractMessageText(finalResp)
+		if strings.TrimSpace(messageText) == "" {
+			msgChan <- dto.ChatStreamChunk{Type: "tool", Content: "AI 未生成最终答案，请稍后重试"}
+			global.GVA_DB.Unscoped().Where("id IN ?", []int64{userMsg.ID, aiMsg.ID}).Delete(&model.Message{})
+			if isNewSession {
+				global.GVA_DB.Unscoped().Where("id = ?", session.ID).Delete(&model.Session{})
+			}
+			return
+		}
+
+		s.emitStreamChunks(msgChan, "reasoning", reasoningText)
+		s.emitStreamChunks(msgChan, "message", messageText)
+		global.GVA_DB.Model(&model.Message{}).Where("id = ?", aiMsg.ID).Update("content", messageText)
 		s.finalizeChatSideEffects(db, session, isNewSession, req.Prompt, userMsg.ID)
 	}()
 
