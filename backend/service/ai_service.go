@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 	"time"
 
@@ -194,6 +195,20 @@ func (s *AIService) emitStreamChunks(msgChan chan<- dto.ChatStreamChunk, chunkTy
 	for _, chunk := range splitTextForStreaming(text, 20) {
 		msgChan <- dto.ChatStreamChunk{Type: chunkType, Content: chunk}
 		time.Sleep(12 * time.Millisecond)
+	}
+}
+
+// emitMessageChunk 将模型实时返回的片段直接推送给前端。
+func (s *AIService) emitMessageChunk(msgChan chan<- dto.ChatStreamChunk, msg *schema.Message) {
+	if msg == nil {
+		return
+	}
+
+	if reasoning := s.extractReasoningText(msg); reasoning != "" {
+		msgChan <- dto.ChatStreamChunk{Type: "reasoning", Content: reasoning}
+	}
+	if content := s.extractMessageText(msg); content != "" {
+		msgChan <- dto.ChatStreamChunk{Type: "message", Content: content}
 	}
 }
 
@@ -474,9 +489,9 @@ func (s *AIService) Chat(ctx context.Context, userId uint, req dto.AIChatReq) (<
 
 	go func() {
 		defer close(msgChan)
-		finalResp, err := chatAgent.Generate(agentCtx, messages)
+		streamResp, err := chatAgent.Stream(agentCtx, messages)
 		if err != nil {
-			global.GVA_LOG.Error("Eino AI agent generate failed", zap.Error(err))
+			global.GVA_LOG.Error("Eino AI agent stream failed", zap.Error(err))
 			msgChan <- dto.ChatStreamChunk{Type: "tool", Content: "工具链执行失败，请稍后重试"}
 			global.GVA_DB.Unscoped().Where("id IN ?", []int64{userMsg.ID, aiMsg.ID}).Delete(&model.Message{})
 			if isNewSession {
@@ -484,8 +499,48 @@ func (s *AIService) Chat(ctx context.Context, userId uint, req dto.AIChatReq) (<
 			}
 			return
 		}
+		defer streamResp.Close()
 
-		reasoningText := s.extractReasoningText(finalResp)
+		streamMsgs := make([]*schema.Message, 0, 32)
+		for {
+			chunk, err := streamResp.Recv()
+			if err != nil {
+				if errors.Is(err, io.EOF) {
+					break
+				}
+				global.GVA_LOG.Error("Eino AI agent recv stream failed", zap.Error(err))
+				msgChan <- dto.ChatStreamChunk{Type: "tool", Content: "AI 流式输出中断，请稍后重试"}
+				global.GVA_DB.Unscoped().Where("id IN ?", []int64{userMsg.ID, aiMsg.ID}).Delete(&model.Message{})
+				if isNewSession {
+					global.GVA_DB.Unscoped().Where("id = ?", session.ID).Delete(&model.Session{})
+				}
+				return
+			}
+
+			streamMsgs = append(streamMsgs, chunk)
+			s.emitMessageChunk(msgChan, chunk)
+		}
+
+		if len(streamMsgs) == 0 {
+			msgChan <- dto.ChatStreamChunk{Type: "tool", Content: "AI 未生成最终答案，请稍后重试"}
+			global.GVA_DB.Unscoped().Where("id IN ?", []int64{userMsg.ID, aiMsg.ID}).Delete(&model.Message{})
+			if isNewSession {
+				global.GVA_DB.Unscoped().Where("id = ?", session.ID).Delete(&model.Session{})
+			}
+			return
+		}
+
+		finalResp, err := schema.ConcatMessages(streamMsgs)
+		if err != nil {
+			global.GVA_LOG.Error("Concat AI stream chunks failed", zap.Error(err))
+			msgChan <- dto.ChatStreamChunk{Type: "tool", Content: "AI 流式结果合并失败，请稍后重试"}
+			global.GVA_DB.Unscoped().Where("id IN ?", []int64{userMsg.ID, aiMsg.ID}).Delete(&model.Message{})
+			if isNewSession {
+				global.GVA_DB.Unscoped().Where("id = ?", session.ID).Delete(&model.Session{})
+			}
+			return
+		}
+
 		messageText := s.extractMessageText(finalResp)
 		if strings.TrimSpace(messageText) == "" {
 			msgChan <- dto.ChatStreamChunk{Type: "tool", Content: "AI 未生成最终答案，请稍后重试"}
@@ -496,8 +551,6 @@ func (s *AIService) Chat(ctx context.Context, userId uint, req dto.AIChatReq) (<
 			return
 		}
 
-		s.emitStreamChunks(msgChan, "reasoning", reasoningText)
-		s.emitStreamChunks(msgChan, "message", messageText)
 		global.GVA_DB.Model(&model.Message{}).Where("id = ?", aiMsg.ID).Update("content", messageText)
 		s.finalizeChatSideEffects(db, session, isNewSession, req.Prompt, userMsg.ID)
 	}()
