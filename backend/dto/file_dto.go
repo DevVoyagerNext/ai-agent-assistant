@@ -6,7 +6,7 @@ import "time"
 type FileUploadRes struct {
 	ID        uint      `json:"id"`
 	FileName  string    `json:"fileName"`
-	FilePath  string    `json:"filePath"` // 可以是完整下载链接
+	FilePath  string    `json:"filePath"` // 七牛云可直接访问链接
 	FileType  string    `json:"fileType"`
 	FileSize  int       `json:"fileSize"`
 	CreatedAt time.Time `json:"createdAt"`
@@ -16,7 +16,7 @@ type FileUploadRes struct {
 type FileInfoRes struct {
 	ID        uint      `json:"id"`
 	FileName  string    `json:"fileName"`
-	FilePath  string    `json:"filePath"` // 完整下载链接
+	FilePath  string    `json:"filePath"` // 七牛云可直接访问链接
 	FileType  string    `json:"fileType"`
 	FileSize  int       `json:"fileSize"`
 	CreatedAt time.Time `json:"createdAt"`

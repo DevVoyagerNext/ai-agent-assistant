@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/qiniu/go-sdk/v7/auth"
 	"github.com/qiniu/go-sdk/v7/auth/qbox"
 	"github.com/qiniu/go-sdk/v7/storage"
 )
@@ -62,7 +61,7 @@ func UploadToQiniu(fileBytes []byte, originalName string, prefix string) (string
 	return ret.Key, nil
 }
 
-// GetQiniuDownloadURL 获取七牛云文件的下载链接
+// GetQiniuDownloadURL 获取七牛云文件的公开直链
 func GetQiniuDownloadURL(fileKey string) string {
 	q := global.GVA_CONFIG.Qiniu
 	if CleanQiniuFileURL(q.Domain) == "" {
@@ -79,9 +78,7 @@ func GetQiniuDownloadURL(fileKey string) string {
 		return ""
 	}
 
-	mac := auth.New(CleanQiniuFileURL(q.AccessKey), CleanQiniuFileURL(q.SecretKey))
-	deadline := time.Now().Add(2 * time.Hour).Unix()
-	return storage.MakePrivateURL(mac, domain, cleanKey, deadline)
+	return domain + "/" + cleanKey
 }
 
 // ExtractQiniuKey 从完整的七牛云下载链接中提取 fileKey

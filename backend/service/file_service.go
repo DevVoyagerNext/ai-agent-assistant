@@ -46,12 +46,12 @@ func (s *FileService) UploadFile(ctx context.Context, fileBytes []byte, fileName
 	}
 
 	// 4. 构建返回
-	downloadURL := utils.GetQiniuDownloadURL(fileKey)
+	downloadURL := utils.CleanQiniuFileURL(utils.GetQiniuDownloadURL(fileKey))
 
 	return &dto.FileUploadRes{
 		ID:        fileRecord.ID,
 		FileName:  fileRecord.FileName,
-		FilePath:  downloadURL, // 返回完整链接方便前端展示
+		FilePath:  downloadURL,
 		FileType:  fileRecord.FileType,
 		FileSize:  fileRecord.FileSize,
 		CreatedAt: fileRecord.CreatedAt,
@@ -65,7 +65,7 @@ func (s *FileService) GetFileInfo(ctx context.Context, fileID uint) (*dto.FileIn
 		return nil, errors.New("文件不存在")
 	}
 
-	downloadURL := utils.GetQiniuDownloadURL(fileRecord.FilePath)
+	downloadURL := utils.CleanQiniuFileURL(utils.GetQiniuDownloadURL(fileRecord.FilePath))
 
 	return &dto.FileInfoRes{
 		ID:        fileRecord.ID,
