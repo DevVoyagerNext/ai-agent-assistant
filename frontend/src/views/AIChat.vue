@@ -375,6 +375,11 @@ const selectSession = async (sessionId: number) => {
   scrollToBottom()
 }
 
+const getOldestPersistedMessageId = () => {
+  const persisted = messages.value.find(msg => msg.sessionId > 0 && msg.id < 1000000000000)
+  return persisted?.id
+}
+
 // ===== Rename Logic =====
 const openRename = (session: AIChatSession) => {
   renamingSessionId.value = session.id
@@ -413,7 +418,7 @@ const loadMessages = async (sessionId: number, reset = false) => {
   const oldScrollHeight = messagesContainer.value?.scrollHeight || 0
   
   try {
-    const lastId = reset ? undefined : messages.value[0]?.id
+    const lastId = reset ? undefined : getOldestPersistedMessageId()
     const res = await getAISessionMessages(sessionId, lastId)
     if (res.data?.code === 200 && res.data.data) {
       const list = res.data.data.list || []
@@ -691,9 +696,10 @@ const sendMessage = async () => {
       const uploadResults = await Promise.all(uploadPromises)
       
       const uploadedFiles: AIChatFile[] = uploadResults.map(res => ({
+        file_id: res.data.data.id,
         file_url: res.data.data.filePath,
         file_name: res.data.data.fileName,
-        file_type: res.data.data.FileType,
+        file_type: res.data.data.fileType,
         file_size: res.data.data.fileSize
       }))
       

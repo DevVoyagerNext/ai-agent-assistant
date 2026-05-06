@@ -44,8 +44,7 @@ import {
   getAISessions,
   getAISessionMessages
 } from '../api/ai'
-import { uploadFile } from '../api/file'
-import type { AIChatMessage, AIChatSession, AIChatFile } from '../types/ai'
+import type { AIChatMessage, AIChatSession } from '../types/ai'
 
 const route = useRoute()
 const router = useRouter()
@@ -221,7 +220,7 @@ const loadMessages = async (sessionId: number, reset = false) => {
   if (loadingMessages.value || (!hasMoreMessages.value && !reset)) return
   loadingMessages.value = true
   try {
-    const lastId = reset ? undefined : aiMessages.value[0]?.id
+    const lastId = reset ? undefined : getOldestPersistedMessageId()
     const res = await getAISessionMessages(sessionId, lastId)
     if (res.data?.code === 200 && res.data.data) {
       const list = res.data.data.list || []
@@ -237,6 +236,11 @@ const loadMessages = async (sessionId: number, reset = false) => {
   } finally {
     loadingMessages.value = false
   }
+}
+
+const getOldestPersistedMessageId = () => {
+  const persisted = aiMessages.value.find(msg => msg.sessionId > 0 && msg.id < 1000000000000)
+  return persisted?.id
 }
 
 // 新建对话

@@ -29,6 +29,7 @@ export interface AIMessageListRes {
 }
 
 export interface AIChatFile {
+  file_id?: number
   file_url: string
   file_name: string
   file_type: string
@@ -39,8 +40,7 @@ export interface AIChatReq {
   skill_id?: string
   user_input: string
   session_id?: string
-  file_urls?: string[]
-  files?: AIChatFile[] // 新增：支持文件对象数组
+  files?: AIChatFile[]
   
   // 兼容旧版参数
   prompt?: string

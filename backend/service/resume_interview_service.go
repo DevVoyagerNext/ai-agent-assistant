@@ -93,10 +93,16 @@ func (s *AIService) prepareResumeKnowledge(ctx context.Context, req dto.AIChatRe
 	fileContexts, resumeText, notices := s.extractResumeFiles(ctx, req.Files)
 	resumeText = strings.TrimSpace(resumeText)
 
-	emitAIToolEvent(ctx, "正在检索与简历相关的补充资料...")
-	references, refErr := s.searchResumeReferences(ctx, resumeText, strings.TrimSpace(req.UserInput))
-	if refErr != nil && strings.TrimSpace(refErr.Error()) != "" {
-		notices = append(notices, "补充网页检索失败："+refErr.Error())
+	var references []resumeReference
+	if resumeText != "" {
+		emitAIToolEvent(ctx, "正在检索与简历相关的补充资料...")
+		var refErr error
+		references, refErr = s.searchResumeReferences(ctx, resumeText, strings.TrimSpace(req.UserInput))
+		if refErr != nil && strings.TrimSpace(refErr.Error()) != "" {
+			notices = append(notices, "补充网页检索失败："+refErr.Error())
+		}
+	} else {
+		notices = append(notices, "简历正文未成功提取，已跳过补充网页检索，避免引入无关资料")
 	}
 
 	return resumeKnowledgeBundle{
@@ -572,6 +578,9 @@ func extractDOCXText(data []byte) (string, error) {
 }
 
 func (s *AIService) searchResumeReferences(ctx context.Context, resumeText, userInput string) ([]resumeReference, error) {
+	if strings.TrimSpace(resumeText) == "" {
+		return nil, nil
+	}
 	queries := buildResumeSearchQueries(resumeText, userInput)
 	if len(queries) == 0 {
 		return nil, nil

@@ -6,7 +6,6 @@ import (
 	"backend/pkg/utils/response"
 	"backend/service"
 	"encoding/base64"
-	"encoding/json"
 	"io"
 	"strconv"
 	"strings"
@@ -33,14 +32,20 @@ func (con *AIController) Chat(c *gin.Context) {
 		req.SessionID = strings.TrimSpace(c.PostForm("sessionId"))
 	}
 
-	// 兼容前端先上传文件后通过 files_info 传递附件元信息
+	// 兼容前端先上传文件后通过 files_info / filesInfo / files 传递附件元信息
 	if len(req.Files) == 0 {
-		filesInfo := strings.TrimSpace(c.PostForm("files_info"))
-		if filesInfo != "" {
-			if err := json.Unmarshal([]byte(filesInfo), &req.Files); err != nil {
+		for _, key := range []string{"files_info", "filesInfo", "files"} {
+			filesInfo := strings.TrimSpace(c.PostForm(key))
+			if filesInfo == "" {
+				continue
+			}
+			files, err := dto.ParseAIChatFiles(filesInfo)
+			if err != nil {
 				response.FailWithMsg(errmsg.CodeError, "附件信息格式错误", c)
 				return
 			}
+			req.Files = files
+			break
 		}
 	}
 

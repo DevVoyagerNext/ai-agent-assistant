@@ -1,11 +1,36 @@
 package dto
 
+import (
+	"encoding/json"
+	"strings"
+)
+
 // AIChatFile AI 聊天文件信息
 type AIChatFile struct {
-	FileURL  string `json:"file_url"`  // 文件下载链接/存储路径
-	FileName string `json:"file_name"` // 文件名
-	FileType string `json:"file_type"` // 文件类型 (如: image/png, application/pdf等)
-	FileSize int64  `json:"file_size"` // 文件大小 (Byte)
+	FileID   uint   `json:"file_id" form:"file_id"`     // 文件ID
+	FileURL  string `json:"file_url" form:"file_url"`   // 文件下载链接/存储路径
+	FileName string `json:"file_name" form:"file_name"` // 文件名
+	FileType string `json:"file_type" form:"file_type"` // 文件类型 (如: image/png, application/pdf等)
+	FileSize int64  `json:"file_size" form:"file_size"` // 文件大小 (Byte)
+}
+
+// ParseAIChatFiles 兼容解析 files JSON 字符串
+func ParseAIChatFiles(raw string) ([]AIChatFile, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, nil
+	}
+
+	var files []AIChatFile
+	if err := json.Unmarshal([]byte(raw), &files); err == nil {
+		return files, nil
+	}
+
+	var single AIChatFile
+	if err := json.Unmarshal([]byte(raw), &single); err == nil {
+		return []AIChatFile{single}, nil
+	}
+	return nil, json.Unmarshal([]byte(raw), &files)
 }
 
 // AIChatReq AI 聊天请求参数

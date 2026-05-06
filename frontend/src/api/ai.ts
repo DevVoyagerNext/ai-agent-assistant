@@ -20,11 +20,6 @@ export const sendAIChat = (data: AIChatReq) => {
   if (data.session_id) {
     formData.append('session_id', data.session_id)
   }
-  if (data.file_urls && data.file_urls.length > 0) {
-    data.file_urls.forEach(url => {
-      formData.append('file_urls', url)
-    })
-  }
 
   // 兼容旧版参数
   if (data.prompt) {

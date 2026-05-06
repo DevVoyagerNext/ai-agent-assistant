@@ -207,6 +207,54 @@ func (s *AIService) buildUserPrompt(req dto.AIChatReq) string {
 	return builder.String()
 }
 
+func (s *AIService) normalizeChatFiles(ctx context.Context, userID uint, files []dto.AIChatFile) []dto.AIChatFile {
+	normalized := make([]dto.AIChatFile, 0, len(files))
+	db := global.GVA_DB.WithContext(ctx)
+
+	for _, file := range files {
+		item := dto.AIChatFile{
+			FileID:   file.FileID,
+			FileURL:  strings.TrimSpace(file.FileURL),
+			FileName: strings.TrimSpace(file.FileName),
+			FileType: strings.TrimSpace(file.FileType),
+			FileSize: file.FileSize,
+		}
+
+		if item.FileID > 0 {
+			var fileRecord model.File
+			if err := db.Where("id = ? AND user_id = ?", item.FileID, userID).First(&fileRecord).Error; err == nil {
+				if item.FileURL == "" {
+					item.FileURL = utils.GetQiniuDownloadURL(fileRecord.FilePath)
+				}
+				if item.FileName == "" {
+					item.FileName = fileRecord.FileName
+				}
+				if item.FileType == "" {
+					item.FileType = fileRecord.FileType
+				}
+				if item.FileSize == 0 {
+					item.FileSize = int64(fileRecord.FileSize)
+				}
+			}
+		}
+
+		if item.FileURL == "" && strings.TrimSpace(file.FileName) != "" && strings.Contains(file.FileName, "://") {
+			item.FileURL = strings.TrimSpace(file.FileName)
+		}
+
+		if item.FileName == "" && item.FileURL != "" {
+			lastSlash := strings.LastIndex(item.FileURL, "/")
+			if lastSlash >= 0 && lastSlash < len(item.FileURL)-1 {
+				item.FileName = item.FileURL[lastSlash+1:]
+			}
+		}
+
+		normalized = append(normalized, item)
+	}
+
+	return normalized
+}
+
 func (s *AIService) newChatAgent(ctx context.Context, userID uint) (*react.Agent, error) {
 	chatModel, err := s.newChatModel(ctx)
 	if err != nil {
@@ -509,6 +557,8 @@ func (s *AIService) Chat(ctx context.Context, userId uint, req dto.AIChatReq) (<
 			return nil, 0, 0, errors.New("查询会话失败")
 		}
 	}
+
+	req.Files = s.normalizeChatFiles(ctx, userId, req.Files)
 
 	// 记录数据库的用户输入（如果兼容老参数，则合并判断）
 	promptContent := strings.TrimSpace(req.UserInput)

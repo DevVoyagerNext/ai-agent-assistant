@@ -2,7 +2,7 @@ export interface FileUploadRes {
   id: number
   fileName: string
   filePath: string
-  FileType: string
+  fileType: string
   fileSize: number
   createdAt: string
 }
