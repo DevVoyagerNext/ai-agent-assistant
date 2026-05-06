@@ -25,15 +25,22 @@ type AIService struct{}
 
 func (s *AIService) newChatModel(ctx context.Context) (*einoOpenAI.ChatModel, error) {
 	aiConfig := global.GVA_CONFIG.AI
-	if aiConfig.APIKey == "" || aiConfig.BaseURL == "" {
+	baseURL := sanitizeAIConfigValue(aiConfig.BaseURL)
+	apiKey := sanitizeAIConfigValue(aiConfig.APIKey)
+	modelName := sanitizeAIConfigValue(aiConfig.Model)
+
+	if apiKey == "" || baseURL == "" {
 		global.GVA_LOG.Error("AI config is missing")
 		return nil, errors.New("AI 服务未配置")
 	}
+	if modelName == "" {
+		modelName = aiConfig.Model
+	}
 
 	chatModel, err := einoOpenAI.NewChatModel(ctx, &einoOpenAI.ChatModelConfig{
-		APIKey:  aiConfig.APIKey,
-		BaseURL: aiConfig.BaseURL,
-		Model:   aiConfig.Model,
+		APIKey:  apiKey,
+		BaseURL: strings.TrimRight(baseURL, "/"),
+		Model:   modelName,
 	})
 	if err != nil {
 		global.GVA_LOG.Error("Failed to initialize Eino chat model", zap.Error(err))
@@ -41,6 +48,14 @@ func (s *AIService) newChatModel(ctx context.Context) (*einoOpenAI.ChatModel, er
 	}
 
 	return chatModel, nil
+}
+
+func sanitizeAIConfigValue(value string) string {
+	cleaned := strings.TrimSpace(value)
+	cleaned = strings.Trim(cleaned, "`")
+	cleaned = strings.TrimSpace(cleaned)
+	cleaned = strings.Trim(cleaned, "\"'")
+	return strings.TrimSpace(cleaned)
 }
 
 func (s *AIService) buildConversationMessages(systemPrompt string, historyMsgs []model.Message, prompt string) []*schema.Message {
