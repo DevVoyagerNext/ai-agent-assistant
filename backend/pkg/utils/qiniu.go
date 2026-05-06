@@ -18,25 +18,29 @@ import (
 // UploadToQiniu 上传文件到七牛云，返回 fileKey
 func UploadToQiniu(fileBytes []byte, originalName string, prefix string) (string, error) {
 	q := global.GVA_CONFIG.Qiniu
-	if q.AccessKey == "" || q.SecretKey == "" {
+	accessKey := CleanQiniuFileURL(q.AccessKey)
+	secretKey := CleanQiniuFileURL(q.SecretKey)
+	bucket := CleanQiniuFileURL(q.Bucket)
+	zone := strings.ToLower(CleanQiniuFileURL(q.Zone))
+	if accessKey == "" || secretKey == "" || bucket == "" {
 		return "", fmt.Errorf("七牛云配置缺失")
 	}
 
 	putPolicy := storage.PutPolicy{
-		Scope: q.Bucket,
+		Scope: bucket,
 	}
-	mac := qbox.NewMac(q.AccessKey, q.SecretKey)
+	mac := qbox.NewMac(accessKey, secretKey)
 	upToken := putPolicy.UploadToken(mac)
 
 	cfg := storage.Config{}
 	// 华南-广东 z2
-	if q.Zone == "z2" {
+	if zone == "z2" {
 		cfg.Region = &storage.ZoneHuanan
 	} else {
 		// 默认自动识别
 		cfg.Region = &storage.ZoneHuanan
 	}
-	cfg.UseHTTPS = true
+	cfg.UseHTTPS = q.UseHTTPS
 	cfg.UseCdnDomains = false
 
 	formUploader := storage.NewFormUploader(&cfg)
@@ -61,7 +65,7 @@ func UploadToQiniu(fileBytes []byte, originalName string, prefix string) (string
 // GetQiniuDownloadURL 获取七牛云文件的下载链接
 func GetQiniuDownloadURL(fileKey string) string {
 	q := global.GVA_CONFIG.Qiniu
-	if q.Domain == "" {
+	if CleanQiniuFileURL(q.Domain) == "" {
 		return ""
 	}
 
@@ -75,7 +79,7 @@ func GetQiniuDownloadURL(fileKey string) string {
 		return ""
 	}
 
-	mac := auth.New(q.AccessKey, q.SecretKey)
+	mac := auth.New(CleanQiniuFileURL(q.AccessKey), CleanQiniuFileURL(q.SecretKey))
 	deadline := time.Now().Add(2 * time.Hour).Unix()
 	return storage.MakePrivateURL(mac, domain, cleanKey, deadline)
 }
@@ -87,7 +91,7 @@ func ExtractQiniuKey(fileURL string) string {
 	if cleanURL == "" {
 		return ""
 	}
-	if q.Domain == "" {
+	if CleanQiniuFileURL(q.Domain) == "" {
 		return cleanURL
 	}
 
