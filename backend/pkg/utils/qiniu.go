@@ -5,10 +5,12 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	neturl "net/url"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/qiniu/go-sdk/v7/auth"
 	"github.com/qiniu/go-sdk/v7/auth/qbox"
 	"github.com/qiniu/go-sdk/v7/storage"
 )
@@ -63,33 +65,72 @@ func GetQiniuDownloadURL(fileKey string) string {
 		return ""
 	}
 
-	domain := q.Domain
-	if !strings.HasPrefix(domain, "http://") && !strings.HasPrefix(domain, "https://") {
-		domain = "http://" + domain // 默认使用 http 或 https，根据实际情况
+	cleanKey := CleanQiniuFileURL(fileKey)
+	if cleanKey == "" {
+		return ""
 	}
 
-	return fmt.Sprintf("%s/%s", domain, fileKey)
+	domain := buildQiniuBaseDomain(q.Domain)
+	if domain == "" {
+		return ""
+	}
+
+	mac := auth.New(q.AccessKey, q.SecretKey)
+	deadline := time.Now().Add(2 * time.Hour).Unix()
+	return storage.MakePrivateURL(mac, domain, cleanKey, deadline)
 }
 
 // ExtractQiniuKey 从完整的七牛云下载链接中提取 fileKey
 func ExtractQiniuKey(fileURL string) string {
 	q := global.GVA_CONFIG.Qiniu
+	cleanURL := CleanQiniuFileURL(fileURL)
+	if cleanURL == "" {
+		return ""
+	}
 	if q.Domain == "" {
-		return fileURL
+		return cleanURL
 	}
 
-	domain := q.Domain
-	if !strings.HasPrefix(domain, "http://") && !strings.HasPrefix(domain, "https://") {
-		domain = "http://" + domain
+	domain := buildQiniuBaseDomain(q.Domain)
+	if domain == "" {
+		return cleanURL
 	}
 
 	if !strings.HasSuffix(domain, "/") {
 		domain += "/"
 	}
 
-	if strings.HasPrefix(fileURL, domain) {
-		return strings.TrimPrefix(fileURL, domain)
+	if strings.HasPrefix(cleanURL, domain) {
+		return strings.TrimPrefix(cleanURL, domain)
 	}
 
-	return fileURL
+	if parsed, err := neturl.Parse(cleanURL); err == nil && parsed.Host != "" {
+		return strings.TrimPrefix(parsed.Path, "/")
+	}
+
+	return cleanURL
+}
+
+// CleanQiniuFileURL 清洗七牛云文件 URL / Key，去掉空格、反引号和多余包装
+func CleanQiniuFileURL(raw string) string {
+	cleaned := strings.TrimSpace(raw)
+	cleaned = strings.Trim(cleaned, "`")
+	cleaned = strings.TrimSpace(cleaned)
+	cleaned = strings.Trim(cleaned, "\"'")
+	return strings.TrimSpace(cleaned)
+}
+
+func buildQiniuBaseDomain(domain string) string {
+	cleaned := CleanQiniuFileURL(domain)
+	if cleaned == "" {
+		return ""
+	}
+	if !strings.HasPrefix(cleaned, "http://") && !strings.HasPrefix(cleaned, "https://") {
+		if global.GVA_CONFIG.Qiniu.UseHTTPS {
+			cleaned = "https://" + cleaned
+		} else {
+			cleaned = "http://" + cleaned
+		}
+	}
+	return strings.TrimRight(cleaned, "/")
 }

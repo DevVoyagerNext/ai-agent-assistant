@@ -501,8 +501,8 @@ func (s *AIService) Chat(ctx context.Context, userId uint, req dto.AIChatReq) (<
 			return nil, 0, 0, errors.New("创建会话失败")
 		}
 	} else {
-		// 2. 有 sessionId 时查找会话
-		if err := db.Where("id = ? AND user_id = ?", reqSessionID, userId).First(&session).Error; err != nil {
+		// 2. 有 sessionId 时查找会话 (增加 is_deleted = false 校验)
+		if err := db.Where("id = ? AND user_id = ? AND is_deleted = false", reqSessionID, userId).First(&session).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return nil, 0, 0, errors.New("会话不存在或无权访问")
 			}

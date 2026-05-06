@@ -3,6 +3,8 @@ package service
 import (
 	"archive/zip"
 	"backend/dto"
+	"backend/global"
+	"backend/pkg/utils"
 	"bytes"
 	"context"
 	"errors"
@@ -11,6 +13,7 @@ import (
 	"net/http"
 	neturl "net/url"
 	"os"
+	"os/exec"
 	"regexp"
 	"strings"
 	"time"
@@ -18,6 +21,9 @@ import (
 	"github.com/PuerkitoBio/goquery"
 	"github.com/cloudwego/eino/schema"
 	"github.com/ledongthuc/pdf"
+	qcred "github.com/qiniu/go-sdk/v7/storagev2/credentials"
+	"github.com/qiniu/go-sdk/v7/storagev2/downloader"
+	httpclient "github.com/qiniu/go-sdk/v7/storagev2/http_client"
 )
 
 const (
@@ -317,7 +323,11 @@ func (s *AIService) extractResumeFiles(ctx context.Context, files []dto.AIChatFi
 }
 
 func (s *AIService) downloadResumeFile(ctx context.Context, fileURL string) ([]byte, string, error) {
-	targetURL, err := normalizeFetchURL(fileURL)
+	cleanURL := utils.CleanQiniuFileURL(fileURL)
+	if data, contentType, err := s.downloadResumeFileFromQiniu(ctx, cleanURL); err == nil {
+		return data, contentType, nil
+	}
+	targetURL, err := normalizeFetchURL(cleanURL)
 	if err != nil {
 		return nil, "", err
 	}
@@ -353,6 +363,47 @@ func (s *AIService) downloadResumeFile(ctx context.Context, fileURL string) ([]b
 		return nil, "", errors.New("读取文件内容失败")
 	}
 	return data, strings.ToLower(strings.TrimSpace(resp.Header.Get("Content-Type"))), nil
+}
+
+func (s *AIService) downloadResumeFileFromQiniu(ctx context.Context, fileURL string) ([]byte, string, error) {
+	_ = s
+	q := global.GVA_CONFIG.Qiniu
+	if strings.TrimSpace(q.AccessKey) == "" || strings.TrimSpace(q.SecretKey) == "" || strings.TrimSpace(q.Bucket) == "" {
+		return nil, "", errors.New("七牛云配置不完整")
+	}
+
+	key := utils.ExtractQiniuKey(fileURL)
+	if strings.TrimSpace(key) == "" {
+		return nil, "", errors.New("无法识别七牛云文件 key")
+	}
+
+	looksLikeQiniu := strings.HasPrefix(key, "Agent/") ||
+		(strings.TrimSpace(q.Domain) != "" && strings.Contains(fileURL, strings.TrimSpace(q.Domain))) ||
+		!strings.Contains(fileURL, "://")
+	if !looksLikeQiniu {
+		return nil, "", errors.New("不是七牛云文件地址")
+	}
+
+	cred := qcred.NewCredentials(q.AccessKey, q.SecretKey)
+	downloadManager := downloader.NewDownloadManager(&downloader.DownloadManagerOptions{
+		Options: httpclient.Options{
+			Credentials:         cred,
+			UseInsecureProtocol: !q.UseHTTPS,
+		},
+	})
+
+	var buf bytes.Buffer
+	if _, err := downloadManager.DownloadToWriter(ctx, key, &buf, &downloader.ObjectOptions{
+		GenerateOptions: downloader.GenerateOptions{
+			BucketName:          q.Bucket,
+			UseInsecureProtocol: !q.UseHTTPS,
+		},
+	}); err != nil {
+		return nil, "", err
+	}
+
+	data := buf.Bytes()
+	return data, strings.ToLower(http.DetectContentType(data)), nil
 }
 
 func detectResumeFileKind(file dto.AIChatFile, contentType string, data []byte) string {
@@ -428,6 +479,10 @@ func extractPDFText(data []byte) (string, error) {
 		return "", err
 	}
 
+	if text, err := extractPDFTextWithPyMuPDF(tmpPath); err == nil && strings.TrimSpace(text) != "" {
+		return text, nil
+	}
+
 	f, reader, err := pdf.Open(tmpPath)
 	if err != nil {
 		return "", err
@@ -444,6 +499,45 @@ func extractPDFText(data []byte) (string, error) {
 		return "", err
 	}
 	return string(buf), nil
+}
+
+func extractPDFTextWithPyMuPDF(pdfPath string) (string, error) {
+	pythonPath, err := exec.LookPath("python")
+	if err != nil {
+		return "", err
+	}
+
+	scriptFile, err := os.CreateTemp("", "resume-pdf-*.py")
+	if err != nil {
+		return "", err
+	}
+	scriptPath := scriptFile.Name()
+	defer os.Remove(scriptPath)
+
+	script := strings.Join([]string{
+		"import fitz",
+		"import sys",
+		"",
+		"path = sys.argv[1]",
+		"doc = fitz.open(path)",
+		`text = "\n".join(page.get_text("text") for page in doc)`,
+		"sys.stdout.buffer.write(text.encode('utf-8', errors='ignore'))",
+	}, "\n")
+
+	if _, err := scriptFile.WriteString(script); err != nil {
+		scriptFile.Close()
+		return "", err
+	}
+	if err := scriptFile.Close(); err != nil {
+		return "", err
+	}
+
+	cmd := exec.Command(pythonPath, scriptPath, pdfPath)
+	output, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+	return string(output), nil
 }
 
 func extractDOCXText(data []byte) (string, error) {

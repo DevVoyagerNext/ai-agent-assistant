@@ -56,3 +56,4 @@ qiniu:
   bucket: "your_bucket_name"
   domain: "your_bucket_domain"
   zone: "your_bucket_zone"
+  use-https: false

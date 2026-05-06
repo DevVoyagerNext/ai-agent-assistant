@@ -6,6 +6,7 @@ import (
 	"backend/pkg/utils/response"
 	"backend/service"
 	"encoding/base64"
+	"encoding/json"
 	"io"
 	"strconv"
 	"strings"
@@ -25,6 +26,22 @@ func (con *AIController) Chat(c *gin.Context) {
 	if err := c.ShouldBind(&req); err != nil {
 		response.FailWithMsg(errmsg.CodeError, "参数错误或内容过长", c)
 		return
+	}
+
+	// 兼容旧版/不同页面提交的 camelCase 字段
+	if strings.TrimSpace(req.SessionID) == "" {
+		req.SessionID = strings.TrimSpace(c.PostForm("sessionId"))
+	}
+
+	// 兼容前端先上传文件后通过 files_info 传递附件元信息
+	if len(req.Files) == 0 {
+		filesInfo := strings.TrimSpace(c.PostForm("files_info"))
+		if filesInfo != "" {
+			if err := json.Unmarshal([]byte(filesInfo), &req.Files); err != nil {
+				response.FailWithMsg(errmsg.CodeError, "附件信息格式错误", c)
+				return
+			}
+		}
 	}
 
 	userId, err := con.authService.GetUserID(c)

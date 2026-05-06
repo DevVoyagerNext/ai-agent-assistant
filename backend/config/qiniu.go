@@ -6,4 +6,5 @@ type Qiniu struct {
 	Bucket    string `mapstructure:"bucket" json:"bucket" yaml:"bucket"`
 	Domain    string `mapstructure:"domain" json:"domain" yaml:"domain"`
 	Zone      string `mapstructure:"zone" json:"zone" yaml:"zone"`
+	UseHTTPS  bool   `mapstructure:"use-https" json:"useHttps" yaml:"use-https"`
 }
