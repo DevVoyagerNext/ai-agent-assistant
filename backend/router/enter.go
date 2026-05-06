@@ -39,6 +39,9 @@ func InitRouter() *gin.Engine {
 	knowledgeNodeRouter.InitAuthKnowledgeNodeRouter(authV1)
 	privateNoteRouter.InitAuthUserPrivateNoteRouter(authV1)
 	aiRouter.InitAuthAIRouter(authV1)
+	
+	// 文件相关路由
+	InitFileRouter(v1)
 
 	return r
 }

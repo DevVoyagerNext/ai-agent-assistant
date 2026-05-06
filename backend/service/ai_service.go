@@ -4,10 +4,12 @@ import (
 	"backend/dto"
 	"backend/global"
 	"backend/model"
+	"backend/pkg/utils"
 	"context"
 	"errors"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 	"time"
 
@@ -109,12 +111,48 @@ func (s *AIService) generateText(ctx context.Context, messages []*schema.Message
 	return strings.TrimSpace(s.extractMessageText(resp)), nil
 }
 
-func (s *AIService) buildChatSystemPrompt(session model.Session, hasCurrentPageURL bool) string {
-	systemPrompt := `你现在是一位顶尖的全能型高级教师。你不仅学识渊博，更精通教学之道。在回答学生的问题时，请务必做到以下几点：
-1. 深入浅出：知识讲解既要有专业的深度与丰富的细节，又要通俗易懂；
-2. 逻辑严密：条理极其清晰，结构分明，善于使用序号、分类或对比来组织内容；
-3. 启发思考：不仅给出答案，还要引导学生思考背后的原理，培养其举一反三的能力。
-请始终保持专业、耐心且富有启发性的教育者语气进行解答。
+func (s *AIService) getAgentSystemPrompt(agentKey, fallback string) string {
+	var agentConfig model.AIAgentConfig
+	if err := global.GVA_DB.Where("agent_key = ? AND is_active = ?", strings.TrimSpace(agentKey), 1).First(&agentConfig).Error; err == nil {
+		if strings.TrimSpace(agentConfig.SystemPrompt) != "" {
+			return strings.TrimSpace(agentConfig.SystemPrompt)
+		}
+	}
+	return strings.TrimSpace(fallback)
+}
+
+func (s *AIService) buildChatSystemPrompt(session model.Session, hasCurrentPageURL bool, skillID string) string {
+	var agentConfig model.AIAgentConfig
+
+	// 如果没有传 skillID，默认使用 main_agent
+	agentKey := "main_agent"
+	if strings.TrimSpace(skillID) != "" {
+		agentKey = strings.TrimSpace(skillID)
+	}
+
+	err := global.GVA_DB.Where("agent_key = ?", agentKey).First(&agentConfig).Error
+	if err != nil && agentKey != "main_agent" {
+		err = global.GVA_DB.Where("agent_key = ?", "main_agent").First(&agentConfig).Error
+	}
+
+	systemPrompt := ""
+	if err == nil && agentConfig.SystemPrompt != "" {
+		systemPrompt = agentConfig.SystemPrompt
+	} else {
+		// 默认回退提示词（当数据库未配置或查询失败时使用）
+		if isResumeInterviewSkill(skillID) {
+			systemPrompt = `你是一名资深技术面试官兼人才评估专家，专门负责根据候选人的简历、项目经历与补充资料生成高质量面试题。
+
+你的目标不是泛泛地罗列八股题，而是围绕候选人的真实经历出题，重点考察：
+1. 技术基础是否扎实；
+2. 项目经历是否真实且理解深入；
+3. 遇到复杂场景时的分析、设计与取舍能力；
+4. 是否具备从实践中总结问题与优化方案的能力。
+
+请严格根据输入的简历内容、附件解析结果、网页补充资料和用户要求来组织输出。
+如果某些附件无法解析，不要编造信息；你可以基于已有内容保守出题，并明确说明信息边界。`
+		} else {
+			systemPrompt = `你是一个全能人工智能学习助手，具备渊博的知识，可以回答用户关于编程、计算机科学以及各个学科的问题。你需要表现得专业、耐心且富有逻辑。
 
 另外你还具备两个外部工具：
 1. ` + "`fetch_web_page`" + `：可用于访问网页并提取标题与正文；
@@ -123,6 +161,8 @@ func (s *AIService) buildChatSystemPrompt(session model.Session, hasCurrentPageU
 请根据用户问题自行思考是否需要调用工具、调用哪个工具，以及如何基于工具结果继续观察、分析和回答。
 如果一个请求需要多个工具，请先完成全部必要的工具调用，再输出面向用户的正式正文。不要在工具尚未执行完成前就先输出“我现在为你生成 PDF”这类正文说明。
 如果工具返回了 PDF 下载地址，请在最终答复中明确告诉用户文件已生成，并以 Markdown 链接的形式提供下载地址，确保用户可以直接点击下载。`
+		}
+	}
 
 	if hasCurrentPageURL {
 		systemPrompt += "\n当前会话存在一个可供工具使用的当前页面 URL，但这不代表用户要你总结当前页面。只有当用户明确要求你基于当前页面、当前网页、上文页面、页面内容或用户选中文本来分析时，才调用 `fetch_web_page`；此时如果要读取当前页面，请将 `url` 置空，让系统自动使用当前页面 URL。若用户只是询问某个主题、概念或框架本身，例如“总结 eino 框架”，不要擅自把问题绑定到当前页面。"
@@ -137,13 +177,33 @@ func (s *AIService) buildChatSystemPrompt(session model.Session, hasCurrentPageU
 
 func (s *AIService) buildUserPrompt(req dto.AIChatReq) string {
 	var builder strings.Builder
+
+	// 1. 处理上传的文件
+	if len(req.Files) > 0 {
+		builder.WriteString("用户提供了以下文件/图片：\n")
+		for _, file := range req.Files {
+			// 将文件的详细信息拼接，供 AI 参考
+			builder.WriteString(fmt.Sprintf("- 链接: %s (文件名: %s, 类型: %s, 大小: %d 字节)\n", file.FileURL, file.FileName, file.FileType, file.FileSize))
+		}
+		builder.WriteString("\n")
+	}
+
+	// 2. 处理页面文本或选中内容
 	if strings.TrimSpace(req.SelectedText) != "" {
 		builder.WriteString("用户选中的原文：\n")
 		builder.WriteString(strings.TrimSpace(req.SelectedText))
 		builder.WriteString("\n")
 	}
-	builder.WriteString("用户指令：")
-	builder.WriteString(strings.TrimSpace(req.Prompt))
+
+	// 3. 处理用户输入（兼容新老字段）
+	builder.WriteString("用户指令：\n")
+
+	promptContent := strings.TrimSpace(req.UserInput)
+	if promptContent == "" {
+		promptContent = strings.TrimSpace(req.Prompt)
+	}
+	builder.WriteString(promptContent)
+
 	return builder.String()
 }
 
@@ -411,16 +471,24 @@ func (s *AIService) GetSessionMessages(ctx context.Context, userId uint, session
 
 // Chat 处理与 AI 模型的单次对话（流式）
 func (s *AIService) Chat(ctx context.Context, userId uint, req dto.AIChatReq) (<-chan dto.ChatStreamChunk, int64, int64, error) {
-	chatAgent, err := s.newChatAgent(ctx, userId)
-	if err != nil {
-		return nil, 0, 0, err
-	}
+	msgChan := make(chan dto.ChatStreamChunk, 64)
+	agentCtx := withAIToolEventSender(ctx, func(content string) {
+		msgChan <- dto.ChatStreamChunk{Type: "tool", Content: content}
+	})
+	agentCtx = withAICurrentPageURL(agentCtx, req.CurrentPageURL)
 
 	var session model.Session
 	db := global.GVA_DB.WithContext(ctx)
 	isNewSession := false
 
-	if req.SessionID == 0 {
+	// 兼容处理 SessionID
+	var reqSessionID int64
+	if req.SessionID != "" {
+		parsed, _ := strconv.ParseInt(req.SessionID, 10, 64)
+		reqSessionID = parsed
+	}
+
+	if reqSessionID == 0 {
 		// 1. 无 sessionId 时创建新会话
 		isNewSession = true
 		session = model.Session{
@@ -434,7 +502,7 @@ func (s *AIService) Chat(ctx context.Context, userId uint, req dto.AIChatReq) (<
 		}
 	} else {
 		// 2. 有 sessionId 时查找会话
-		if err := db.Where("id = ? AND user_id = ?", req.SessionID, userId).First(&session).Error; err != nil {
+		if err := db.Where("id = ? AND user_id = ?", reqSessionID, userId).First(&session).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return nil, 0, 0, errors.New("会话不存在或无权访问")
 			}
@@ -442,7 +510,100 @@ func (s *AIService) Chat(ctx context.Context, userId uint, req dto.AIChatReq) (<
 		}
 	}
 
-	systemPrompt := s.buildChatSystemPrompt(session, strings.TrimSpace(req.CurrentPageURL) != "")
+	// 记录数据库的用户输入（如果兼容老参数，则合并判断）
+	promptContent := strings.TrimSpace(req.UserInput)
+	if promptContent == "" {
+		promptContent = strings.TrimSpace(req.Prompt)
+	}
+
+	userMsg := model.Message{
+		SessionID: session.ID,
+		ParentID:  req.ParentID,
+		Role:      string(schema.User),
+		Content:   promptContent,
+	}
+	db.Create(&userMsg)
+
+	// 保存附件信息
+	if len(req.Files) > 0 {
+		for _, f := range req.Files {
+			fileKey := utils.ExtractQiniuKey(f.FileURL)
+
+			// 1. 存入 files 表 (如果尚未存在)
+			var count int64
+			db.Model(&model.File{}).Where("file_path = ?", fileKey).Count(&count)
+			if count == 0 {
+				fileRecord := model.File{
+					FileName: f.FileName,
+					FilePath: fileKey,
+					FileType: f.FileType,
+					FileSize: int(f.FileSize),
+					UserID:   int(userId),
+				}
+				db.Create(&fileRecord)
+			}
+
+			// 2. 存入 message_attachments 表
+			attachment := model.MessageAttachment{
+				SessionID:  session.ID,
+				MessageID:  userMsg.ID,
+				UserID:     int64(userId),
+				FileKey:    fileKey,
+				FileName:   f.FileName,
+				FileType:   f.FileType,
+				FileSize:   f.FileSize,
+				SenderRole: string(schema.User),
+			}
+			db.Create(&attachment)
+		}
+	}
+
+	// 保存 AI 回复消息占位符
+	aiMsg := model.Message{
+		SessionID: session.ID,
+		ParentID:  &userMsg.ID,
+		Role:      string(schema.Assistant),
+		Content:   "", // 留空，流式输出完成后再更新
+	}
+	db.Create(&aiMsg)
+
+	if isResumeInterviewSkill(req.SkillID) {
+		go func() {
+			defer close(msgChan)
+
+			finalAnswer, err := s.executeResumeInterviewAgents(agentCtx, req)
+			if err != nil {
+				global.GVA_LOG.Error("resume interview multi-agent failed", zap.Error(err))
+				msgChan <- dto.ChatStreamChunk{Type: "tool", Content: "简历面试 Agent 执行失败，请稍后重试"}
+				global.GVA_DB.Unscoped().Where("id IN ?", []int64{userMsg.ID, aiMsg.ID}).Delete(&model.Message{})
+				if isNewSession {
+					global.GVA_DB.Unscoped().Where("id = ?", session.ID).Delete(&model.Session{})
+				}
+				return
+			}
+
+			if strings.TrimSpace(finalAnswer) == "" {
+				msgChan <- dto.ChatStreamChunk{Type: "tool", Content: "简历面试 Agent 未生成结果，请稍后重试"}
+				global.GVA_DB.Unscoped().Where("id IN ?", []int64{userMsg.ID, aiMsg.ID}).Delete(&model.Message{})
+				if isNewSession {
+					global.GVA_DB.Unscoped().Where("id = ?", session.ID).Delete(&model.Session{})
+				}
+				return
+			}
+
+			s.emitStreamChunks(msgChan, "message", finalAnswer)
+			global.GVA_DB.Model(&model.Message{}).Where("id = ?", aiMsg.ID).Update("content", finalAnswer)
+			s.finalizeChatSideEffects(db, session, isNewSession, promptContent, userMsg.ID)
+		}()
+		return msgChan, session.ID, aiMsg.ID, nil
+	}
+
+	chatAgent, err := s.newChatAgent(ctx, userId)
+	if err != nil {
+		return nil, 0, 0, err
+	}
+
+	systemPrompt := s.buildChatSystemPrompt(session, strings.TrimSpace(req.CurrentPageURL) != "", req.SkillID)
 
 	// 组装消息列表
 	// 获取最近4轮历史对话 (8条消息)
@@ -463,29 +624,6 @@ func (s *AIService) Chat(ctx context.Context, userId uint, req dto.AIChatReq) (<
 
 	userPrompt := s.buildUserPrompt(req)
 	messages := s.buildConversationMessages(systemPrompt, historyMsgs, userPrompt)
-
-	msgChan := make(chan dto.ChatStreamChunk, 64)
-	userMsg := model.Message{
-		SessionID: session.ID,
-		ParentID:  req.ParentID,
-		Role:      string(schema.User),
-		Content:   req.Prompt,
-	}
-	db.Create(&userMsg)
-
-	// 保存 AI 回复消息占位符
-	aiMsg := model.Message{
-		SessionID: session.ID,
-		ParentID:  &userMsg.ID,
-		Role:      string(schema.Assistant),
-		Content:   "", // 留空，流式输出完成后再更新
-	}
-	db.Create(&aiMsg)
-
-	agentCtx := withAIToolEventSender(ctx, func(content string) {
-		msgChan <- dto.ChatStreamChunk{Type: "tool", Content: content}
-	})
-	agentCtx = withAICurrentPageURL(agentCtx, req.CurrentPageURL)
 
 	go func() {
 		defer close(msgChan)
@@ -552,7 +690,7 @@ func (s *AIService) Chat(ctx context.Context, userId uint, req dto.AIChatReq) (<
 		}
 
 		global.GVA_DB.Model(&model.Message{}).Where("id = ?", aiMsg.ID).Update("content", messageText)
-		s.finalizeChatSideEffects(db, session, isNewSession, req.Prompt, userMsg.ID)
+		s.finalizeChatSideEffects(db, session, isNewSession, promptContent, userMsg.ID)
 	}()
 
 	return msgChan, session.ID, aiMsg.ID, nil

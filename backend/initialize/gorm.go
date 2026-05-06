@@ -29,6 +29,8 @@ func Gorm() *gorm.DB {
 		sqlDB.SetMaxOpenConns(m.MaxOpenConns)
 		// 自动迁移表
 		err = db.AutoMigrate(
+			&model.AIAgentConfig{},
+			&model.MessageAttachment{},
 			&model.User{},
 			&model.Subject{},
 			&model.SubjectCategory{},
@@ -42,7 +44,7 @@ func Gorm() *gorm.DB {
 			&model.KnowledgeContent{},
 			&model.UserStudyNote{},
 			&model.UserStudyStatus{},
-			&model.Image{},
+			&model.File{},
 			&model.NoteShare{},
 			&model.UserNodeDifficulty{},
 			&model.UserActivityLog{},

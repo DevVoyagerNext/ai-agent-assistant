@@ -1,12 +1,25 @@
 package dto
 
+// AIChatFile AI 聊天文件信息
+type AIChatFile struct {
+	FileURL  string `json:"file_url"`  // 文件下载链接/存储路径
+	FileName string `json:"file_name"` // 文件名
+	FileType string `json:"file_type"` // 文件类型 (如: image/png, application/pdf等)
+	FileSize int64  `json:"file_size"` // 文件大小 (Byte)
+}
+
 // AIChatReq AI 聊天请求参数
 type AIChatReq struct {
-	Prompt         string `json:"prompt" form:"prompt" binding:"required,max=1000"`
-	SessionID      int64  `json:"sessionId" form:"sessionId"`                                        // 可选，不传或为0表示新会话
+	SkillID   string       `json:"skill_id" form:"skill_id"`                                 // 核心：功能标识，比如"wrong_question"、"essay_correct"、"feynman"
+	UserInput string       `json:"user_input" form:"user_input" binding:"required,max=5000"` // 用户输入的文本
+	SessionID string       `json:"session_id" form:"session_id"`                             // 会话ID，用于上下文传递
+	Files     []AIChatFile `json:"files" form:"files"`                                       // 用户上传的图片/文档/PDF详细信息
+
+	// 以下为兼容旧版预留参数
+	Prompt         string `json:"prompt" form:"prompt"`                                              // 旧版参数
 	ParentID       *int64 `json:"parentId" form:"parentId"`                                          // 可选，用于分支对话
-	CurrentPageURL string `json:"currentPageUrl" form:"currentPageUrl" binding:"omitempty,max=2048"` // 可选，当前网页链接（AI 可用它决定是否抓取网页）
-	SelectedText   string `json:"selectedText" form:"selectedText" binding:"omitempty,max=5000"`     // 可选，用户选中的文本（AI 可优先总结这段）
+	CurrentPageURL string `json:"currentPageUrl" form:"currentPageUrl" binding:"omitempty,max=2048"` // 可选，当前网页链接
+	SelectedText   string `json:"selectedText" form:"selectedText" binding:"omitempty,max=5000"`     // 可选，用户选中的文本
 }
 
 // ChatStreamChunk 用于流式返回时区分工具状态、思考过程和正式回复

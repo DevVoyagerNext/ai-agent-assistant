@@ -38,6 +38,7 @@ import {
 } from '../utils/nodeProgress'
 import { NOTE_MAX_LENGTH, validateNoteContent } from '../utils/noteValidation'
 import { getAISessions, getAISessionMessages } from '../api/ai'
+import { uploadFile } from '../api/file'
 import { 
   FileText, ArrowLeft, 
   Edit3, BookOpen, 
@@ -50,7 +51,7 @@ import {
   Send, Bot, User, Sparkles, ChevronUp,
   ArrowUpCircle, ArrowDownCircle, Wrench
 } from 'lucide-vue-next'
-import type { AIChatMessage, AIChatSession } from '../types/ai'
+import type { AIChatMessage, AIChatSession, AIChatFile } from '../types/ai'
 
 const route = useRoute()
 const router = useRouter()
@@ -1060,6 +1061,13 @@ const sendAIMessage = async () => {
   try {
     const token = localStorage.getItem('token') || ''
     const reqData = new FormData()
+    
+    // 新版字段
+    reqData.append('user_input', prompt)
+    if (currentSessionId.value) reqData.append('session_id', currentSessionId.value.toString())
+
+    // 附件处理（SubjectDetail.vue 暂无 UI 上传文件，但保留逻辑一致性）
+    // 兼容旧版参数
     reqData.append('prompt', prompt)
     if (currentSessionId.value) reqData.append('sessionId', currentSessionId.value.toString())
     if (parentId) reqData.append('parentId', parentId.toString())

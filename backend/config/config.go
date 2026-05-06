@@ -8,4 +8,5 @@ type Server struct {
 	Email  Email  `mapstructure:"email" json:"email" yaml:"email"`
 	Log    Log    `mapstructure:"log" json:"log" yaml:"log"`
 	AI     AI     `mapstructure:"ai" json:"ai" yaml:"ai"`
+	Qiniu  Qiniu  `mapstructure:"qiniu" json:"qiniu" yaml:"qiniu"`
 }

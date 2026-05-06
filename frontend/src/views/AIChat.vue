@@ -10,15 +10,65 @@ import {
   getAISessionMessages, 
   updateAISessionTitle 
 } from '../api/ai'
-import type { AIChatSession, AIChatMessage } from '../types/ai'
+import { uploadFile } from '../api/file'
+import type { AIChatSession, AIChatMessage, AIChatFile } from '../types/ai'
 import {
   Plus, MessageSquare, Send, Edit3, 
   Loader2, ArrowLeft, Bot, User, Sparkles, ChevronDown, ChevronUp,
-  ArrowUpCircle, ArrowDownCircle, Copy, Wrench
+  ArrowUpCircle, ArrowDownCircle, Copy, Wrench, FileText, Upload, X
 } from 'lucide-vue-next'
 
 const router = useRouter()
 const route = useRoute()
+
+// ===== Special Agents =====
+const specialAgents = [
+  {
+    id: 'resume_interview',
+    name: '简历面试官',
+    description: '基于简历生成深度面试题',
+    icon: FileText,
+    placeholder: '请上传简历，我将为你生成针对性的面试题...',
+    welcome: '你好！我是简历面试官。请上传你的简历（PDF/Docx/Txt），我将结合你的简历和相关技术资料，为你生成一套深度的面试题。'
+  }
+]
+
+const currentSkillId = ref<string | null>(null)
+const selectedFiles = ref<File[]>([])
+
+const selectAgent = (skillId: string | null) => {
+  if (currentSkillId.value === skillId) return
+  currentSkillId.value = skillId
+  
+  // 如果切换到专项 Agent 且没有消息，显示欢迎语
+  if (skillId && messages.value.length === 0) {
+    const agent = specialAgents.find(a => a.id === skillId)
+    if (agent) {
+      messages.value.push({
+        id: Date.now(),
+        sessionId: 0,
+        parentId: null,
+        role: 'assistant',
+        content: agent.welcome,
+        status: 'active',
+        createdAt: new Date().toISOString()
+      })
+    }
+  }
+}
+
+const handleFileUpload = (e: Event) => {
+  const target = e.target as HTMLInputElement
+  if (target.files) {
+    const files = Array.from(target.files)
+    selectedFiles.value = [...selectedFiles.value, ...files]
+  }
+  target.value = ''
+}
+
+const removeFile = (index: number) => {
+  selectedFiles.value.splice(index, 1)
+}
 
 const md = markdownit({
   breaks: true,
@@ -624,6 +674,39 @@ const sendMessage = async () => {
   messages.value.push(userMsg)
   
   const reqData = new FormData()
+  // 新版字段
+  reqData.append('user_input', prompt)
+  if (currentSessionId.value) {
+    reqData.append('session_id', currentSessionId.value.toString())
+  }
+  if (currentSkillId.value) {
+    reqData.append('skill_id', currentSkillId.value)
+  }
+  
+  // 附件处理：先上传到服务器，再将元信息传给 AI
+  if (selectedFiles.value.length > 0) {
+    isSending.value = true
+    try {
+      const uploadPromises = selectedFiles.value.map(file => uploadFile(file))
+      const uploadResults = await Promise.all(uploadPromises)
+      
+      const uploadedFiles: AIChatFile[] = uploadResults.map(res => ({
+        file_url: res.data.data.filePath,
+        file_name: res.data.data.fileName,
+        file_type: res.data.data.FileType,
+        file_size: res.data.data.fileSize
+      }))
+      
+      reqData.append('files_info', JSON.stringify(uploadedFiles))
+    } catch (error) {
+      console.error('文件上传失败', error)
+      alert('文件上传失败，请稍后再试')
+      isSending.value = false
+      return
+    }
+  }
+  
+  // 兼容旧版参数
   reqData.append('prompt', prompt)
   if (currentSessionId.value) {
     reqData.append('sessionId', currentSessionId.value.toString())
@@ -634,6 +717,7 @@ const sendMessage = async () => {
   appendAIContext(reqData)
   
   inputContent.value = ''
+  selectedFiles.value = [] // 发送后清空
   isSending.value = true
   nextTick(() => adjustTextareaHeight())
   
@@ -855,6 +939,31 @@ const adjustTextareaHeight = () => {
         </button>
       </div>
 
+      <!-- Specialized Agents Section -->
+      <div class="agents-section">
+        <div class="section-label">智能体</div>
+        <div class="agent-list">
+          <div 
+            class="agent-item" 
+            :class="{ active: currentSkillId === null }"
+            @click="selectAgent(null)"
+          >
+            <Sparkles :size="16" class="agent-icon" />
+            <span class="agent-name">通用助手</span>
+          </div>
+          <div 
+            v-for="agent in specialAgents" 
+            :key="agent.id"
+            class="agent-item"
+            :class="{ active: currentSkillId === agent.id }"
+            @click="selectAgent(agent.id)"
+          >
+            <component :is="agent.icon" :size="16" class="agent-icon" />
+            <span class="agent-name">{{ agent.name }}</span>
+          </div>
+        </div>
+      </div>
+
       <div class="session-list" @scroll="handleScrollSessions">
         <div 
           v-for="session in sessions" 
@@ -1010,25 +1119,40 @@ const adjustTextareaHeight = () => {
       </div>
 
       <div class="chat-input-area">
+        <!-- File Preview Area -->
+        <div v-if="selectedFiles.length > 0" class="file-preview-list">
+          <div v-for="(file, index) in selectedFiles" :key="index" class="file-preview-item">
+            <FileText :size="14" />
+            <span class="file-name">{{ file.name }}</span>
+            <button class="remove-file-btn" @click="removeFile(index)">
+              <X :size="14" />
+            </button>
+          </div>
+        </div>
+
         <div class="input-box">
           <textarea 
             ref="chatInputRef"
             v-model="inputContent"
             class="chat-textarea"
-            placeholder="给 AI 助手发送消息..."
+            :placeholder="currentSkillId ? specialAgents.find(a => a.id === currentSkillId)?.placeholder : '给 AI 助手发送消息...'"
             rows="2"
             @keydown="handleTextareaKeydown"
             @input="adjustTextareaHeight"
           ></textarea>
           
           <div class="input-actions">
-            <!-- Occupy left space to keep right-aligned flex layout looking balanced or simply justify-content: flex-end -->
-            <div class="spacer"></div>
+            <div class="left-actions">
+              <label v-if="currentSkillId === 'resume_interview'" class="upload-btn" title="上传简历">
+                <input type="file" hidden @change="handleFileUpload" accept=".pdf,.docx,.doc,.txt,.md" />
+                <Upload :size="18" />
+              </label>
+            </div>
             
             <button 
               class="send-btn" 
-              :class="{ active: inputContent.trim() && !isSending }"
-              :disabled="isSending || !inputContent.trim()"
+              :class="{ active: (inputContent.trim() || selectedFiles.length > 0) && !isSending }"
+              :disabled="isSending || (!inputContent.trim() && selectedFiles.length === 0)"
               @click="sendMessage"
             >
               <Send :size="18" />
@@ -1219,6 +1343,129 @@ const adjustTextareaHeight = () => {
 
 @keyframes spin {
   100% { transform: rotate(360deg); }
+}
+
+/* ===== Specialized Agents ===== */
+.agents-section {
+  padding: 12px 16px;
+  border-bottom: 1px solid rgba(0,0,0,0.05);
+}
+
+.section-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: #a1a1aa;
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.agent-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.agent-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  color: #52525b;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.agent-item:hover {
+  background: rgba(0,0,0,0.04);
+}
+
+.agent-item.active {
+  background: #3b82f6;
+  color: #ffffff;
+}
+
+.agent-icon {
+  flex-shrink: 0;
+}
+
+.agent-name {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+/* ===== File Upload & Preview ===== */
+.file-preview-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+  width: calc(100% - 98px);
+  max-width: 752px;
+  margin-right: 98px;
+}
+
+.file-preview-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #f8fafc;
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-size: 13px;
+  color: #475569;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+}
+
+.file-name {
+  max-width: 160px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 500;
+}
+
+.remove-file-btn {
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.remove-file-btn:hover {
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.1);
+}
+
+.left-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.upload-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  color: #64748b;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.upload-btn:hover {
+  background: #f1f5f9;
+  color: #3b82f6;
 }
 
 /* ===== Main Chat Area ===== */

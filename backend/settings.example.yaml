@@ -49,3 +49,10 @@ ai:
   model: "Pro/moonshotai/Kimi-K2.5"
   allow-intranet-fetch: false
   allow-localhost-fetch: false
+
+qiniu:
+  access-key: "your_qiniu_access_key"
+  secret-key: "your_qiniu_secret_key"
+  bucket: "your_bucket_name"
+  domain: "your_bucket_domain"
+  zone: "your_bucket_zone"
