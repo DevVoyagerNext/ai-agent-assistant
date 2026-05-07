@@ -70,6 +70,17 @@ const removeFile = (index: number) => {
   selectedFiles.value.splice(index, 1)
 }
 
+const showAgentMenu = ref(false)
+
+const toggleAgentMenu = () => {
+  showAgentMenu.value = !showAgentMenu.value
+}
+
+const selectAgentAndClose = (skillId: string | null) => {
+  selectAgent(skillId)
+  showAgentMenu.value = false
+}
+
 const md = markdownit({
   breaks: true,
   linkify: true,
@@ -678,6 +689,22 @@ const sendMessage = async () => {
   
   messages.value.push(userMsg)
   
+  // 提前创建空的 assistantMsg 以展示 loading 状态
+  const assistantMsgId = Date.now() + 1
+  const assistantMsg = reactive<AIChatMessage>({
+    id: assistantMsgId,
+    sessionId: currentSessionId.value || 0,
+    parentId: tempId,
+    role: 'assistant',
+    content: '',
+    reasoning: '',
+    status: 'active',
+    createdAt: new Date().toISOString()
+  })
+  messages.value.push(assistantMsg)
+  scrollToBottom()
+
+  isSending.value = true
   const reqData = new FormData()
   // 新版字段
   reqData.append('user_input', prompt)
@@ -690,7 +717,6 @@ const sendMessage = async () => {
   
   // 附件处理：先上传到服务器，再将元信息传给 AI
   if (selectedFiles.value.length > 0) {
-    isSending.value = true
     try {
       const uploadPromises = selectedFiles.value.map(file => uploadFile(file))
       const uploadResults = await Promise.all(uploadPromises)
@@ -699,7 +725,7 @@ const sendMessage = async () => {
         file_id: res.data.data.id,
         file_url: res.data.data.filePath,
         file_name: res.data.data.fileName,
-        file_type: res.data.data.fileType,
+        file_type: res.data.data.FileType, // Note: your file API uses FileType (capital F)
         file_size: res.data.data.fileSize
       }))
       
@@ -707,6 +733,7 @@ const sendMessage = async () => {
     } catch (error) {
       console.error('文件上传失败', error)
       alert('文件上传失败，请稍后再试')
+      messages.value.pop() // 移除刚才添加的空的 assistantMsg
       isSending.value = false
       return
     }
@@ -724,25 +751,8 @@ const sendMessage = async () => {
   
   inputContent.value = ''
   selectedFiles.value = [] // 发送后清空
-  isSending.value = true
   nextTick(() => adjustTextareaHeight())
   
-  // Create an empty assistant message for streaming
-  const assistantMsgId = Date.now() + 1
-  const assistantMsg = reactive<AIChatMessage>({
-    id: assistantMsgId,
-    sessionId: currentSessionId.value || 0,
-    parentId: tempId,
-    role: 'assistant',
-    content: '',
-    reasoning: '',
-    status: 'active',
-    createdAt: new Date().toISOString()
-  })
-  messages.value.push(assistantMsg)
-  
-  scrollToBottom()
-
   activeChatAbortController?.abort()
   const abortController = new AbortController()
   activeChatAbortController = abortController
@@ -775,6 +785,23 @@ const sendMessage = async () => {
     const decoder = new TextDecoder('utf-8')
     let sseBuffer = ''
 
+    // 因为前面提前创建了 assistantMsg，我们需要找到它来更新状态
+    let currentAssistantMsg = messages.value[messages.value.length - 1]
+    if (!currentAssistantMsg || currentAssistantMsg.role !== 'assistant') {
+        // Fallback: 如果没有找到，再创建一个
+        currentAssistantMsg = reactive<AIChatMessage>({
+            id: Date.now() + 1,
+            sessionId: currentSessionId.value || 0,
+            parentId: tempId,
+            role: 'assistant',
+            content: '',
+            reasoning: '',
+            status: 'active',
+            createdAt: new Date().toISOString()
+        })
+        messages.value.push(currentAssistantMsg)
+    }
+
     while (true) {
       const { value, done } = await reader.read()
       if (done) break
@@ -790,8 +817,8 @@ const sendMessage = async () => {
             continue
           }
 
-          assistantMsg.sessionId = data.sessionId
-          assistantMsg.id = data.messageId
+          currentAssistantMsg.sessionId = data.sessionId
+          currentAssistantMsg.id = data.messageId
           userMsg.sessionId = data.sessionId
           currentSessionId.value = data.sessionId
 
@@ -800,26 +827,31 @@ const sendMessage = async () => {
           }
           void loadSessions(true)
         } else if (event.event === 'message') {
-          enqueueStreamText(assistantMsg, 'content', normalizeMessageChunk(event.data))
+          enqueueStreamText(currentAssistantMsg, 'content', normalizeMessageChunk(event.data))
         } else if (event.event === 'reasoning') {
-          enqueueStreamText(assistantMsg, 'reasoning', normalizeMessageChunk(event.data))
+          enqueueStreamText(currentAssistantMsg, 'reasoning', normalizeMessageChunk(event.data))
         } else if (event.event === 'tool') {
           const toolText = normalizeMessageChunk(event.data)
-          if (!assistantMsg.toolLogs) {
-            assistantMsg.toolLogs = []
+          if (!currentAssistantMsg.toolLogs) {
+            currentAssistantMsg.toolLogs = []
           }
-          assistantMsg.toolLogs.push(toolText)
+          currentAssistantMsg.toolLogs.push(toolText)
           scrollToBottom()
           await waitForStreamPaint()
         } else if (event.event === 'done') {
           streamFinished = true
-          await waitForStreamQueueDrain(assistantMsg)
+          await waitForStreamQueueDrain(currentAssistantMsg)
           isSending.value = false
           
           // Check for download URL in the final message content
-          const downloadUrl = extractPdfDownloadUrl(assistantMsg.content)
+          const downloadUrl = extractPdfDownloadUrl(currentAssistantMsg.content)
           triggerPdfDownload(downloadUrl)
           
+          // 如果刚刚使用的是简历面试官，执行完一次后自动切回通用助手
+          if (currentSkillId.value === 'resume_interview') {
+            currentSkillId.value = null
+          }
+
           abortController.abort()
           return
         }
@@ -943,31 +975,6 @@ const adjustTextareaHeight = () => {
           <Plus :size="16" />
           <span>新对话</span>
         </button>
-      </div>
-
-      <!-- Specialized Agents Section -->
-      <div class="agents-section">
-        <div class="section-label">智能体</div>
-        <div class="agent-list">
-          <div 
-            class="agent-item" 
-            :class="{ active: currentSkillId === null }"
-            @click="selectAgent(null)"
-          >
-            <Sparkles :size="16" class="agent-icon" />
-            <span class="agent-name">通用助手</span>
-          </div>
-          <div 
-            v-for="agent in specialAgents" 
-            :key="agent.id"
-            class="agent-item"
-            :class="{ active: currentSkillId === agent.id }"
-            @click="selectAgent(agent.id)"
-          >
-            <component :is="agent.icon" :size="16" class="agent-icon" />
-            <span class="agent-name">{{ agent.name }}</span>
-          </div>
-        </div>
       </div>
 
       <div class="session-list" @scroll="handleScrollSessions">
@@ -1125,30 +1132,68 @@ const adjustTextareaHeight = () => {
       </div>
 
       <div class="chat-input-area">
-        <!-- File Preview Area -->
-        <div v-if="selectedFiles.length > 0" class="file-preview-list">
-          <div v-for="(file, index) in selectedFiles" :key="index" class="file-preview-item">
-            <FileText :size="14" />
-            <span class="file-name">{{ file.name }}</span>
-            <button class="remove-file-btn" @click="removeFile(index)">
-              <X :size="14" />
-            </button>
+        <!-- File Preview Area (Inside Input Box Context) -->
+        <div class="input-box" :class="{ 'has-files': selectedFiles.length > 0 }">
+          <div v-if="selectedFiles.length > 0" class="file-preview-list">
+            <div v-for="(file, index) in selectedFiles" :key="index" class="file-preview-item">
+              <FileText :size="14" />
+              <span class="file-name">{{ file.name }}</span>
+              <button class="remove-file-btn" @click="removeFile(index)">
+                <X :size="14" />
+              </button>
+            </div>
           </div>
-        </div>
 
-        <div class="input-box">
           <textarea 
             ref="chatInputRef"
             v-model="inputContent"
             class="chat-textarea"
             :placeholder="currentSkillId ? specialAgents.find(a => a.id === currentSkillId)?.placeholder : '给 AI 助手发送消息...'"
-            rows="2"
+            rows="1"
             @keydown="handleTextareaKeydown"
             @input="adjustTextareaHeight"
           ></textarea>
           
           <div class="input-actions">
             <div class="left-actions">
+              <!-- Agent Selector Dropdown -->
+              <div class="agent-selector">
+                <button 
+                  class="agent-select-btn" 
+                  :class="{ 'is-special': currentSkillId !== null }"
+                  @click="toggleAgentMenu"
+                >
+                  <component :is="currentSkillId ? specialAgents.find(a => a.id === currentSkillId)?.icon : Sparkles" :size="16" />
+                  <span>{{ currentSkillId ? specialAgents.find(a => a.id === currentSkillId)?.name : '通用助手' }}</span>
+                  <ChevronUp :size="14" class="dropdown-icon" :class="{ 'is-open': showAgentMenu }" />
+                </button>
+                
+                <!-- Dropdown Menu -->
+                <div v-if="showAgentMenu" class="agent-menu">
+                  <div class="agent-menu-item" :class="{ active: currentSkillId === null }" @click="selectAgentAndClose(null)">
+                    <Sparkles :size="16" class="agent-icon" />
+                    <div class="agent-info">
+                      <span class="agent-name">通用助手</span>
+                      <span class="agent-desc">解答编程问题、分析代码等通用能力</span>
+                    </div>
+                  </div>
+                  <div 
+                    v-for="agent in specialAgents" 
+                    :key="agent.id"
+                    class="agent-menu-item"
+                    :class="{ active: currentSkillId === agent.id }"
+                    @click="selectAgentAndClose(agent.id)"
+                  >
+                    <component :is="agent.icon" :size="16" class="agent-icon" />
+                    <div class="agent-info">
+                      <span class="agent-name">{{ agent.name }}</span>
+                      <span class="agent-desc">{{ agent.description }}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Upload Button -->
               <label v-if="currentSkillId === 'resume_interview'" class="upload-btn" title="上传简历">
                 <input type="file" hidden @change="handleFileUpload" accept=".pdf,.docx,.doc,.txt,.md" />
                 <Upload :size="18" />
@@ -1699,6 +1744,29 @@ const adjustTextareaHeight = () => {
   color: #475569;
 }
 
+.typing {
+  display: flex;
+  gap: 4px;
+  padding: 4px 8px;
+}
+
+.dot {
+  width: 6px;
+  height: 6px;
+  background: #cbd5e1;
+  border-radius: 50%;
+  animation: typing 1.4s infinite ease-in-out;
+}
+
+.dot:nth-child(1) { animation-delay: 0s; }
+.dot:nth-child(2) { animation-delay: 0.2s; }
+.dot:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes typing {
+  0%, 100% { transform: translateY(0); opacity: 0.5; }
+  50% { transform: translateY(-4px); opacity: 1; }
+}
+
 .message-bubble {
   padding: 12px 16px;
   border-radius: 12px;
@@ -1833,12 +1901,8 @@ const adjustTextareaHeight = () => {
 
 /* Typing Cursor Effect */
 .is-streaming::after {
-  content: '▋';
-  display: inline-block;
-  animation: blink 1s step-end infinite;
-  color: #3b82f6;
-  margin-left: 2px;
-  vertical-align: baseline;
+  content: ''; /* 去除蓝色的打字光标 */
+  display: none;
 }
 
 @keyframes blink {
@@ -1999,14 +2063,118 @@ const adjustTextareaHeight = () => {
   gap: 8px;
   background: #ffffff;
   border: 1px solid rgba(0,0,0,0.05);
-  border-radius: 30px;
-  padding: 15px 16px 12px 20px;
+  border-radius: 20px;
+  padding: 12px 16px 12px 20px;
   width: calc(100% - 98px);
   max-width: 752px;
   margin-right: 98px;
   box-sizing: border-box;
   box-shadow: 0 4px 10px rgba(0, 0, 0, 0.08);
   transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.input-box.has-files {
+  border-radius: 16px;
+}
+
+.agent-selector {
+  position: relative;
+}
+
+.agent-select-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: #64748b;
+  padding: 4px 10px;
+  border-radius: 16px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.agent-select-btn:hover {
+  background: #f1f5f9;
+}
+
+.agent-select-btn.is-special {
+  color: #3b82f6;
+  background: #eff6ff;
+  font-weight: 500;
+}
+
+.dropdown-icon {
+  transition: transform 0.2s;
+}
+
+.dropdown-icon.is-open {
+  transform: rotate(180deg);
+}
+
+.agent-menu {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  background: #ffffff;
+  border-radius: 12px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+  border: 1px solid #e2e8f0;
+  padding: 8px;
+  min-width: 240px;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.agent-menu-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.agent-menu-item:hover {
+  background: #f8fafc;
+}
+
+.agent-menu-item.active {
+  background: #eff6ff;
+}
+
+.agent-menu-item.active .agent-name {
+  color: #3b82f6;
+}
+
+.agent-menu-item .agent-icon {
+  margin-top: 2px;
+  color: #64748b;
+}
+
+.agent-menu-item.active .agent-icon {
+  color: #3b82f6;
+}
+
+.agent-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.agent-info .agent-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: #334155;
+}
+
+.agent-info .agent-desc {
+  font-size: 12px;
+  color: #94a3b8;
 }
 
 .input-box:focus-within {
