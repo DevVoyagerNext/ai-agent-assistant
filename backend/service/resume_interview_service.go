@@ -89,6 +89,10 @@ func (s *AIService) buildResumeInterviewContext(ctx context.Context, req dto.AIC
 }
 
 func (s *AIService) prepareResumeKnowledge(ctx context.Context, req dto.AIChatReq) (resumeKnowledgeBundle, error) {
+	if len(req.Files) == 0 {
+		return resumeKnowledgeBundle{}, errors.New("未上传简历文件，请先上传文件后再生成面试题")
+	}
+
 	emitAIToolEvent(ctx, "正在解析简历附件...")
 	fileContexts, resumeText, notices := s.extractResumeFiles(ctx, req.Files)
 	resumeText = strings.TrimSpace(resumeText)
@@ -111,6 +115,16 @@ func (s *AIService) prepareResumeKnowledge(ctx context.Context, req dto.AIChatRe
 		References:   references,
 		Notices:      notices,
 	}, nil
+}
+
+func validateResumeKnowledgeBundle(bundle resumeKnowledgeBundle) error {
+	if len(bundle.FileContexts) == 0 {
+		return errors.New("未上传简历文件，请先上传文件后再生成面试题")
+	}
+	if strings.TrimSpace(bundle.ResumeText) != "" {
+		return nil
+	}
+	return errors.New("文件解析失败，请重新上传清晰且可读取的简历文件")
 }
 
 func (s *AIService) renderResumeKnowledgeBundle(bundle resumeKnowledgeBundle) string {
@@ -169,15 +183,11 @@ func (s *AIService) renderResumeKnowledgeBundle(bundle resumeKnowledgeBundle) st
 	return builder.String()
 }
 
-func (s *AIService) executeResumeInterviewAgents(ctx context.Context, req dto.AIChatReq) (string, error) {
+func (s *AIService) executeResumeInterviewAgents(ctx context.Context, req dto.AIChatReq, bundle resumeKnowledgeBundle) (string, error) {
 	if !isResumeInterviewSkill(req.SkillID) {
 		return "", errors.New("当前技能不是简历面试场景")
 	}
 
-	bundle, err := s.prepareResumeKnowledge(ctx, req)
-	if err != nil {
-		return "", err
-	}
 	rawContext := s.renderResumeKnowledgeBundle(bundle)
 	emitAIToolEvent(ctx, "简历资料整理完成")
 

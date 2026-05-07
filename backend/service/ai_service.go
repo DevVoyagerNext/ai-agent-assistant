@@ -543,6 +543,7 @@ func (s *AIService) Chat(ctx context.Context, userId uint, req dto.AIChatReq) (<
 	var session model.Session
 	db := global.GVA_DB.WithContext(ctx)
 	isNewSession := false
+	var resumeBundle *resumeKnowledgeBundle
 
 	// 兼容处理 SessionID
 	var reqSessionID int64
@@ -551,8 +552,31 @@ func (s *AIService) Chat(ctx context.Context, userId uint, req dto.AIChatReq) (<
 		reqSessionID = parsed
 	}
 
+	if reqSessionID != 0 {
+		// 有 sessionId 时查找会话
+		if err := db.Where("id = ? AND user_id = ? AND is_deleted = false", reqSessionID, userId).First(&session).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil, 0, 0, errors.New("会话不存在或无权访问")
+			}
+			return nil, 0, 0, errors.New("查询会话失败")
+		}
+	}
+
+	req.Files = s.normalizeChatFiles(ctx, userId, req.Files)
+
+	if isResumeInterviewSkill(req.SkillID) {
+		bundle, err := s.prepareResumeKnowledge(ctx, req)
+		if err != nil {
+			return nil, 0, 0, err
+		}
+		if err := validateResumeKnowledgeBundle(bundle); err != nil {
+			return nil, 0, 0, err
+		}
+		resumeBundle = &bundle
+	}
+
 	if reqSessionID == 0 {
-		// 1. 无 sessionId 时创建新会话
+		// 无 sessionId 时创建新会话
 		isNewSession = true
 		session = model.Session{
 			UserID:  int64(userId),
@@ -563,17 +587,7 @@ func (s *AIService) Chat(ctx context.Context, userId uint, req dto.AIChatReq) (<
 			global.GVA_LOG.Error("Failed to create AI session", zap.Error(err))
 			return nil, 0, 0, errors.New("创建会话失败")
 		}
-	} else {
-		// 2. 有 sessionId 时查找会话 (增加 is_deleted = false 校验)
-		if err := db.Where("id = ? AND user_id = ? AND is_deleted = false", reqSessionID, userId).First(&session).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return nil, 0, 0, errors.New("会话不存在或无权访问")
-			}
-			return nil, 0, 0, errors.New("查询会话失败")
-		}
 	}
-
-	req.Files = s.normalizeChatFiles(ctx, userId, req.Files)
 
 	// 记录数据库的用户输入（如果兼容老参数，则合并判断）
 	promptContent := strings.TrimSpace(req.UserInput)
@@ -636,7 +650,7 @@ func (s *AIService) Chat(ctx context.Context, userId uint, req dto.AIChatReq) (<
 		go func() {
 			defer close(msgChan)
 
-			finalAnswer, err := s.executeResumeInterviewAgents(agentCtx, req)
+			finalAnswer, err := s.executeResumeInterviewAgents(agentCtx, req, *resumeBundle)
 			if err != nil {
 				global.GVA_LOG.Error("resume interview multi-agent failed", zap.Error(err))
 				msgChan <- dto.ChatStreamChunk{Type: "tool", Content: "简历面试 Agent 执行失败，请稍后重试"}
