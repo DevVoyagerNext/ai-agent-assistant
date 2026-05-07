@@ -88,7 +88,16 @@ type MessageItemRes struct {
 	Role      string `json:"role"`
 	Content   string `json:"content"`
 	Status    string `json:"status"`
+	Files     []MessageFileRes `json:"files"`
 	CreatedAt string `json:"createdAt"`
+}
+
+// MessageFileRes 历史消息中的附件信息
+type MessageFileRes struct {
+	FileURL  string `json:"file_url"`
+	FileName string `json:"file_name"`
+	FileType string `json:"file_type"`
+	FileSize int64  `json:"file_size"`
 }
 
 // MessageListRes 消息列表响应（游标分页）

@@ -127,6 +127,22 @@ func validateResumeKnowledgeBundle(bundle resumeKnowledgeBundle) error {
 	return errors.New("文件解析失败，请重新上传清晰且可读取的简历文件")
 }
 
+func buildResumeFallbackReply(err error) string {
+	if err == nil {
+		return "这次简历处理暂时失败了，请重新上传简历文件后再试。"
+	}
+
+	errText := strings.TrimSpace(err.Error())
+	switch {
+	case strings.Contains(errText, "未上传简历文件"):
+		return "我还没有收到你的简历文件，暂时无法为你生成面试题。请先上传一份简历文件后再试，支持 PDF、DOCX、TXT、Markdown 等格式。"
+	case strings.Contains(errText, "文件解析失败"):
+		return "我已经收到你的文件，但这次简历解析失败了，暂时无法继续生成面试题。请重新上传清晰且可读取的简历文件后再试，建议优先使用 PDF、DOCX、TXT 或 Markdown 格式。"
+	default:
+		return "这次简历处理失败了，暂时无法生成面试题。请重新上传简历文件后再试。"
+	}
+}
+
 func (s *AIService) renderResumeKnowledgeBundle(bundle resumeKnowledgeBundle) string {
 	var builder strings.Builder
 	builder.WriteString("【专项任务】你正在执行“根据候选人简历生成面试题”的任务。\n")

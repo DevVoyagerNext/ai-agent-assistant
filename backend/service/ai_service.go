@@ -513,6 +513,30 @@ func (s *AIService) GetSessionMessages(ctx context.Context, userId uint, session
 		messages[i], messages[opp] = messages[opp], messages[i]
 	}
 
+	messageIDs := make([]int64, 0, len(messages))
+	for _, msg := range messages {
+		messageIDs = append(messageIDs, msg.ID)
+	}
+
+	attachmentMap := make(map[int64][]dto.MessageFileRes, len(messages))
+	if len(messageIDs) > 0 {
+		var attachments []model.MessageAttachment
+		if err := db.Where("session_id = ? AND message_id IN ?", sessionId, messageIDs).
+			Order("id asc").
+			Find(&attachments).Error; err != nil {
+			return dto.MessageListRes{}, err
+		}
+
+		for _, attachment := range attachments {
+			attachmentMap[attachment.MessageID] = append(attachmentMap[attachment.MessageID], dto.MessageFileRes{
+				FileURL:  utils.CleanQiniuFileURL(utils.GetQiniuDownloadURL(attachment.FileKey)),
+				FileName: attachment.FileName,
+				FileType: attachment.FileType,
+				FileSize: attachment.FileSize,
+			})
+		}
+	}
+
 	var list []dto.MessageItemRes
 	for _, msg := range messages {
 		list = append(list, dto.MessageItemRes{
@@ -522,6 +546,7 @@ func (s *AIService) GetSessionMessages(ctx context.Context, userId uint, session
 			Role:      msg.Role,
 			Content:   msg.Content,
 			Status:    msg.Status,
+			Files:     attachmentMap[msg.ID],
 			CreatedAt: msg.CreatedAt.Format(time.RFC3339),
 		})
 	}
@@ -543,7 +568,6 @@ func (s *AIService) Chat(ctx context.Context, userId uint, req dto.AIChatReq) (<
 	var session model.Session
 	db := global.GVA_DB.WithContext(ctx)
 	isNewSession := false
-	var resumeBundle *resumeKnowledgeBundle
 
 	// 兼容处理 SessionID
 	var reqSessionID int64
@@ -563,17 +587,6 @@ func (s *AIService) Chat(ctx context.Context, userId uint, req dto.AIChatReq) (<
 	}
 
 	req.Files = s.normalizeChatFiles(ctx, userId, req.Files)
-
-	if isResumeInterviewSkill(req.SkillID) {
-		bundle, err := s.prepareResumeKnowledge(ctx, req)
-		if err != nil {
-			return nil, 0, 0, err
-		}
-		if err := validateResumeKnowledgeBundle(bundle); err != nil {
-			return nil, 0, 0, err
-		}
-		resumeBundle = &bundle
-	}
 
 	if reqSessionID == 0 {
 		// 无 sessionId 时创建新会话
@@ -650,7 +663,23 @@ func (s *AIService) Chat(ctx context.Context, userId uint, req dto.AIChatReq) (<
 		go func() {
 			defer close(msgChan)
 
-			finalAnswer, err := s.executeResumeInterviewAgents(agentCtx, req, *resumeBundle)
+			bundle, err := s.prepareResumeKnowledge(agentCtx, req)
+			if err != nil {
+				fallbackReply := buildResumeFallbackReply(err)
+				s.emitStreamChunks(msgChan, "message", fallbackReply)
+				global.GVA_DB.Model(&model.Message{}).Where("id = ?", aiMsg.ID).Update("content", fallbackReply)
+				s.finalizeChatSideEffects(db, session, isNewSession, promptContent, userMsg.ID)
+				return
+			}
+			if err := validateResumeKnowledgeBundle(bundle); err != nil {
+				fallbackReply := buildResumeFallbackReply(err)
+				s.emitStreamChunks(msgChan, "message", fallbackReply)
+				global.GVA_DB.Model(&model.Message{}).Where("id = ?", aiMsg.ID).Update("content", fallbackReply)
+				s.finalizeChatSideEffects(db, session, isNewSession, promptContent, userMsg.ID)
+				return
+			}
+
+			finalAnswer, err := s.executeResumeInterviewAgents(agentCtx, req, bundle)
 			if err != nil {
 				global.GVA_LOG.Error("resume interview multi-agent failed", zap.Error(err))
 				msgChan <- dto.ChatStreamChunk{Type: "tool", Content: "简历面试 Agent 执行失败，请稍后重试"}
