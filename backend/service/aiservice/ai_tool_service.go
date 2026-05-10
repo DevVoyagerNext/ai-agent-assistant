@@ -594,12 +594,6 @@ func buildPDFFileName(title string) string {
 }
 
 func renderSummaryPDF(filePath, title, sourceURL, content string) error {
-	fontPath, err := findCJKFontPath()
-	if err != nil {
-		global.GVA_LOG.Error("查找中文字体失败", zap.Error(err))
-		return err
-	}
-
 	pdf := gopdf.GoPdf{}
 	pdf.Start(gopdf.Config{
 		PageSize: *gopdf.PageSizeA4,
@@ -608,10 +602,12 @@ func renderSummaryPDF(filePath, title, sourceURL, content string) error {
 	pdf.SetMargins(pdfMarginLeftMM, pdfMarginTopMM, pdfMarginRightMM, pdfMarginBottomMM)
 	pdf.AddPage()
 
-	if err := pdf.AddTTFFont("ai_summary_font", fontPath); err != nil {
-		global.GVA_LOG.Error("加载 PDF 字体失败", zap.Error(err), zap.String("fontPath", fontPath))
-		return errors.New("加载 PDF 字体失败")
+	fontPath, err := loadAvailablePDFFont(&pdf, "ai_summary_font")
+	if err != nil {
+		global.GVA_LOG.Error("加载 PDF 字体失败", zap.Error(err))
+		return err
 	}
+	global.GVA_LOG.Info("PDF 字体加载成功", zap.String("fontPath", fontPath))
 
 	y := pdfMarginTopMM
 	contentWidth := pdfPageWidthMM - pdfMarginLeftMM - pdfMarginRightMM
@@ -643,6 +639,30 @@ func renderSummaryPDF(filePath, title, sourceURL, content string) error {
 		return errors.New("写入 PDF 文件失败")
 	}
 	return nil
+}
+
+func loadAvailablePDFFont(pdf *gopdf.GoPdf, family string) (string, error) {
+	candidates := getCJKFontCandidates()
+	var loadErrors []string
+
+	for _, candidate := range candidates {
+		info, err := os.Stat(candidate)
+		if err != nil || info.IsDir() {
+			continue
+		}
+
+		if err := pdf.AddTTFFont(family, candidate); err == nil {
+			return candidate, nil
+		} else {
+			global.GVA_LOG.Warn("尝试加载 PDF 字体失败", zap.String("fontPath", candidate), zap.Error(err))
+			loadErrors = append(loadErrors, candidate+": "+err.Error())
+		}
+	}
+
+	if len(loadErrors) == 0 {
+		return "", errors.New("未找到可用的中文字体文件，请确保服务器安装了 ttf 或 otf 格式的中文字体")
+	}
+	return "", fmt.Errorf("未找到可被 PDF 引擎加载的中文字体：%s", strings.Join(loadErrors, " | "))
 }
 
 func writeMarkdownContentToPDF(pdf *gopdf.GoPdf, fontName string, left, top, bottom, width float64, y *float64, content string) error {
@@ -1577,25 +1597,25 @@ func drawMarkdownHorizontalRule(pdf *gopdf.GoPdf, left, top, bottom, width float
 	return nil
 }
 
-func findCJKFontPath() (string, error) {
-	candidates := []string{
-		`C:\Windows\Fonts\msyh.ttc`, // 微软雅黑 (优先)
-		`C:\Windows\Fonts\msyh.ttf`,
-		`C:\Windows\Fonts\simsun.ttc`, // 宋体
-		`C:\Windows\Fonts\simsun.ttf`,
-		`C:\Windows\Fonts\simhei.ttf`,                    // 黑体
-		`C:\Windows\Fonts\Deng.ttf`,                      // 等线
-		`/System/Library/Fonts/PingFang.ttc`,             // macOS
-		`/usr/share/fonts/truetype/wqy/wqy-microhei.ttc`, // Linux
+func getCJKFontCandidates() []string {
+	return []string{
+		`C:\Windows\Fonts\simhei.ttf`,
+		`C:\Windows\Fonts\simsunb.ttf`,
+		`C:\Windows\Fonts\SimsunExtG.ttf`,
+		`C:\Windows\Fonts\STSONG.TTF`,
+		`C:\Windows\Fonts\Deng.ttf`,
+		`C:\Windows\Fonts\NotoSansSC-VF.ttf`,
+		`C:\Windows\Fonts\NotoSerifSC-VF.ttf`,
+		`C:\Windows\Fonts\Noto Sans SC (TrueType).otf`,
+		`C:\Windows\Fonts\Noto Sans SC Bold (TrueType).otf`,
+		`C:\Windows\Fonts\Noto Sans SC Medium (TrueType).otf`,
+		`/System/Library/Fonts/PingFang.ttc`,
+		`/System/Library/Fonts/Supplemental/Songti.ttc`,
+		`/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc`,
+		`/usr/share/fonts/opentype/noto/NotoSerifCJK-Regular.ttc`,
+		`/usr/share/fonts/truetype/wqy/wqy-microhei.ttc`,
+		`/usr/share/fonts/truetype/arphic/ukai.ttc`,
 	}
-
-	for _, candidate := range candidates {
-		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
-			return candidate, nil
-		}
-	}
-
-	return "", errors.New("未找到可用的中文字体，无法导出 PDF，请确保服务器安装了中文字体")
 }
 
 func withAIToolEventSender(ctx context.Context, sender aiToolEventSender) context.Context {
