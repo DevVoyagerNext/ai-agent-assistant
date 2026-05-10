@@ -1,6 +1,7 @@
-package service
+package aiservice
 
 import (
+	"backend/dao/aidao"
 	"backend/dto"
 	"backend/global"
 	"backend/model"
@@ -8,7 +9,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"strconv"
 	"strings"
 	"time"
@@ -21,8 +21,13 @@ import (
 	"gorm.io/gorm"
 )
 
-type AIService struct{}
+// AIService 提供了 AI 聊天、工具调用、知识库检索等核心服务的业务逻辑
+type AIService struct {
+	dao aidao.AIDao // AI 数据访问对象，用于隔离数据库操作
+}
 
+// newChatModel 初始化并返回一个基于 Eino 的 OpenAI 聊天模型实例
+// 依赖全局配置中的 base URL、API Key 和模型名称。
 func (s *AIService) newChatModel(ctx context.Context) (*einoOpenAI.ChatModel, error) {
 	aiConfig := global.GVA_CONFIG.AI
 	baseURL := sanitizeAIConfigValue(aiConfig.BaseURL)
@@ -58,6 +63,7 @@ func sanitizeAIConfigValue(value string) string {
 	return strings.TrimSpace(cleaned)
 }
 
+// buildConversationMessages 根据传入的系统提示词、历史消息以及当前用户提问，拼接成一个完整的多轮对话请求体
 func (s *AIService) buildConversationMessages(systemPrompt string, historyMsgs []model.Message, prompt string) []*schema.Message {
 	messages := []*schema.Message{
 		schema.SystemMessage(systemPrompt),
@@ -112,6 +118,7 @@ func (s *AIService) extractReasoningText(msg *schema.Message) string {
 	return builder.String()
 }
 
+// generateText 调用指定的模型与消息体进行一次简单的文本补全请求
 func (s *AIService) generateText(ctx context.Context, messages []*schema.Message) (string, error) {
 	chatModel, err := s.newChatModel(ctx)
 	if err != nil {
@@ -270,6 +277,8 @@ func (s *AIService) normalizeChatFiles(ctx context.Context, userID uint, files [
 	return normalized
 }
 
+// newChatAgent 创建并编排一个带有工具调用能力的 React Agent
+// 该 Agent 组合了基础大语言模型和通过 newAITools 获取的可用工具集。
 func (s *AIService) newChatAgent(ctx context.Context, userID uint) (*react.Agent, error) {
 	chatModel, err := s.newChatModel(ctx)
 	if err != nil {
@@ -310,14 +319,19 @@ func (s *AIService) newChatAgent(ctx context.Context, userID uint) (*react.Agent
 	return agent, nil
 }
 
-func (s *AIService) emitStreamChunks(msgChan chan<- dto.ChatStreamChunk, chunkType, text string) {
+// emitStreamChunks 向指定的 channel 发送流式数据块（Server-Sent Events 格式块）
+func (s *AIService) emitStreamChunks(msgChan chan<- dto.ChatStreamChunk, chunkType string, text string) {
 	if strings.TrimSpace(text) == "" {
 		return
 	}
 
 	for _, chunk := range splitTextForStreaming(text, 20) {
-		msgChan <- dto.ChatStreamChunk{Type: chunkType, Content: chunk}
-		time.Sleep(12 * time.Millisecond)
+		select {
+		case msgChan <- dto.ChatStreamChunk{Type: chunkType, Content: chunk}:
+			time.Sleep(12 * time.Millisecond)
+		default:
+			// 如果 channel 满了或无人消费（例如断开连接），跳过本次发送，以免永久阻塞
+		}
 	}
 }
 
@@ -328,10 +342,16 @@ func (s *AIService) emitMessageChunk(msgChan chan<- dto.ChatStreamChunk, msg *sc
 	}
 
 	if reasoning := s.extractReasoningText(msg); reasoning != "" {
-		msgChan <- dto.ChatStreamChunk{Type: "reasoning", Content: reasoning}
+		select {
+		case msgChan <- dto.ChatStreamChunk{Type: "reasoning", Content: reasoning}:
+		default:
+		}
 	}
 	if content := s.extractMessageText(msg); content != "" {
-		msgChan <- dto.ChatStreamChunk{Type: "message", Content: content}
+		select {
+		case msgChan <- dto.ChatStreamChunk{Type: "message", Content: content}:
+		default:
+		}
 	}
 }
 
@@ -356,6 +376,8 @@ func splitTextForStreaming(text string, chunkSize int) []string {
 	return chunks
 }
 
+// finalizeChatSideEffects 统一处理单次 AI 会话完成后的副作用操作
+// 包括：更新会话标题（若为新会话）、异步生成关联思维导图/知识节点、将问答消息对落库并建立层级关联等。
 func (s *AIService) finalizeChatSideEffects(db *gorm.DB, session model.Session, isNewSession bool, prompt string, latestUserMsgID int64) {
 	if isNewSession {
 		go func(sId int64, prompt string) {
@@ -417,7 +439,7 @@ func (s *AIService) finalizeChatSideEffects(db *gorm.DB, session model.Session, 
 	}(session, latestUserMsgID)
 }
 
-// UpdateSessionTitle 修改会话标题
+// UpdateSessionTitle 修改指定会话的标题
 func (s *AIService) UpdateSessionTitle(ctx context.Context, userId uint, sessionId int64, title string) error {
 	db := global.GVA_DB.WithContext(ctx)
 	res := db.Model(&model.Session{}).
@@ -478,7 +500,7 @@ func (s *AIService) GetUserSessions(ctx context.Context, userId uint, lastId int
 	}, nil
 }
 
-// GetSessionMessages 获取指定会话的消息列表（游标分页）
+// GetSessionMessages 获取指定会话的消息记录（按时间正序返回），支持游标分页。
 func (s *AIService) GetSessionMessages(ctx context.Context, userId uint, sessionId int64, lastId int64) (dto.MessageListRes, error) {
 	db := global.GVA_DB.WithContext(ctx)
 
@@ -557,16 +579,27 @@ func (s *AIService) GetSessionMessages(ctx context.Context, userId uint, session
 	}, nil
 }
 
-// Chat 处理与 AI 模型的单次对话（流式）
+// Chat 处理与 AI 模型的单次对话（支持流式输出）
+// 自动组装上下文、系统提示词，并根据请求中提供的 skillID 调度到相应的 SkillHandler。
 func (s *AIService) Chat(ctx context.Context, userId uint, req dto.AIChatReq) (<-chan dto.ChatStreamChunk, int64, int64, error) {
 	msgChan := make(chan dto.ChatStreamChunk, 64)
-	agentCtx := withAIToolEventSender(ctx, func(content string) {
-		msgChan <- dto.ChatStreamChunk{Type: "tool", Content: content}
+
+	// 使用 background context 分离请求的生命周期
+	// 这样即使用户中途断开连接 (ctx.Done)，后端的 AI Agent 也能继续运行并将结果存入数据库
+	bgCtx := context.Background()
+
+	agentCtx := withAIToolEventSender(bgCtx, func(content string) {
+		// 使用非阻塞发送，防止在通道被消费方放弃时永远阻塞 Agent 协程
+		select {
+		case msgChan <- dto.ChatStreamChunk{Type: "tool", Content: content}:
+		default:
+			// 如果 channel 满了，说明前端可能已经断开或消费过慢，丢弃该工具事件
+		}
 	})
 	agentCtx = withAICurrentPageURL(agentCtx, req.CurrentPageURL)
 
 	var session model.Session
-	db := global.GVA_DB.WithContext(ctx)
+	db := global.GVA_DB.WithContext(bgCtx)
 	isNewSession := false
 
 	// 兼容处理 SessionID
@@ -578,15 +611,14 @@ func (s *AIService) Chat(ctx context.Context, userId uint, req dto.AIChatReq) (<
 
 	if reqSessionID != 0 {
 		// 有 sessionId 时查找会话
-		if err := db.Where("id = ? AND user_id = ? AND is_deleted = false", reqSessionID, userId).First(&session).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return nil, 0, 0, errors.New("会话不存在或无权访问")
-			}
-			return nil, 0, 0, errors.New("查询会话失败")
+		sess, err := s.dao.GetSessionByID(bgCtx, reqSessionID, userId)
+		if err != nil {
+			return nil, 0, 0, err
 		}
+		session = *sess
 	}
 
-	req.Files = s.normalizeChatFiles(ctx, userId, req.Files)
+	req.Files = s.normalizeChatFiles(bgCtx, userId, req.Files)
 
 	if reqSessionID == 0 {
 		// 无 sessionId 时创建新会话
@@ -596,7 +628,7 @@ func (s *AIService) Chat(ctx context.Context, userId uint, req dto.AIChatReq) (<
 			Title:   "新对话",
 			ModelID: global.GVA_CONFIG.AI.Model,
 		}
-		if err := db.Create(&session).Error; err != nil {
+		if err := s.dao.CreateSession(bgCtx, &session); err != nil {
 			global.GVA_LOG.Error("Failed to create AI session", zap.Error(err))
 			return nil, 0, 0, errors.New("创建会话失败")
 		}
@@ -614,7 +646,7 @@ func (s *AIService) Chat(ctx context.Context, userId uint, req dto.AIChatReq) (<
 		Role:      string(schema.User),
 		Content:   promptContent,
 	}
-	db.Create(&userMsg)
+	s.dao.CreateMessage(bgCtx, &userMsg)
 
 	// 保存附件信息
 	if len(req.Files) > 0 {
@@ -657,149 +689,31 @@ func (s *AIService) Chat(ctx context.Context, userId uint, req dto.AIChatReq) (<
 		Role:      string(schema.Assistant),
 		Content:   "", // 留空，流式输出完成后再更新
 	}
-	db.Create(&aiMsg)
+	s.dao.CreateMessage(bgCtx, &aiMsg)
 
-	if isResumeInterviewSkill(req.SkillID) {
-		go func() {
-			defer close(msgChan)
-
-			bundle, err := s.prepareResumeKnowledge(agentCtx, req)
-			if err != nil {
-				fallbackReply := buildResumeFallbackReply(err)
-				s.emitStreamChunks(msgChan, "message", fallbackReply)
-				global.GVA_DB.Model(&model.Message{}).Where("id = ?", aiMsg.ID).Update("content", fallbackReply)
-				s.finalizeChatSideEffects(db, session, isNewSession, promptContent, userMsg.ID)
-				return
-			}
-			if err := validateResumeKnowledgeBundle(bundle); err != nil {
-				fallbackReply := buildResumeFallbackReply(err)
-				s.emitStreamChunks(msgChan, "message", fallbackReply)
-				global.GVA_DB.Model(&model.Message{}).Where("id = ?", aiMsg.ID).Update("content", fallbackReply)
-				s.finalizeChatSideEffects(db, session, isNewSession, promptContent, userMsg.ID)
-				return
-			}
-
-			finalAnswer, err := s.executeResumeInterviewAgents(agentCtx, req, bundle)
-			if err != nil {
-				global.GVA_LOG.Error("resume interview multi-agent failed", zap.Error(err))
-				msgChan <- dto.ChatStreamChunk{Type: "tool", Content: "简历面试 Agent 执行失败，请稍后重试"}
-				global.GVA_DB.Unscoped().Where("id IN ?", []int64{userMsg.ID, aiMsg.ID}).Delete(&model.Message{})
-				if isNewSession {
-					global.GVA_DB.Unscoped().Where("id = ?", session.ID).Delete(&model.Session{})
-				}
-				return
-			}
-
-			if strings.TrimSpace(finalAnswer) == "" {
-				msgChan <- dto.ChatStreamChunk{Type: "tool", Content: "简历面试 Agent 未生成结果，请稍后重试"}
-				global.GVA_DB.Unscoped().Where("id IN ?", []int64{userMsg.ID, aiMsg.ID}).Delete(&model.Message{})
-				if isNewSession {
-					global.GVA_DB.Unscoped().Where("id = ?", session.ID).Delete(&model.Session{})
-				}
-				return
-			}
-
-			s.emitStreamChunks(msgChan, "message", finalAnswer)
-			global.GVA_DB.Model(&model.Message{}).Where("id = ?", aiMsg.ID).Update("content", finalAnswer)
-			s.finalizeChatSideEffects(db, session, isNewSession, promptContent, userMsg.ID)
-		}()
-		return msgChan, session.ID, aiMsg.ID, nil
+	// 查找匹配的 Skill Handler
+	handler := getSkillHandler(req.SkillID)
+	if handler == nil {
+		handler = &DefaultChatSkillHandler{}
 	}
 
-	chatAgent, err := s.newChatAgent(ctx, userId)
+	skillCtx := &SkillContext{
+		AgentCtx:      agentCtx,
+		Req:           req,
+		Session:       &session,
+		UserMsg:       &userMsg,
+		AIMsg:         &aiMsg,
+		IsNewSession:  isNewSession,
+		PromptContent: promptContent,
+		DB:            db,
+		MsgChan:       msgChan,
+		UserID:        userId,
+	}
+
+	err := handler.Handle(skillCtx, s)
 	if err != nil {
 		return nil, 0, 0, err
 	}
-
-	systemPrompt := s.buildChatSystemPrompt(session, strings.TrimSpace(req.CurrentPageURL) != "", req.SkillID)
-
-	// 组装消息列表
-	// 获取最近4轮历史对话 (8条消息)
-	var historyMsgs []model.Message
-	if !isNewSession {
-		// 取最近 8 条（4轮），按时间降序查出后，再反转顺序加入
-		db.Where("session_id = ? AND status = 'active'", session.ID).
-			Order("created_at desc").
-			Limit(8).
-			Find(&historyMsgs)
-
-		// 反转，使其按时间正序
-		for i := len(historyMsgs)/2 - 1; i >= 0; i-- {
-			opp := len(historyMsgs) - 1 - i
-			historyMsgs[i], historyMsgs[opp] = historyMsgs[opp], historyMsgs[i]
-		}
-	}
-
-	userPrompt := s.buildUserPrompt(req)
-	messages := s.buildConversationMessages(systemPrompt, historyMsgs, userPrompt)
-
-	go func() {
-		defer close(msgChan)
-		streamResp, err := chatAgent.Stream(agentCtx, messages)
-		if err != nil {
-			global.GVA_LOG.Error("Eino AI agent stream failed", zap.Error(err))
-			msgChan <- dto.ChatStreamChunk{Type: "tool", Content: "工具链执行失败，请稍后重试"}
-			global.GVA_DB.Unscoped().Where("id IN ?", []int64{userMsg.ID, aiMsg.ID}).Delete(&model.Message{})
-			if isNewSession {
-				global.GVA_DB.Unscoped().Where("id = ?", session.ID).Delete(&model.Session{})
-			}
-			return
-		}
-		defer streamResp.Close()
-
-		streamMsgs := make([]*schema.Message, 0, 32)
-		for {
-			chunk, err := streamResp.Recv()
-			if err != nil {
-				if errors.Is(err, io.EOF) {
-					break
-				}
-				global.GVA_LOG.Error("Eino AI agent recv stream failed", zap.Error(err))
-				msgChan <- dto.ChatStreamChunk{Type: "tool", Content: "AI 流式输出中断，请稍后重试"}
-				global.GVA_DB.Unscoped().Where("id IN ?", []int64{userMsg.ID, aiMsg.ID}).Delete(&model.Message{})
-				if isNewSession {
-					global.GVA_DB.Unscoped().Where("id = ?", session.ID).Delete(&model.Session{})
-				}
-				return
-			}
-
-			streamMsgs = append(streamMsgs, chunk)
-			s.emitMessageChunk(msgChan, chunk)
-		}
-
-		if len(streamMsgs) == 0 {
-			msgChan <- dto.ChatStreamChunk{Type: "tool", Content: "AI 未生成最终答案，请稍后重试"}
-			global.GVA_DB.Unscoped().Where("id IN ?", []int64{userMsg.ID, aiMsg.ID}).Delete(&model.Message{})
-			if isNewSession {
-				global.GVA_DB.Unscoped().Where("id = ?", session.ID).Delete(&model.Session{})
-			}
-			return
-		}
-
-		finalResp, err := schema.ConcatMessages(streamMsgs)
-		if err != nil {
-			global.GVA_LOG.Error("Concat AI stream chunks failed", zap.Error(err))
-			msgChan <- dto.ChatStreamChunk{Type: "tool", Content: "AI 流式结果合并失败，请稍后重试"}
-			global.GVA_DB.Unscoped().Where("id IN ?", []int64{userMsg.ID, aiMsg.ID}).Delete(&model.Message{})
-			if isNewSession {
-				global.GVA_DB.Unscoped().Where("id = ?", session.ID).Delete(&model.Session{})
-			}
-			return
-		}
-
-		messageText := s.extractMessageText(finalResp)
-		if strings.TrimSpace(messageText) == "" {
-			msgChan <- dto.ChatStreamChunk{Type: "tool", Content: "AI 未生成最终答案，请稍后重试"}
-			global.GVA_DB.Unscoped().Where("id IN ?", []int64{userMsg.ID, aiMsg.ID}).Delete(&model.Message{})
-			if isNewSession {
-				global.GVA_DB.Unscoped().Where("id = ?", session.ID).Delete(&model.Session{})
-			}
-			return
-		}
-
-		global.GVA_DB.Model(&model.Message{}).Where("id = ?", aiMsg.ID).Update("content", messageText)
-		s.finalizeChatSideEffects(db, session, isNewSession, promptContent, userMsg.ID)
-	}()
 
 	return msgChan, session.ID, aiMsg.ID, nil
 }

@@ -5,8 +5,8 @@ import (
 	"backend/pkg/errmsg"
 	"backend/pkg/utils/response"
 	"backend/service"
+	"backend/service/aiservice"
 	"encoding/base64"
-	"io"
 	"strconv"
 	"strings"
 
@@ -14,7 +14,7 @@ import (
 )
 
 type AIController struct {
-	aiService   service.AIService
+	aiService   aiservice.AIService
 	authService service.AuthService
 }
 
@@ -75,19 +75,26 @@ func (con *AIController) Chat(c *gin.Context) {
 	c.Writer.Flush()
 
 	// 流式监听并向客户端发送 chunk 数据
-	c.Stream(func(w io.Writer) bool {
-		if chunk, ok := <-streamChan; ok {
-			// 将字符串转换为 Base64 编码发送，既能完美保留空格和换行，又无需 JSON 序列化的开销
+	clientDisconnected := c.Writer.CloseNotify()
+	for {
+		select {
+		case <-clientDisconnected:
+			// 如果前端主动断开连接，我们只是退出流发送，
+			// 不调用 cancel，以确保后端的长耗时大模型任务继续执行并将结果保存到数据库。
+			return
+		case chunk, ok := <-streamChan:
+			if !ok {
+				// 通道关闭，发送结束标记
+				c.SSEvent("done", "[DONE]")
+				c.Writer.Flush()
+				return
+			}
+			// 将字符串转换为 Base64 编码发送
 			encodedMsg := base64.StdEncoding.EncodeToString([]byte(chunk.Content))
 			c.SSEvent(chunk.Type, encodedMsg)
 			c.Writer.Flush()
-			return true
 		}
-		// 通道关闭，发送结束标记
-		c.SSEvent("done", "[DONE]")
-		c.Writer.Flush()
-		return false
-	})
+	}
 }
 
 // UpdateSessionTitle 修改用户会话标题

@@ -1,4 +1,4 @@
-package service
+package aiservice
 
 import (
 	"backend/global"
@@ -25,6 +25,8 @@ import (
 	toolutils "github.com/cloudwego/eino/components/tool/utils"
 	"github.com/google/uuid"
 	"github.com/signintech/gopdf"
+
+	"go.uber.org/zap"
 )
 
 const (
@@ -127,6 +129,8 @@ type pdfTextStyle struct {
 	ExternalURL string
 }
 
+// newAITools 根据需要创建并注册一系列供 AI Agent 调用的工具
+// 目前包含：fetch_web_page（抓取网页工具）和 export_summary_pdf（导出PDF工具）。
 func (s *AIService) newAITools(userID uint) ([]tool.BaseTool, error) {
 	fetchTool, err := toolutils.InferTool(
 		"fetch_web_page",
@@ -151,6 +155,7 @@ func (s *AIService) newAITools(userID uint) ([]tool.BaseTool, error) {
 	return []tool.BaseTool{fetchTool, exportTool}, nil
 }
 
+// fetchWebPageTool 实际执行网页抓取任务的工具函数
 func (s *AIService) fetchWebPageTool(ctx context.Context, input fetchWebPageInput) (fetchWebPageResult, error) {
 	emitAIToolEvent(ctx, "正在抓取网页内容...")
 
@@ -255,6 +260,8 @@ func (s *AIService) fetchWebPageTool(ctx context.Context, input fetchWebPageInpu
 	return result, nil
 }
 
+// exportSummaryPDFTool 实际执行 PDF 导出的工具函数
+// 将模型总结的文本转换为 PDF 文件并返回一个带有一次性下载凭证的链接。
 func (s *AIService) exportSummaryPDFTool(ctx context.Context, userID uint, input exportSummaryPDFInput) (exportSummaryPDFResult, error) {
 	emitAIToolEvent(ctx, "正在导出 PDF...")
 
@@ -274,6 +281,7 @@ func (s *AIService) exportSummaryPDFTool(ctx context.Context, userID uint, input
 	}
 
 	if err := renderSummaryPDF(absPath, title, input.SourceURL, content); err != nil {
+		global.GVA_LOG.Error("renderSummaryPDF failed", zap.Error(err))
 		return exportSummaryPDFResult{}, err
 	}
 
@@ -301,6 +309,7 @@ type exportTicketPayload struct {
 	FileName string `json:"fileName"`
 }
 
+// createExportDownloadTicket 生成一个一次性的 PDF 下载凭证并存入 Redis
 func (s *AIService) createExportDownloadTicket(ctx context.Context, userID uint, fileName string) (string, error) {
 	_ = s
 	ticket := strings.ReplaceAll(uuid.NewString(), "-", "")
@@ -317,6 +326,7 @@ func (s *AIService) createExportDownloadTicket(ctx context.Context, userID uint,
 }
 
 // ConsumeExportDownloadTicket 消费一次性下载凭证并返回对应的 userID 与 fileName。
+// 此方法通过执行 Redis Lua 脚本，保证凭证校验和删除的原子性。
 func (s *AIService) ConsumeExportDownloadTicket(ctx context.Context, ticket string) (uint, string, error) {
 	_ = s
 	safeTicket := strings.TrimSpace(ticket)
@@ -343,7 +353,7 @@ func (s *AIService) ConsumeExportDownloadTicket(ctx context.Context, ticket stri
 	return payload.UserID, payload.FileName, nil
 }
 
-// GetExportFilePath 获取当前用户的 AI 导出文件绝对路径。
+// GetExportFilePath 获取当前用户的 AI 导出文件绝对路径，并在返回前进行安全性校验（如防止路径穿越、校验文件后缀及文件存在性）。
 func (s *AIService) GetExportFilePath(ctx context.Context, userID uint, fileName string) (string, error) {
 	_ = ctx
 	safeName := filepath.Base(strings.TrimSpace(fileName))
@@ -397,6 +407,8 @@ func normalizeFetchURL(rawURL string) (string, error) {
 	return parsedURL.String(), nil
 }
 
+// validateSafeURL 校验指定的 URL 是否安全
+// 用于防止服务器端请求伪造 (SSRF) 攻击，默认拦截内网与本地回环地址请求。
 func validateSafeURL(ctx context.Context, parsedURL *neturl.URL) error {
 	if parsedURL == nil {
 		return errors.New("网页地址为空")
@@ -584,6 +596,7 @@ func buildPDFFileName(title string) string {
 func renderSummaryPDF(filePath, title, sourceURL, content string) error {
 	fontPath, err := findCJKFontPath()
 	if err != nil {
+		global.GVA_LOG.Error("查找中文字体失败", zap.Error(err))
 		return err
 	}
 
@@ -596,6 +609,7 @@ func renderSummaryPDF(filePath, title, sourceURL, content string) error {
 	pdf.AddPage()
 
 	if err := pdf.AddTTFFont("ai_summary_font", fontPath); err != nil {
+		global.GVA_LOG.Error("加载 PDF 字体失败", zap.Error(err), zap.String("fontPath", fontPath))
 		return errors.New("加载 PDF 字体失败")
 	}
 
@@ -625,6 +639,7 @@ func renderSummaryPDF(filePath, title, sourceURL, content string) error {
 	}
 
 	if err := pdf.WritePdf(filePath); err != nil {
+		global.GVA_LOG.Error("写入 PDF 文件失败", zap.Error(err), zap.String("filePath", filePath))
 		return errors.New("写入 PDF 文件失败")
 	}
 	return nil
@@ -1564,11 +1579,14 @@ func drawMarkdownHorizontalRule(pdf *gopdf.GoPdf, left, top, bottom, width float
 
 func findCJKFontPath() (string, error) {
 	candidates := []string{
-		`C:\Windows\Fonts\simhei.ttf`,
-		`C:\Windows\Fonts\Deng.ttf`,
-		`C:\Windows\Fonts\NotoSansSC-VF.ttf`,
-		`C:\Windows\Fonts\Source Han Serif SC Heavy (TrueType).ttf`,
-		`C:\Windows\Fonts\STSONG.TTF`,
+		`C:\Windows\Fonts\msyh.ttc`, // 微软雅黑 (优先)
+		`C:\Windows\Fonts\msyh.ttf`,
+		`C:\Windows\Fonts\simsun.ttc`, // 宋体
+		`C:\Windows\Fonts\simsun.ttf`,
+		`C:\Windows\Fonts\simhei.ttf`,                    // 黑体
+		`C:\Windows\Fonts\Deng.ttf`,                      // 等线
+		`/System/Library/Fonts/PingFang.ttc`,             // macOS
+		`/usr/share/fonts/truetype/wqy/wqy-microhei.ttc`, // Linux
 	}
 
 	for _, candidate := range candidates {
@@ -1577,7 +1595,7 @@ func findCJKFontPath() (string, error) {
 		}
 	}
 
-	return "", errors.New("未找到可用的中文字体，无法导出 PDF")
+	return "", errors.New("未找到可用的中文字体，无法导出 PDF，请确保服务器安装了中文字体")
 }
 
 func withAIToolEventSender(ctx context.Context, sender aiToolEventSender) context.Context {

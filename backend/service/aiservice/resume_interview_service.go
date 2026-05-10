@@ -1,4 +1,4 @@
-package service
+package aiservice
 
 import (
 	"archive/zip"
@@ -88,6 +88,7 @@ func (s *AIService) buildResumeInterviewContext(ctx context.Context, req dto.AIC
 	return s.renderResumeKnowledgeBundle(bundle), nil
 }
 
+// prepareResumeKnowledge 准备并封装用于生成面试题的候选人简历知识包
 func (s *AIService) prepareResumeKnowledge(ctx context.Context, req dto.AIChatReq) (resumeKnowledgeBundle, error) {
 	if len(req.Files) == 0 {
 		return resumeKnowledgeBundle{}, errors.New("未上传简历文件，请先上传文件后再生成面试题")
@@ -117,6 +118,7 @@ func (s *AIService) prepareResumeKnowledge(ctx context.Context, req dto.AIChatRe
 	}, nil
 }
 
+// validateResumeKnowledgeBundle 校验提取后的简历知识包是否满足出题最低要求
 func validateResumeKnowledgeBundle(bundle resumeKnowledgeBundle) error {
 	if len(bundle.FileContexts) == 0 {
 		return errors.New("未上传简历文件，请先上传文件后再生成面试题")
@@ -127,6 +129,7 @@ func validateResumeKnowledgeBundle(bundle resumeKnowledgeBundle) error {
 	return errors.New("文件解析失败，请重新上传清晰且可读取的简历文件")
 }
 
+// buildResumeFallbackReply 构造简历处理失败时的默认友好回复文本
 func buildResumeFallbackReply(err error) string {
 	if err == nil {
 		return "这次简历处理暂时失败了，请重新上传简历文件后再试。"
@@ -143,6 +146,7 @@ func buildResumeFallbackReply(err error) string {
 	}
 }
 
+// renderResumeKnowledgeBundle 将提取的知识包拼接成结构化文本，作为大模型推理上下文
 func (s *AIService) renderResumeKnowledgeBundle(bundle resumeKnowledgeBundle) string {
 	var builder strings.Builder
 	builder.WriteString("【专项任务】你正在执行“根据候选人简历生成面试题”的任务。\n")
@@ -199,6 +203,8 @@ func (s *AIService) renderResumeKnowledgeBundle(bundle resumeKnowledgeBundle) st
 	return builder.String()
 }
 
+// executeResumeInterviewAgents 调度并串联执行多个“简历面试 Agent”进行流水线处理
+// 处理流程：解析画像 -> 补充知识点 -> 出题 -> 审校优化
 func (s *AIService) executeResumeInterviewAgents(ctx context.Context, req dto.AIChatReq, bundle resumeKnowledgeBundle) (string, error) {
 	if !isResumeInterviewSkill(req.SkillID) {
 		return "", errors.New("当前技能不是简历面试场景")
@@ -234,6 +240,7 @@ func (s *AIService) executeResumeInterviewAgents(ctx context.Context, req dto.AI
 	return strings.TrimSpace(finalResult), nil
 }
 
+// runResumeParserAgent 简历解析 Agent：提炼候选人画像
 func (s *AIService) runResumeParserAgent(ctx context.Context, req dto.AIChatReq, rawContext string) (string, error) {
 	systemPrompt := s.getAgentSystemPrompt("resume_parser_agent", `你是简历解析 Agent，专门负责从候选人的简历中提炼结构化候选人画像。
 请输出：
@@ -302,6 +309,7 @@ func (s *AIService) runResumeReviewAgent(ctx context.Context, req dto.AIChatReq,
 	})
 }
 
+// extractResumeFiles 从附件中提取并解析所有简历文件，返回上下文结构及拼装好的长文本
 func (s *AIService) extractResumeFiles(ctx context.Context, files []dto.AIChatFile) ([]resumeFileContext, string, []string) {
 	if len(files) == 0 {
 		return nil, "", []string{"未提供简历附件，将仅依据用户文本描述生成题目"}
@@ -603,6 +611,7 @@ func extractDOCXText(data []byte) (string, error) {
 	return "", errors.New("未找到 DOCX 正文")
 }
 
+// searchResumeReferences 根据提炼出的简历内容与用户要求，调用搜索引擎检索补充资料
 func (s *AIService) searchResumeReferences(ctx context.Context, resumeText, userInput string) ([]resumeReference, error) {
 	if strings.TrimSpace(resumeText) == "" {
 		return nil, nil
