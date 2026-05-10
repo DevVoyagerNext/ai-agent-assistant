@@ -670,8 +670,14 @@ const extractSSEEvents = (buffer: string) => {
 
 const sendMessage = async () => {
   const prompt = inputContent.value.trim()
-  if (!prompt) return
+  if (!prompt && selectedFiles.value.length === 0) return
   if (isSending.value) return
+
+  const filesToUpload = [...selectedFiles.value]
+
+  inputContent.value = ''
+  selectedFiles.value = [] // 立即清空输入框和文件列表
+  nextTick(() => adjustTextareaHeight())
 
   // Optimistic UI
   const tempId = Date.now()
@@ -684,6 +690,12 @@ const sendMessage = async () => {
     role: 'user',
     content: prompt,
     status: 'active',
+    files: filesToUpload.map(f => ({
+      fileUrl: '', // 尚未上传完毕
+      fileName: f.name,
+      fileType: f.name.split('.').pop() || '',
+      fileSize: f.size
+    })),
     createdAt: new Date().toISOString()
   })
   
@@ -716,9 +728,9 @@ const sendMessage = async () => {
   }
   
   // 附件处理：先上传到服务器，再将元信息传给 AI
-  if (selectedFiles.value.length > 0) {
+  if (filesToUpload.length > 0) {
     try {
-      const uploadPromises = selectedFiles.value.map(file => uploadFile(file))
+      const uploadPromises = filesToUpload.map(file => uploadFile(file))
       const uploadResults = await Promise.all(uploadPromises)
       
       const uploadedFiles: AIChatFile[] = uploadResults.map(res => ({
@@ -730,6 +742,14 @@ const sendMessage = async () => {
       }))
       
       reqData.append('files_info', JSON.stringify(uploadedFiles))
+
+      // Update optimistic UI with file info
+      userMsg.files = uploadedFiles.map(f => ({
+        fileUrl: f.file_url,
+        fileName: f.file_name,
+        fileType: f.file_type,
+        fileSize: f.file_size
+      }))
     } catch (error) {
       console.error('文件上传失败', error)
       alert('文件上传失败，请稍后再试')
@@ -748,10 +768,6 @@ const sendMessage = async () => {
     reqData.append('parentId', parentId.toString())
   }
   appendAIContext(reqData)
-  
-  inputContent.value = ''
-  selectedFiles.value = [] // 发送后清空
-  nextTick(() => adjustTextareaHeight())
   
   activeChatAbortController?.abort()
   const abortController = new AbortController()
@@ -954,6 +970,37 @@ const adjustTextareaHeight = () => {
   el.style.height = Math.min(el.scrollHeight, 150) + 'px'
 }
 
+// ===== File Preview Modal =====
+const previewFile = ref<{ url: string; name: string; type: string } | null>(null)
+
+const getFullFileUrl = (url: string) => {
+  if (!url) return ''
+  if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('blob:')) {
+    return url
+  }
+  // Remove leading slash if exists to avoid double slash
+  const cleanUrl = url.startsWith('/') ? url.slice(1) : url
+  return `http://tem0ps6kz.hn-bkt.clouddn.com/${cleanUrl}`
+}
+
+const openFilePreview = (file: { fileUrl?: string; fileName: string; fileType: string }) => {
+  if (!file.fileUrl) {
+    showToast('文件仍在上传中，请稍后再试')
+    return
+  }
+  
+  const fullUrl = getFullFileUrl(file.fileUrl)
+  previewFile.value = {
+    url: fullUrl,
+    name: file.fileName,
+    type: file.fileType || file.fileName.split('.').pop() || ''
+  }
+}
+
+const closeFilePreview = () => {
+  previewFile.value = null
+}
+
 </script>
 
 <template>
@@ -964,6 +1011,49 @@ const adjustTextareaHeight = () => {
         {{ toastMsg }}
       </div>
     </Transition>
+
+    <!-- File Preview Modal -->
+    <div v-if="previewFile" class="file-preview-modal" @click.self="closeFilePreview">
+      <div class="file-preview-content">
+        <div class="file-preview-header">
+          <h3 class="file-preview-title" :title="previewFile.name">{{ previewFile.name }}</h3>
+          <div class="file-preview-actions">
+            <a :href="previewFile.url" target="_blank" class="preview-action-btn" title="在新标签页打开">
+              <ArrowUpCircle :size="18" style="transform: rotate(45deg);" />
+            </a>
+            <button class="preview-action-btn" @click="closeFilePreview" title="关闭">
+              <X :size="20" />
+            </button>
+          </div>
+        </div>
+        <div class="file-preview-body">
+          <!-- PDF -->
+          <iframe 
+            v-if="['pdf'].includes(previewFile.type.toLowerCase())" 
+            :src="previewFile.url" 
+            class="preview-iframe"
+          ></iframe>
+          <!-- Images -->
+          <img 
+            v-else-if="['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'].includes(previewFile.type.toLowerCase())" 
+            :src="previewFile.url" 
+            class="preview-image"
+          />
+          <!-- Text/Markdown -->
+          <iframe 
+            v-else-if="['txt', 'md', 'json', 'js', 'ts', 'html', 'css', 'vue', 'log'].includes(previewFile.type.toLowerCase())" 
+            :src="previewFile.url" 
+            class="preview-iframe"
+          ></iframe>
+          <!-- Others -->
+          <div v-else class="unsupported-file">
+            <FileText :size="48" class="unsupported-icon" />
+            <p>该文件类型暂不支持直接预览</p>
+            <a :href="previewFile.url" target="_blank" class="download-link">下载文件</a>
+          </div>
+        </div>
+      </div>
+    </div>
 
     <!-- Sidebar -->
     <aside class="chat-sidebar">
@@ -1048,9 +1138,22 @@ const adjustTextareaHeight = () => {
             <Bot :size="24" class="bot-avatar" />
           </div>
           <div class="message-content-wrap">
-            <!-- Render files if any (mainly for user) -->
+            <!-- Render files if any -->
+            <div v-if="msg.files && msg.files.length > 0" class="msg-files">
+              <a 
+                v-for="(file, idx) in msg.files" 
+                :key="idx" 
+                href="javascript:void(0)" 
+                @click.prevent="openFilePreview(file)"
+                class="msg-file-item"
+              >
+                <FileText :size="14" />
+                <span class="file-name">{{ file.fileName }}</span>
+                <span class="file-size">{{ (file.fileSize / 1024).toFixed(1) }}KB</span>
+              </a>
+            </div>
             
-            <div class="message-bubble-container">
+            <div class="message-bubble-container" v-if="msg.role === 'assistant' || msg.content">
               <div class="message-bubble" :class="{ 'markdown-body': msg.role === 'assistant' }">
                 
                 <!-- Tool Block -->
@@ -1730,18 +1833,174 @@ const adjustTextareaHeight = () => {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+  margin-bottom: 4px;
 }
 
 .msg-file-item {
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 4px 8px;
+  padding: 6px 10px;
   background: #f1f5f9;
   border: 1px solid #e2e8f0;
-  border-radius: 6px;
-  font-size: 12px;
+  border-radius: 8px;
+  font-size: 13px;
   color: #475569;
+  text-decoration: none;
+  transition: all 0.2s;
+}
+
+.msg-file-item:hover {
+  background: #e2e8f0;
+  color: #3b82f6;
+}
+
+.msg-file-item .file-name {
+  max-width: 200px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.msg-file-item .file-size {
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+/* ===== File Preview Modal ===== */
+.file-preview-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: fadeIn 0.2s ease;
+}
+
+.file-preview-content {
+  width: 90vw;
+  max-width: 1000px;
+  height: 85vh;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: slideUp 0.3s ease;
+}
+
+.file-preview-header {
+  height: 56px;
+  padding: 0 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid #e2e8f0;
+  background: #f8fafc;
+}
+
+.file-preview-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #1e293b;
+  max-width: 80%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.file-preview-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.preview-action-btn {
+  background: transparent;
+  border: none;
+  color: #64748b;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  border-radius: 6px;
+  transition: all 0.2s;
+}
+
+.preview-action-btn:hover {
+  background: #e2e8f0;
+  color: #0f172a;
+}
+
+.file-preview-body {
+  flex: 1;
+  background: #f1f5f9;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: auto;
+}
+
+.preview-iframe {
+  width: 100%;
+  height: 100%;
+  border: none;
+  background: #fff;
+}
+
+.preview-image {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+
+.unsupported-file {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  color: #64748b;
+}
+
+.unsupported-icon {
+  color: #94a3b8;
+}
+
+.download-link {
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 24px;
+  background: #3b82f6;
+  color: #fff;
+  border-radius: 8px;
+  text-decoration: none;
+  font-weight: 500;
+  transition: background 0.2s;
+}
+
+.download-link:hover {
+  background: #2563eb;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .typing {

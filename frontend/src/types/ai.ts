@@ -11,6 +11,13 @@ export interface AISessionListRes {
   hasMore: boolean
 }
 
+export interface AIMessageFile {
+  fileUrl: string
+  fileName: string
+  fileType: string
+  fileSize: number
+}
+
 export interface AIChatMessage {
   id: number
   sessionId: number
@@ -20,6 +27,7 @@ export interface AIChatMessage {
   reasoning?: string
   toolLogs?: string[]
   status: 'active' | 'deleted' | 'hidden'
+  files?: AIMessageFile[]
   createdAt: string
 }
 
