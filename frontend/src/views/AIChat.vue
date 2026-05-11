@@ -39,22 +39,6 @@ const selectedFiles = ref<File[]>([])
 const selectAgent = (skillId: string | null) => {
   if (currentSkillId.value === skillId) return
   currentSkillId.value = skillId
-  
-  // 如果切换到专项 Agent 且没有消息，显示欢迎语
-  if (skillId && messages.value.length === 0) {
-    const agent = specialAgents.find(a => a.id === skillId)
-    if (agent) {
-      messages.value.push({
-        id: Date.now(),
-        sessionId: 0,
-        parentId: null,
-        role: 'assistant',
-        content: agent.welcome,
-        status: 'active',
-        createdAt: new Date().toISOString()
-      })
-    }
-  }
 }
 
 const handleFileUpload = (e: Event) => {
@@ -691,10 +675,10 @@ const sendMessage = async () => {
     content: prompt,
     status: 'active',
     files: filesToUpload.map(f => ({
-      fileUrl: '', // 尚未上传完毕
-      fileName: f.name,
-      fileType: f.name.split('.').pop() || '',
-      fileSize: f.size
+      file_url: '', // 尚未上传完毕
+      file_name: f.name,
+      file_type: f.name.split('.').pop() || '',
+      file_size: f.size
     })),
     createdAt: new Date().toISOString()
   })
@@ -745,10 +729,10 @@ const sendMessage = async () => {
 
       // Update optimistic UI with file info
       userMsg.files = uploadedFiles.map(f => ({
-        fileUrl: f.file_url,
-        fileName: f.file_name,
-        fileType: f.file_type,
-        fileSize: f.file_size
+        file_url: f.file_url,
+        file_name: f.file_name,
+        file_type: f.file_type,
+        file_size: f.file_size
       }))
     } catch (error) {
       console.error('文件上传失败', error)
@@ -970,35 +954,37 @@ const adjustTextareaHeight = () => {
   el.style.height = Math.min(el.scrollHeight, 150) + 'px'
 }
 
-// ===== File Preview Modal =====
-const previewFile = ref<{ url: string; name: string; type: string } | null>(null)
-
-const getFullFileUrl = (url: string) => {
-  if (!url) return ''
-  if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('blob:')) {
-    return url
-  }
-  // Remove leading slash if exists to avoid double slash
-  const cleanUrl = url.startsWith('/') ? url.slice(1) : url
-  return `http://tem0ps6kz.hn-bkt.clouddn.com/${cleanUrl}`
-}
-
-const openFilePreview = (file: { fileUrl?: string; fileName: string; fileType: string }) => {
-  if (!file.fileUrl) {
+// ===== File Download =====
+const handleFileDownload = async (file: { file_url?: string; file_name: string; file_type: string }) => {
+  if (!file.file_url) {
     showToast('文件仍在上传中，请稍后再试')
     return
   }
   
-  const fullUrl = getFullFileUrl(file.fileUrl)
-  previewFile.value = {
-    url: fullUrl,
-    name: file.fileName,
-    type: file.fileType || file.fileName.split('.').pop() || ''
+  // 后端现在返回完整的七牛云链接，直接使用即可
+  const fullUrl = file.file_url.trim().replace(/^`|`$/g, '') // 处理可能存在的反引号包裹
+  
+  try {
+    // 对于七牛云等跨域资源，直接使用 window.open 可能会触发浏览器预览（如 PDF/图片）
+    // 为了强制下载，我们使用 fetch 获取 blob
+    const res = await fetch(fullUrl)
+    if (!res.ok) throw new Error('网络请求失败')
+    
+    const blob = await res.blob()
+    const blobUrl = URL.createObjectURL(blob)
+    
+    const a = document.createElement('a')
+    a.href = blobUrl
+    a.download = file.file_name
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(blobUrl)
+  } catch (error) {
+    console.error('文件下载失败:', error)
+    // 降级方案：直接在新窗口打开
+    window.open(fullUrl, '_blank')
   }
-}
-
-const closeFilePreview = () => {
-  previewFile.value = null
 }
 
 </script>
@@ -1011,49 +997,6 @@ const closeFilePreview = () => {
         {{ toastMsg }}
       </div>
     </Transition>
-
-    <!-- File Preview Modal -->
-    <div v-if="previewFile" class="file-preview-modal" @click.self="closeFilePreview">
-      <div class="file-preview-content">
-        <div class="file-preview-header">
-          <h3 class="file-preview-title" :title="previewFile.name">{{ previewFile.name }}</h3>
-          <div class="file-preview-actions">
-            <a :href="previewFile.url" target="_blank" class="preview-action-btn" title="在新标签页打开">
-              <ArrowUpCircle :size="18" style="transform: rotate(45deg);" />
-            </a>
-            <button class="preview-action-btn" @click="closeFilePreview" title="关闭">
-              <X :size="20" />
-            </button>
-          </div>
-        </div>
-        <div class="file-preview-body">
-          <!-- PDF -->
-          <iframe 
-            v-if="['pdf'].includes(previewFile.type.toLowerCase())" 
-            :src="previewFile.url" 
-            class="preview-iframe"
-          ></iframe>
-          <!-- Images -->
-          <img 
-            v-else-if="['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'].includes(previewFile.type.toLowerCase())" 
-            :src="previewFile.url" 
-            class="preview-image"
-          />
-          <!-- Text/Markdown -->
-          <iframe 
-            v-else-if="['txt', 'md', 'json', 'js', 'ts', 'html', 'css', 'vue', 'log'].includes(previewFile.type.toLowerCase())" 
-            :src="previewFile.url" 
-            class="preview-iframe"
-          ></iframe>
-          <!-- Others -->
-          <div v-else class="unsupported-file">
-            <FileText :size="48" class="unsupported-icon" />
-            <p>该文件类型暂不支持直接预览</p>
-            <a :href="previewFile.url" target="_blank" class="download-link">下载文件</a>
-          </div>
-        </div>
-      </div>
-    </div>
 
     <!-- Sidebar -->
     <aside class="chat-sidebar">
@@ -1122,9 +1065,9 @@ const closeFilePreview = () => {
         </div>
 
         <div v-if="messages.length === 0 && !loadingMessages && !currentSessionId" class="empty-chat">
-          <Sparkles class="sparkle-icon" :size="48" />
-          <h3>今天想聊点什么？</h3>
-          <p>我可以帮你解答编程问题、分析代码、或者讨论前沿技术。</p>
+          <component :is="currentSkillId ? specialAgents.find(a => a.id === currentSkillId)?.icon : Sparkles" class="sparkle-icon" :size="48" />
+          <h3>{{ currentSkillId ? specialAgents.find(a => a.id === currentSkillId)?.name : '今天想聊点什么？' }}</h3>
+          <p>{{ currentSkillId ? specialAgents.find(a => a.id === currentSkillId)?.welcome : '我可以帮你解答编程问题、分析代码、或者讨论前沿技术。' }}</p>
         </div>
 
         <div 
@@ -1144,12 +1087,13 @@ const closeFilePreview = () => {
                 v-for="(file, idx) in msg.files" 
                 :key="idx" 
                 href="javascript:void(0)" 
-                @click.prevent="openFilePreview(file)"
+                @click.prevent="handleFileDownload(file)"
                 class="msg-file-item"
+                title="点击下载文件"
               >
                 <FileText :size="14" />
-                <span class="file-name">{{ file.fileName }}</span>
-                <span class="file-size">{{ (file.fileSize / 1024).toFixed(1) }}KB</span>
+                <span class="file-name">{{ file.file_name }}</span>
+                <span class="file-size">{{ (file.file_size / 1024).toFixed(1) }}KB</span>
               </a>
             </div>
             
@@ -1865,142 +1809,6 @@ const closeFilePreview = () => {
 .msg-file-item .file-size {
   color: #94a3b8;
   font-size: 12px;
-}
-
-/* ===== File Preview Modal ===== */
-.file-preview-modal {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100vw;
-  height: 100vh;
-  background: rgba(0, 0, 0, 0.6);
-  backdrop-filter: blur(4px);
-  z-index: 9999;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  animation: fadeIn 0.2s ease;
-}
-
-.file-preview-content {
-  width: 90vw;
-  max-width: 1000px;
-  height: 85vh;
-  background: #fff;
-  border-radius: 12px;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  animation: slideUp 0.3s ease;
-}
-
-.file-preview-header {
-  height: 56px;
-  padding: 0 20px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  border-bottom: 1px solid #e2e8f0;
-  background: #f8fafc;
-}
-
-.file-preview-title {
-  margin: 0;
-  font-size: 16px;
-  font-weight: 600;
-  color: #1e293b;
-  max-width: 80%;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.file-preview-actions {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.preview-action-btn {
-  background: transparent;
-  border: none;
-  color: #64748b;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 6px;
-  border-radius: 6px;
-  transition: all 0.2s;
-}
-
-.preview-action-btn:hover {
-  background: #e2e8f0;
-  color: #0f172a;
-}
-
-.file-preview-body {
-  flex: 1;
-  background: #f1f5f9;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: auto;
-}
-
-.preview-iframe {
-  width: 100%;
-  height: 100%;
-  border: none;
-  background: #fff;
-}
-
-.preview-image {
-  max-width: 100%;
-  max-height: 100%;
-  object-fit: contain;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-}
-
-.unsupported-file {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 16px;
-  color: #64748b;
-}
-
-.unsupported-icon {
-  color: #94a3b8;
-}
-
-.download-link {
-  display: inline-flex;
-  align-items: center;
-  padding: 8px 24px;
-  background: #3b82f6;
-  color: #fff;
-  border-radius: 8px;
-  text-decoration: none;
-  font-weight: 500;
-  transition: background 0.2s;
-}
-
-.download-link:hover {
-  background: #2563eb;
-}
-
-@keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
-@keyframes slideUp {
-  from { opacity: 0; transform: translateY(20px); }
-  to { opacity: 1; transform: translateY(0); }
 }
 
 .typing {

@@ -12,10 +12,10 @@ export interface AISessionListRes {
 }
 
 export interface AIMessageFile {
-  fileUrl: string
-  fileName: string
-  fileType: string
-  fileSize: number
+  file_url: string
+  file_name: string
+  file_type: string
+  file_size: number
 }
 
 export interface AIChatMessage {
