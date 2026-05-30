@@ -21,6 +21,19 @@ type KnowledgeNodeService struct {
 	subjectDao dao.SubjectDao
 }
 
+func ancestorNodeIDsFromPath(path string) []int {
+	parts := strings.Split(strings.Trim(path, "/"), "/")
+	ids := make([]int, 0, len(parts))
+	for _, part := range parts {
+		id, err := strconv.Atoi(part)
+		if err != nil || id <= 0 {
+			continue
+		}
+		ids = append(ids, id)
+	}
+	return ids
+}
+
 // enrichNodes 内部方法：批量组装知识点的难度评价与用户进度
 func (s *KnowledgeNodeService) enrichNodes(nodes []model.KnowledgeNode, userID uint) ([]dto.KnowledgeNodeItemRes, error) {
 	if len(nodes) == 0 {
@@ -164,7 +177,7 @@ func (s *KnowledgeNodeService) GetPathNodes(ctx context.Context, nodeID int, use
 	}
 
 	// 3. 批量查询这些 parentId 下的所有子节点
-	nodes, err := s.nodeDao.GetNodesByParentIDs(parentIDs)
+	nodes, err := s.nodeDao.GetNodesByParentIDs(node.SubjectID, parentIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -493,7 +506,10 @@ func (s *KnowledgeNodeService) CreateKnowledgeNode(ctx context.Context, userID u
 				return err
 			}
 		}
-		return s.nodeDao.CreateKnowledgeNodeWithTx(tx, &newNode)
+		if err := s.nodeDao.CreateKnowledgeNodeWithTx(tx, &newNode); err != nil {
+			return err
+		}
+		return s.nodeDao.UpdateAncestorDraftDescendantCountWithTx(tx, req.SubjectID, ancestorNodeIDsFromPath(newNode.Path), 1)
 	})
 
 	if err != nil {
@@ -531,12 +547,17 @@ func (s *KnowledgeNodeService) UpdateKnowledgeNodeDraft(ctx context.Context, use
 		return errors.New("顶级节点名称需通过修改教材信息同步，无法单独修改")
 	}
 
-	// 4. 更新节点名称草稿并置 has_draft=1
-	if err := s.nodeDao.UpdateKnowledgeNodeDraft(nodeID, req.NameDraft); err != nil {
-		return err
-	}
-
-	return nil
+	// 4. 更新节点名称草稿并置 has_draft=1，首次产生草稿时同步增加祖先节点草稿计数
+	return global.GVA_DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		hasDraftChanged, err := s.nodeDao.UpdateKnowledgeNodeDraftWithTx(tx, nodeID, req.NameDraft)
+		if err != nil {
+			return err
+		}
+		if !hasDraftChanged {
+			return nil
+		}
+		return s.nodeDao.UpdateAncestorDraftDescendantCountWithTx(tx, req.SubjectID, ancestorNodeIDsFromPath(node.Path), 1)
+	})
 }
 
 // UpsertKnowledgeContent 更新或创建知识点正文内容草稿
@@ -559,15 +580,92 @@ func (s *KnowledgeNodeService) UpsertKnowledgeContent(ctx context.Context, userI
 		return err
 	}
 
-	// 3. 执行更新/创建正文草稿操作
-	if err := s.nodeDao.UpsertKnowledgeContent(nodeID, req.ContentDraft); err != nil {
-		return err
-	}
-
-	return nil
+	// 3. 执行更新/创建正文草稿操作，同时标记当前节点和祖先节点的草稿状态
+	return global.GVA_DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := s.nodeDao.UpsertKnowledgeContentWithTx(tx, nodeID, req.ContentDraft); err != nil {
+			return err
+		}
+		hasDraftChanged, err := s.nodeDao.UpdateKnowledgeNodeHasDraftWithTx(tx, nodeID)
+		if err != nil {
+			return err
+		}
+		if !hasDraftChanged {
+			return nil
+		}
+		return s.nodeDao.UpdateAncestorDraftDescendantCountWithTx(tx, node.SubjectID, ancestorNodeIDsFromPath(node.Path), 1)
+	})
 }
 
 // GetAuthorChildNodes 创作者获取子节点列表
+func (s *KnowledgeNodeService) PublishKnowledgeNode(ctx context.Context, userID uint, nodeID int, req dto.PublishKnowledgeNodeReq) (dto.PublishKnowledgeNodeRes, error) {
+	node, err := s.nodeDao.GetNodeByIDWithoutStatus(nodeID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return dto.PublishKnowledgeNodeRes{}, errors.New("知识点不存在")
+		}
+		return dto.PublishKnowledgeNodeRes{}, err
+	}
+	if node.ParentID == 0 {
+		return dto.PublishKnowledgeNodeRes{}, errors.New("顶级节点随教材一起审核，不能单独提交")
+	}
+
+	var subject model.Subject
+	if err := global.GVA_DB.WithContext(ctx).Where("id = ? AND creator_id = ?", node.SubjectID, userID).First(&subject).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return dto.PublishKnowledgeNodeRes{}, errors.New("无权操作该教材或教材不存在")
+		}
+		return dto.PublishKnowledgeNodeRes{}, err
+	}
+	if subject.Status != "published" {
+		return dto.PublishKnowledgeNodeRes{}, errors.New("教材通过审核后才能提交节点审核")
+	}
+
+	targetNodes := []model.KnowledgeNode{node}
+	if req.IncludeDescendants {
+		var descendants []model.KnowledgeNode
+		descendantPath := node.Path + strconv.Itoa(int(node.ID)) + "/"
+		if err := global.GVA_DB.WithContext(ctx).
+			Where("subject_id = ? AND path LIKE ?", node.SubjectID, descendantPath+"%").
+			Find(&descendants).Error; err != nil {
+			return dto.PublishKnowledgeNodeRes{}, err
+		}
+		targetNodes = append(targetNodes, descendants...)
+	}
+
+	var submitNodeIDs []int
+	var submittedNodeIDs []uint
+	for _, target := range targetNodes {
+		if target.HasDraft == 1 {
+			submitNodeIDs = append(submitNodeIDs, int(target.ID))
+			submittedNodeIDs = append(submittedNodeIDs, target.ID)
+		}
+	}
+
+	if len(submitNodeIDs) == 0 {
+		return dto.PublishKnowledgeNodeRes{}, errors.New("没有可提交的草稿")
+	}
+
+	if err := global.GVA_DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&model.KnowledgeNode{}).
+			Where("id IN ?", submitNodeIDs).
+			Update("audit_status", 1).Error; err != nil {
+			return err
+		}
+
+		return tx.Model(&model.KnowledgeContent{}).
+			Where("node_id IN ? AND has_draft = ?", submitNodeIDs, 1).
+			Update("audit_status", 1).Error
+	}); err != nil {
+		return dto.PublishKnowledgeNodeRes{}, err
+	}
+
+	return dto.PublishKnowledgeNodeRes{
+		SubmittedNodeIDs:   submittedNodeIDs,
+		SubmittedCount:     len(submittedNodeIDs),
+		IncludeDescendants: req.IncludeDescendants,
+	}, nil
+}
+
 func (s *KnowledgeNodeService) GetAuthorChildNodes(ctx context.Context, userID uint, parentNodeID int) ([]dto.AuthorChildNodeRes, error) {
 	// 1. 获取父节点信息
 	parentNode, err := s.nodeDao.GetNodeByIDWithoutStatus(parentNodeID)
@@ -597,16 +695,17 @@ func (s *KnowledgeNodeService) GetAuthorChildNodes(ctx context.Context, userID u
 	var res []dto.AuthorChildNodeRes
 	for _, node := range nodes {
 		res = append(res, dto.AuthorChildNodeRes{
-			ID:          node.ID,
-			SubjectID:   node.SubjectID,
-			ParentID:    node.ParentID,
-			Name:        node.Name,
-			NameDraft:   node.NameDraft,
-			Status:      node.Status,
-			AuditStatus: node.AuditStatus,
-			HasDraft:    node.HasDraft,
-			Path:        node.Path,
-			IsLeaf:      node.IsLeaf,
+			ID:                   node.ID,
+			SubjectID:            node.SubjectID,
+			ParentID:             node.ParentID,
+			Name:                 node.Name,
+			NameDraft:            node.NameDraft,
+			Status:               node.Status,
+			AuditStatus:          node.AuditStatus,
+			HasDraft:             node.HasDraft,
+			DraftDescendantCount: node.DraftDescendantCount,
+			Path:                 node.Path,
+			IsLeaf:               node.IsLeaf,
 		})
 	}
 
@@ -704,7 +803,7 @@ func (s *KnowledgeNodeService) GetAuthorInitEditNodes(ctx context.Context, userI
 	}
 
 	// 3. 批量获取这些 parentID 下的所有子节点
-	nodes, err := s.nodeDao.GetNodesByParentIDsWithoutStatus(targetParentIDs)
+	nodes, err := s.nodeDao.GetNodesByParentIDsWithoutStatus(subjectID, targetParentIDs)
 	if err != nil {
 		return dto.AuthorInitEditRes{}, err
 	}
@@ -724,21 +823,24 @@ func (s *KnowledgeNodeService) GetAuthorInitEditNodes(ctx context.Context, userI
 	var nodeList []dto.AuthorChildNodeRes
 	for _, node := range nodes {
 		nodeList = append(nodeList, dto.AuthorChildNodeRes{
-			ID:          node.ID,
-			SubjectID:   node.SubjectID,
-			ParentID:    node.ParentID,
-			Name:        node.Name,
-			NameDraft:   node.NameDraft,
-			Status:      node.Status,
-			AuditStatus: node.AuditStatus,
-			HasDraft:    node.HasDraft,
-			Path:        node.Path,
-			IsLeaf:      node.IsLeaf,
+			ID:                   node.ID,
+			SubjectID:            node.SubjectID,
+			ParentID:             node.ParentID,
+			Name:                 node.Name,
+			NameDraft:            node.NameDraft,
+			Status:               node.Status,
+			AuditStatus:          node.AuditStatus,
+			HasDraft:             node.HasDraft,
+			DraftDescendantCount: node.DraftDescendantCount,
+			Path:                 node.Path,
+			IsLeaf:               node.IsLeaf,
 		})
 	}
 
 	return dto.AuthorInitEditRes{
-		LastNodeID: lastNodeID,
-		NodeList:   nodeList,
+		LastNodeID:         lastNodeID,
+		NodeList:           nodeList,
+		SubjectAuditStatus: subject.AuditStatus,
+		SubjectStatus:      subject.Status,
 	}, nil
 }

@@ -235,6 +235,37 @@ func (con *KnowledgeNodeController) UpsertKnowledgeContent(c *gin.Context) {
 }
 
 // GetAuthorChildNodes 创作者获取子节点列表
+func (con *KnowledgeNodeController) PublishKnowledgeNode(c *gin.Context) {
+	nodeIdStr := c.Param("nodeId")
+	nodeId, err := strconv.Atoi(nodeIdStr)
+	if err != nil || nodeId <= 0 {
+		response.FailWithMsg(errmsg.CodeError, "知识点ID格式错误", c)
+		return
+	}
+
+	userId, err := con.authService.GetUserID(c)
+	if err != nil || userId == 0 {
+		response.FailWithCode(errmsg.UserTokenNotExist, c)
+		return
+	}
+
+	var req dto.PublishKnowledgeNodeReq
+	if c.Request.ContentLength > 0 {
+		if err := c.ShouldBindJSON(&req); err != nil {
+			response.FailWithMsg(errmsg.CodeError, "参数错误: "+err.Error(), c)
+			return
+		}
+	}
+
+	res, err := con.nodeService.PublishKnowledgeNode(c.Request.Context(), userId, nodeId, req)
+	if err != nil {
+		response.FailWithMsg(errmsg.CodeError, err.Error(), c)
+		return
+	}
+
+	response.Ok(res, c)
+}
+
 func (con *KnowledgeNodeController) GetAuthorChildNodes(c *gin.Context) {
 	nodeIdStr := c.Param("nodeId")
 	nodeId, err := strconv.Atoi(nodeIdStr)

@@ -12,8 +12,10 @@ import {
   getAuthorNodeContent,
   createKnowledgeNode,
   updateKnowledgeNodeDraft,
-  upsertKnowledgeContent
+  upsertKnowledgeContent,
+  publishKnowledgeNode
 } from '../api/node'
+import { publishSubject } from '../api/subject'
 import type { AuthorNode, AuthorNodeContent } from '../types/node'
 import Toast from '../components/Toast.vue'
 import {
@@ -44,12 +46,14 @@ import {
   getAISessions,
   getAISessionMessages
 } from '../api/ai'
+import { updateSubjectName } from '../api/user'
 import type { AIChatMessage, AIChatSession } from '../types/ai'
 
 const route = useRoute()
 const router = useRouter()
 const subjectId = Number(route.params.id)
 const TITLE_MAX_LENGTH = 150
+const SUBJECT_NAME_MAX_LENGTH = 100
 const SAVE_DEBOUNCE_MS = 800
 const SAVE_THROTTLE_MS = 1800
 
@@ -74,7 +78,10 @@ const saving = ref(false)
 const saveStatus = ref<'saved' | 'unsaved' | 'saving' | 'error'>('saved')
 const contentInfo = ref<AuthorNodeContent | null>(null)
 const creatingChild = ref(false)
+const publishingNode = ref(false)
+const publishingSubject = ref(false)
 const createChildVisible = ref(false)
+const publishNodeOptionsVisible = ref(false)
 const newChildName = ref('')
 const isHydratingEditor = ref(false)
 const pendingSaveAfterCurrent = ref(false)
@@ -94,6 +101,22 @@ const showToast = (message: string, type: 'success' | 'error' = 'success') => {
 }
 
 const activeNodeNameReadonly = computed(() => activeNode.value?.parentId === 0)
+const activeAuditStatus = computed(() => {
+  const nodeStatus = Number(activeNode.value?.auditStatus ?? 0)
+  const contentStatus = Number(contentInfo.value?.auditStatus ?? 0)
+  if (nodeStatus === 1 || contentStatus === 1) return 1
+  return contentStatus || nodeStatus
+})
+const subjectAuditStatus = ref(0)
+const subjectStatus = ref('draft')
+const canPublishSubject = computed(() => subjectStatus.value === 'draft' && subjectAuditStatus.value !== 1)
+const subjectPublishLabel = computed(() => {
+  if (subjectAuditStatus.value === 1) return '教材审核中'
+  if (subjectStatus.value === 'published') return '教材已发布'
+  if (subjectStatus.value === 'archived') return '教材已归档'
+  if (subjectAuditStatus.value === 3) return '重新发布教材'
+  return '发布教材'
+})
 
 onBeforeUnmount(() => {
   if (vditorInstance) {
@@ -768,8 +791,28 @@ const normalizeAuthorNode = (node: AuthorNode): AuthorNode => ({
   parentId: Number(node.parentId),
   auditStatus: Number(node.auditStatus),
   hasDraft: Number(node.hasDraft),
+  draftDescendantCount: Number(node.draftDescendantCount ?? 0),
   isLeaf: Number(node.isLeaf)
 })
+
+const getAncestorIdsFromPath = (path?: string): number[] => {
+  if (!path) return []
+  return path
+    .split('/')
+    .map(part => Number(part))
+    .filter(id => Number.isFinite(id) && id > 0)
+}
+
+const updateDraftDescendantCountAncestors = (node: AuthorNode | null, delta: number, includeSelf = false) => {
+  if (!node) return
+  const ids = new Set(getAncestorIdsFromPath(node.path))
+  if (includeSelf) ids.add(node.id)
+  nodes.value.forEach(item => {
+    if (ids.has(item.id)) {
+      item.draftDescendantCount = Math.max(0, Number(item.draftDescendantCount || 0) + delta)
+    }
+  })
+}
 
 const hasPendingDraftChanges = () => {
   return editName.value !== originalName.value || editContent.value !== originalContent.value
@@ -834,6 +877,70 @@ const flushPendingSave = async () => {
   }
 }
 
+const handlePublishSubject = async () => {
+  if (publishingSubject.value || !canPublishSubject.value) return
+
+  await flushPendingSave()
+
+  publishingSubject.value = true
+  try {
+    const res = await publishSubject(subjectId)
+    if (res.data?.code === 200) {
+      subjectAuditStatus.value = 1
+      showToast('教材已提交审核', 'success')
+    } else {
+      showToast(res.data?.msg || '教材提交审核失败', 'error')
+    }
+  } catch (err: any) {
+    showToast(err?.response?.data?.msg || '教材提交审核失败', 'error')
+  } finally {
+    publishingSubject.value = false
+  }
+}
+
+const handlePublishActiveNode = async () => {
+  if (!activeNodeId.value || activeNodeNameReadonly.value || publishingNode.value) return
+  publishNodeOptionsVisible.value = true
+}
+
+const submitActiveNodeForReview = async (includeDescendants: boolean) => {
+  if (!activeNodeId.value || activeNodeNameReadonly.value || publishingNode.value) return
+  publishNodeOptionsVisible.value = false
+  await flushPendingSave()
+
+  const node = activeNode.value
+  if (!node) {
+    return
+  }
+
+  publishingNode.value = true
+  try {
+    const res = await publishKnowledgeNode(activeNodeId.value, { includeDescendants })
+    if (res.data?.code === 200) {
+      const submittedNodeIds = new Set((res.data.data?.submittedNodeIds || []).map(id => Number(id)))
+      nodes.value.forEach(item => {
+        if (submittedNodeIds.has(item.id)) {
+          item.auditStatus = 1
+        }
+      })
+      if (submittedNodeIds.has(node.id) && contentInfo.value) {
+        contentInfo.value = {
+          ...contentInfo.value,
+          auditStatus: 1
+        }
+      }
+      const submittedCount = res.data.data?.submittedCount || submittedNodeIds.size || 1
+      showToast(includeDescendants ? `已提交 ${submittedCount} 个节点审核` : '节点已提交审核', 'success')
+    } else {
+      showToast(res.data?.msg || '提交审核失败', 'error')
+    }
+  } catch (err: any) {
+    showToast(err?.response?.data?.msg || '提交审核失败', 'error')
+  } finally {
+    publishingNode.value = false
+  }
+}
+
 const persistDraft = async () => {
   if (!activeNodeId.value) return
 
@@ -843,13 +950,14 @@ const persistDraft = async () => {
 
   if (!trimmedName) {
     saveStatus.value = 'error'
-    showToast('节点标题不能为空', 'error')
+    showToast(activeNodeNameReadonly.value ? '教材名称不能为空' : '节点标题不能为空', 'error')
     return
   }
 
-  if (trimmedName.length > TITLE_MAX_LENGTH) {
+  const maxNameLength = activeNodeNameReadonly.value ? SUBJECT_NAME_MAX_LENGTH : TITLE_MAX_LENGTH
+  if (trimmedName.length > maxNameLength) {
     saveStatus.value = 'error'
-    showToast(`节点标题不能超过 ${TITLE_MAX_LENGTH} 个字符`, 'error')
+    showToast(`${activeNodeNameReadonly.value ? '教材名称' : '节点标题'}不能超过 ${maxNameLength} 个字符`, 'error')
     return
   }
 
@@ -860,21 +968,37 @@ const persistDraft = async () => {
 
   saveStatus.value = 'saving'
   saving.value = true
+  let currentNodeHasDraft = currentNode?.hasDraft === 1
+  const markCurrentNodeHasDraft = () => {
+    if (!currentNode) return
+    if (!currentNodeHasDraft) {
+      updateDraftDescendantCountAncestors(currentNode, 1)
+      currentNodeHasDraft = true
+    }
+    currentNode.hasDraft = 1
+  }
 
   try {
     let success = true
 
-    if (!activeNodeNameReadonly.value && trimmedName !== originalName.value) {
-      const resName = await updateKnowledgeNodeDraft(currentNodeId, {
-        subjectId,
-        nameDraft: trimmedName
-      })
+    if (trimmedName !== originalName.value) {
+      const resName = activeNodeNameReadonly.value
+        ? await updateSubjectName(subjectId, trimmedName)
+        : await updateKnowledgeNodeDraft(currentNodeId, {
+            subjectId,
+            nameDraft: trimmedName
+          })
 
       if (resName.data?.code === 200) {
         updateEditorNameSilently(trimmedName)
         if (currentNode) {
+          if (activeNodeNameReadonly.value) {
+            currentNode.name = trimmedName
+          }
           currentNode.nameDraft = trimmedName
-          currentNode.hasDraft = 1
+          if (!activeNodeNameReadonly.value) {
+            markCurrentNodeHasDraft()
+          }
         }
       } else {
         success = false
@@ -896,7 +1020,7 @@ const persistDraft = async () => {
           }
         }
         if (currentNode) {
-          currentNode.hasDraft = 1
+          markCurrentNodeHasDraft()
         }
       } else {
         success = false
@@ -938,6 +1062,8 @@ const fetchInitNodes = async () => {
     const res = await getAuthorInitNodes(subjectId)
     if (res.data?.code === 200 && res.data.data) {
       nodes.value = (res.data.data.nodeList || []).map(normalizeAuthorNode)
+      subjectAuditStatus.value = Number(res.data.data.subjectAuditStatus ?? 0)
+      subjectStatus.value = res.data.data.subjectStatus || 'draft'
       lastNodeId.value = res.data.data.lastNodeId
       
       // 展开所有路径上的节点
@@ -947,7 +1073,7 @@ const fetchInitNodes = async () => {
       
       if (lastNodeId.value) {
         // 自动选中断点节点
-        await handleNodeSelect(lastNodeId.value)
+        await handleNodeSelect(lastNodeId.value, true)
         // 确保断点节点的所有父节点都被展开
         const targetNode = nodes.value.find(n => n.id === lastNodeId.value)
         if (targetNode && targetNode.path) {
@@ -1018,7 +1144,7 @@ const toggleExpand = async (node: AuthorNode, event: Event) => {
 }
 
 // 选中节点
-const handleNodeSelect = async (nodeId: number) => {
+const handleNodeSelect = async (nodeId: number, keepExpanded = false) => {
   const node = nodes.value.find(n => n.id === nodeId)
   if (!node) return
 
@@ -1041,6 +1167,8 @@ const handleNodeSelect = async (nodeId: number) => {
       expandedKeys.value.add(node.id)
       // 每次展开都去请求最新数据
       await fetchChildren(node.id)
+    } else if (keepExpanded) {
+      await fetchChildren(node.id)
     } else {
       // 如果已经展开了，再次点击非叶子节点可以选择折叠
       expandedKeys.value.delete(node.id)
@@ -1051,6 +1179,7 @@ const handleNodeSelect = async (nodeId: number) => {
   
   activeNodeId.value = nodeId
   createChildVisible.value = false
+  publishNodeOptionsVisible.value = false
   newChildName.value = ''
   
   isHydratingEditor.value = true
@@ -1095,6 +1224,7 @@ const handleNodeSelect = async (nodeId: number) => {
   vditorInstance = new Vditor('vditor-container', {
     mode: 'ir',
     cdn: '/vditor',
+    value: newContent,
     minHeight: 0,
     height: '100%',
     toolbarConfig: { pin: true },
@@ -1168,6 +1298,7 @@ const createChildNode = async () => {
       const parentNode = nodes.value.find(node => node.id === parentId)
       if (parentNode) {
         parentNode.isLeaf = 0
+        updateDraftDescendantCountAncestors(parentNode, 1, true)
       }
       
       // 乐观更新：将新节点预先推入 nodes.value 中，防止因为数据库延迟导致 fetchChildren 获取不到
@@ -1182,7 +1313,8 @@ const createChildNode = async () => {
           status: 'draft',
           auditStatus: 0,
           hasDraft: 1,
-          path: parentNode ? `${parentNode.path}/${newId}` : `${newId}`,
+          draftDescendantCount: 0,
+          path: parentNode ? `${parentNode.path}${parentNode.id}/` : '0/',
           isLeaf: 1,
           sortOrder: 99999 // 默认排在最后
         } as any)
@@ -1283,7 +1415,7 @@ const treeNodes = computed<AuthorTreeNode[]>(() => {
       .filter(n => Number(n.parentId) === parentId)
       .map(n => {
         const children = buildTree(n.id)
-        const hasDescendantDraft = children.some(
+        const hasDescendantDraft = Number(n.draftDescendantCount || 0) > 0 || children.some(
           child => child.status === 'draft' || child.hasDraft === 1 || child.hasDescendantDraft
         )
         return {
@@ -1346,6 +1478,16 @@ const visibleTreeNodes = computed<VisibleTreeNode[]>(() => {
             <List v-else :size="14" />
           </button>
         </div>
+        <button
+          class="subject-publish-btn"
+          type="button"
+          :disabled="loadingTree || publishingSubject || !canPublishSubject"
+          @click="handlePublishSubject"
+        >
+          <Loader2 v-if="publishingSubject" :size="14" class="spin" />
+          <Send v-else :size="14" />
+          <span>{{ subjectPublishLabel }}</span>
+        </button>
       </div>
       
       <div class="sidebar-content">
@@ -1397,9 +1539,9 @@ const visibleTreeNodes = computed<VisibleTreeNode[]>(() => {
       <div v-else class="editor-container">
         <header class="editor-header">
           <div class="header-status">
-            <span v-if="contentInfo?.auditStatus === 1" class="badge warning">审核中</span>
-            <span v-else-if="contentInfo?.auditStatus === 2" class="badge success">已发布</span>
-            <span v-else-if="contentInfo?.auditStatus === 3" class="badge error">被驳回</span>
+            <span v-if="activeAuditStatus === 1" class="badge warning">审核中</span>
+            <span v-else-if="activeAuditStatus === 2" class="badge success">已发布</span>
+            <span v-else-if="activeAuditStatus === 3" class="badge error">被驳回</span>
             <span v-else class="badge default">草稿</span>
             
             <div class="save-status">
@@ -1410,6 +1552,29 @@ const visibleTreeNodes = computed<VisibleTreeNode[]>(() => {
             </div>
           </div>
           <div class="header-actions">
+            <div v-if="!activeNodeNameReadonly" class="publish-action">
+              <button
+                class="btn-secondary"
+                type="button"
+                :disabled="publishingNode"
+                @click="handlePublishActiveNode"
+              >
+                <Loader2 v-if="publishingNode" :size="14" class="spin" />
+                <Send v-else :size="14" />
+                提交审核
+              </button>
+              <div v-if="publishNodeOptionsVisible" class="publish-menu">
+                <button type="button" class="publish-option" :disabled="publishingNode" @click="submitActiveNodeForReview(false)">
+                  仅当前节点
+                </button>
+                <button type="button" class="publish-option" :disabled="publishingNode" @click="submitActiveNodeForReview(true)">
+                  当前节点及全部子节点
+                </button>
+                <button type="button" class="publish-option subtle" :disabled="publishingNode" @click="publishNodeOptionsVisible = false">
+                  取消
+                </button>
+              </div>
+            </div>
             <button class="btn-primary" type="button" @click="openCreateChild" :disabled="creatingChild">
               <Plus :size="14" />
               新建子节点
@@ -1451,13 +1616,8 @@ const visibleTreeNodes = computed<VisibleTreeNode[]>(() => {
                   class="title-input" 
                   placeholder="输入草稿标题..."
                   autocomplete="off"
-                  maxlength="150"
-                  :readonly="activeNodeNameReadonly"
-                  :class="{ readonly: activeNodeNameReadonly }"
+                  :maxlength="activeNodeNameReadonly ? SUBJECT_NAME_MAX_LENGTH : TITLE_MAX_LENGTH"
                 />
-                <div class="field-tip" v-if="activeNodeNameReadonly">
-                  <span>顶级节点标题不可在此处修改，请通过教材修改接口同步。</span>
-                </div>
                 <div id="vditor-container" class="vditor-wrapper"></div>
               </div>
             </div>
@@ -1813,6 +1973,34 @@ const visibleTreeNodes = computed<VisibleTreeNode[]>(() => {
   gap: 8px;
 }
 
+.subject-publish-btn {
+  width: 100%;
+  height: 34px;
+  margin-top: 12px;
+  border: 1px solid rgba(0, 117, 222, 0.2);
+  border-radius: 6px;
+  background-color: #eef6ff;
+  color: #005bab;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.subject-publish-btn:hover:not(:disabled) {
+  border-color: rgba(0, 117, 222, 0.35);
+  background-color: #e2f0ff;
+}
+
+.subject-publish-btn:disabled {
+  opacity: 0.58;
+  cursor: not-allowed;
+}
+
 .sidebar-title {
   font-size: 16px;
   font-weight: 600;
@@ -2048,6 +2236,51 @@ const visibleTreeNodes = computed<VisibleTreeNode[]>(() => {
   display: flex;
   align-items: center;
   gap: 16px;
+}
+
+.publish-action {
+  position: relative;
+}
+
+.publish-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  z-index: 30;
+  min-width: 190px;
+  padding: 6px;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 6px;
+  background: #ffffff;
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.12);
+}
+
+.publish-option {
+  width: 100%;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: #1f2937;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  padding: 8px 10px;
+  font-size: 13px;
+  font-weight: 500;
+  text-align: left;
+}
+
+.publish-option:hover:not(:disabled) {
+  background: #f3f4f6;
+}
+
+.publish-option.subtle {
+  color: #64748b;
+}
+
+.publish-option:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .save-status {

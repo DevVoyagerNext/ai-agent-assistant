@@ -118,6 +118,15 @@ export const updateSubjectDraft = (data: { subjectId: number; nameDraft: string;
   return request.put<ApiResponse<null>>('/user/subjects', data)
 }
 
+// 15. 修改教材名称
+export const updateSubjectName = (subjectId: number, name: string) => {
+  return request.put<ApiResponse<null>>(`/user/subjects/${subjectId}/name`, { name })
+}
+
+export const publishSubject = (subjectId: number) => {
+  return request.put<ApiResponse<null>>(`/user/subjects/${subjectId}/publish`)
+}
+
 // ----------------------------------------------------
 
 export const getSharedNotes = (page = 1, pageSize = 10) => {

@@ -35,6 +35,7 @@ export interface AuthorNode {
   status: 'draft' | 'published' | 'archived';
   auditStatus: number;
   hasDraft: number;
+  draftDescendantCount: number;
   path: string;
   isLeaf: number;
 }
@@ -50,6 +51,8 @@ export interface AuthorNodeContent {
 export interface AuthorInitRes {
   lastNodeId: number;
   nodeList: AuthorNode[];
+  subjectAuditStatus?: number;
+  subjectStatus?: 'draft' | 'published' | 'archived' | string;
 }
 
 export interface CreateKnowledgeNodePayload {
@@ -65,4 +68,14 @@ export interface UpdateKnowledgeNodeDraftPayload {
 
 export interface UpsertKnowledgeContentPayload {
   contentDraft: string;
+}
+
+export interface PublishKnowledgeNodePayload {
+  includeDescendants?: boolean;
+}
+
+export interface PublishKnowledgeNodeResult {
+  submittedNodeIds: number[];
+  submittedCount: number;
+  includeDescendants: boolean;
 }

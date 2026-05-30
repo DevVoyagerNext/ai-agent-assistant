@@ -9,15 +9,100 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
+const subjectNameMaxLength = 100
+
 type SubjectService struct {
 	subjectDao       dao.SubjectDao
 	knowledgeNodeDao dao.KnowledgeNodeDao
+}
+
+func subjectAuditStatusText(status int8) string {
+	switch status {
+	case 1:
+		return "待审核"
+	case 2:
+		return "已通过"
+	case 3:
+		return "已驳回"
+	default:
+		return "编辑中"
+	}
+}
+
+func subjectAuditActionText(action string) string {
+	switch action {
+	case "approve":
+		return "通过"
+	case "reject":
+		return "驳回"
+	default:
+		return ""
+	}
+}
+
+func subjectPublishState(subject model.Subject) (bool, string) {
+	if subject.Status != "draft" {
+		return false, "只有草稿状态的教材可以发布"
+	}
+	if subject.AuditStatus == 1 {
+		return false, "教材正在审核中，请勿重复提交"
+	}
+	if subject.AuditStatus == 2 {
+		return false, "教材已通过审核，无需再次发布"
+	}
+	return true, ""
+}
+
+func buildUserCreatedSubjectRes(subject model.Subject, likeCount, collectCount int64, auditLog *model.AuditLog) dto.UserCreatedSubjectRes {
+	canPublish, disabledReason := subjectPublishState(subject)
+	res := dto.UserCreatedSubjectRes{
+		ID:                    subject.ID,
+		Slug:                  subject.Slug,
+		Name:                  subject.Name,
+		NameDraft:             subject.NameDraft,
+		Icon:                  subject.Icon,
+		IconDraft:             subject.IconDraft,
+		Description:           subject.Description,
+		DescriptionDraft:      subject.DescriptionDraft,
+		CoverImageID:          subject.CoverImageID,
+		CoverImageIDDraft:     subject.CoverImageIDDraft,
+		Status:                subject.Status,
+		AuditStatus:           subject.AuditStatus,
+		AuditStatusText:       subjectAuditStatusText(subject.AuditStatus),
+		LastLogID:             subject.LastLogID,
+		HasDraft:              subject.HasDraft,
+		CanPublish:            canPublish,
+		PublishDisabledReason: disabledReason,
+		CreatedAt:             subject.CreatedAt,
+		LikeCount:             likeCount,
+		CollectCount:          collectCount,
+	}
+	if auditLog != nil {
+		res.LastAuditAction = auditLog.Action
+		res.LastAuditActionText = subjectAuditActionText(auditLog.Action)
+		res.LastAuditRemark = auditLog.Remark
+		res.LastAuditAt = &auditLog.CreatedAt
+	}
+	return res
+}
+
+func normalizeSubjectName(name string) (string, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "", errors.New("教材名称不能为空")
+	}
+	if utf8.RuneCountInString(name) > subjectNameMaxLength {
+		return "", fmt.Errorf("教材名称不能超过 %d 个字符", subjectNameMaxLength)
+	}
+	return name, nil
 }
 
 func (s *SubjectService) enrichSubjectList(ctx context.Context, userId uint, subjects []model.Subject) ([]dto.SubjectRes, int) {
@@ -122,35 +207,30 @@ func (s *SubjectService) GetUserCreatedSubjects(ctx context.Context, userId uint
 	}
 
 	var subjectIds []uint
+	var logIds []int64
 	for _, sub := range subjects {
 		subjectIds = append(subjectIds, sub.ID)
+		if sub.LastLogID > 0 {
+			logIds = append(logIds, sub.LastLogID)
+		}
 	}
 
 	likeCountMap, collectCountMap, err := s.subjectDao.GetSubjectsStats(ctx, subjectIds)
 	if err != nil {
 		return dto.UserCreatedSubjectListRes{}, errmsg.CodeError
 	}
+	auditLogMap, err := s.subjectDao.GetAuditLogsByIDs(ctx, logIds)
+	if err != nil {
+		return dto.UserCreatedSubjectListRes{}, errmsg.CodeError
+	}
 
 	var resList []dto.UserCreatedSubjectRes
 	for _, sub := range subjects {
-		resList = append(resList, dto.UserCreatedSubjectRes{
-			ID:                sub.ID,
-			Slug:              sub.Slug,
-			Name:              sub.Name,
-			NameDraft:         sub.NameDraft,
-			Icon:              sub.Icon,
-			IconDraft:         sub.IconDraft,
-			Description:       sub.Description,
-			DescriptionDraft:  sub.DescriptionDraft,
-			CoverImageID:      sub.CoverImageID,
-			CoverImageIDDraft: sub.CoverImageIDDraft,
-			Status:            sub.Status,
-			AuditStatus:       sub.AuditStatus,
-			HasDraft:          sub.HasDraft,
-			CreatedAt:         sub.CreatedAt,
-			LikeCount:         likeCountMap[sub.ID],
-			CollectCount:      collectCountMap[sub.ID],
-		})
+		var auditLog *model.AuditLog
+		if log, ok := auditLogMap[sub.LastLogID]; ok {
+			auditLog = &log
+		}
+		resList = append(resList, buildUserCreatedSubjectRes(sub, likeCountMap[sub.ID], collectCountMap[sub.ID], auditLog))
 	}
 
 	return dto.UserCreatedSubjectListRes{Total: total, List: resList}, errmsg.CodeSuccess
@@ -158,18 +238,23 @@ func (s *SubjectService) GetUserCreatedSubjects(ctx context.Context, userId uint
 
 // CreateSubject 创建新教材（同时生成顶级知识节点）
 func (s *SubjectService) CreateSubject(ctx context.Context, userId uint, req dto.CreateSubjectReq) (uint, int) {
+	name, err := normalizeSubjectName(req.NameDraft)
+	if err != nil {
+		return 0, errmsg.CodeError
+	}
+
 	// 生成一个简单的唯一 slug（UUID前8位）
 	slug := fmt.Sprintf("%s-%s", uuid.New().String()[:8], fmt.Sprintf("%d", time.Now().Unix()))
 
 	// 开启事务，保证教材和根节点同时创建
 	var newSubjectId uint
-	err := global.GVA_DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err = global.GVA_DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// 1. 创建教材记录
 		subject := model.Subject{
 			CreatorID:         int(userId),
 			Slug:              slug,
-			Name:              req.NameDraft, // 发布前默认占位
-			NameDraft:         req.NameDraft,
+			Name:              name, // 发布前默认占位
+			NameDraft:         name,
 			Description:       "", // 发布前默认占位
 			DescriptionDraft:  req.DescriptionDraft,
 			Icon:              "", // 发布前默认占位
@@ -191,8 +276,8 @@ func (s *SubjectService) CreateSubject(ctx context.Context, userId uint, req dto
 			SubjectID:   int(newSubjectId),
 			ParentID:    0,
 			Path:        "0/",
-			Name:        req.NameDraft,
-			NameDraft:   req.NameDraft,
+			Name:        name,
+			NameDraft:   name,
 			Status:      "draft",
 			AuditStatus: 0,
 			HasDraft:    1,
@@ -217,6 +302,11 @@ func (s *SubjectService) CreateSubject(ctx context.Context, userId uint, req dto
 
 // UpdateSubjectDraft 修改教材名称或简介草稿
 func (s *SubjectService) UpdateSubjectDraft(ctx context.Context, userId uint, req dto.UpdateSubjectDraftReq) error {
+	name, err := normalizeSubjectName(req.NameDraft)
+	if err != nil {
+		return err
+	}
+
 	// 1. 校验教材是否存在且属于该用户
 	var subject model.Subject
 	if err := global.GVA_DB.WithContext(ctx).Where("id = ? AND creator_id = ?", req.SubjectID, userId).First(&subject).Error; err != nil {
@@ -227,13 +317,13 @@ func (s *SubjectService) UpdateSubjectDraft(ctx context.Context, userId uint, re
 	}
 
 	// 2. 开启事务更新教材草稿及对应的顶级节点草稿
-	err := global.GVA_DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err = global.GVA_DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// 更新教材的 draft 字段
-		if err := s.subjectDao.UpdateSubjectDraftWithTx(tx, req.SubjectID, req.NameDraft, req.IconDraft, req.DescriptionDraft); err != nil {
+		if err := s.subjectDao.UpdateSubjectDraftWithTx(tx, req.SubjectID, name, req.IconDraft, req.DescriptionDraft); err != nil {
 			return err
 		}
 		// 同步更新 parent_id=0 的顶级知识点
-		if err := s.knowledgeNodeDao.UpdateSubjectTopNodeDraftWithTx(tx, req.SubjectID, req.NameDraft); err != nil {
+		if err := s.knowledgeNodeDao.UpdateSubjectTopNodeDraftWithTx(tx, req.SubjectID, name); err != nil {
 			return err
 		}
 		return nil
@@ -242,9 +332,13 @@ func (s *SubjectService) UpdateSubjectDraft(ctx context.Context, userId uint, re
 	return err
 }
 
-// PublishSubject 发布教材
-func (s *SubjectService) PublishSubject(ctx context.Context, userId uint, subjectId int) error {
-	// 1. 校验教材是否存在且属于该用户
+// UpdateSubjectName 修改教材正式名称，并同步顶级知识节点名称。
+func (s *SubjectService) UpdateSubjectName(ctx context.Context, userId uint, subjectId int, name string) error {
+	name, err := normalizeSubjectName(name)
+	if err != nil {
+		return err
+	}
+
 	var subject model.Subject
 	if err := global.GVA_DB.WithContext(ctx).Where("id = ? AND creator_id = ?", subjectId, userId).First(&subject).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -253,12 +347,62 @@ func (s *SubjectService) PublishSubject(ctx context.Context, userId uint, subjec
 		return err
 	}
 
-	// 2. 更新教材状态为待审核 (audit_status=1) 并清除草稿标记 (has_draft=0)
-	if err := s.subjectDao.PublishSubject(ctx, subjectId, userId); err != nil {
-		return err
+	return global.GVA_DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := s.subjectDao.UpdateSubjectNameWithTx(tx, subjectId, userId, name); err != nil {
+			return err
+		}
+		if err := s.knowledgeNodeDao.UpdateSubjectTopNodeNameWithTx(tx, subjectId, name); err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
+// PublishSubject 发布教材
+func (s *SubjectService) PublishSubject(ctx context.Context, userId uint, subjectId int) (dto.UserCreatedSubjectRes, error) {
+	// 1. 校验教材是否存在且属于该用户
+	var subject model.Subject
+	if err := global.GVA_DB.WithContext(ctx).Where("id = ? AND creator_id = ?", subjectId, userId).First(&subject).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return dto.UserCreatedSubjectRes{}, errors.New("无权操作该教材或教材不存在")
+		}
+		return dto.UserCreatedSubjectRes{}, err
 	}
 
-	return nil
+	if subject.Status != "draft" {
+		return dto.UserCreatedSubjectRes{}, errors.New("只有草稿状态的教材可以发布")
+	}
+	if subject.AuditStatus == 1 {
+		return dto.UserCreatedSubjectRes{}, errors.New("教材正在审核中，请勿重复提交")
+	}
+
+	// 2. 更新教材审核状态为待审核 (audit_status=1)，草稿在后台审批通过后再转正
+	if err := s.subjectDao.PublishSubject(ctx, subjectId, userId); err != nil {
+		return dto.UserCreatedSubjectRes{}, err
+	}
+
+	subject.AuditStatus = 1
+	canPublish, disabledReason := subjectPublishState(subject)
+	return dto.UserCreatedSubjectRes{
+		ID:                    subject.ID,
+		Slug:                  subject.Slug,
+		Name:                  subject.Name,
+		NameDraft:             subject.NameDraft,
+		Icon:                  subject.Icon,
+		IconDraft:             subject.IconDraft,
+		Description:           subject.Description,
+		DescriptionDraft:      subject.DescriptionDraft,
+		CoverImageID:          subject.CoverImageID,
+		CoverImageIDDraft:     subject.CoverImageIDDraft,
+		Status:                subject.Status,
+		AuditStatus:           subject.AuditStatus,
+		AuditStatusText:       subjectAuditStatusText(subject.AuditStatus),
+		LastLogID:             subject.LastLogID,
+		HasDraft:              subject.HasDraft,
+		CanPublish:            canPublish,
+		PublishDisabledReason: disabledReason,
+		CreatedAt:             subject.CreatedAt,
+	}, nil
 }
 
 func (s *SubjectService) GetUserCollectedSubjects(ctx context.Context, userId uint, page, pageSize int) ([]dto.SubjectRes, int64, error) {

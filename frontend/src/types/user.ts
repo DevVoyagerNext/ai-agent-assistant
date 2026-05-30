@@ -176,7 +176,15 @@ export interface CreatedSubjectItem {
   coverImageIdDraft: number
   status: 'draft' | 'published' | 'archived'
   auditStatus: number // 0=编辑中, 1=待审核, 2=已通过, 3=被驳回
+  auditStatusText?: string
+  lastLogId?: number
   hasDraft: number // 1=是, 0=否
+  canPublish?: boolean
+  publishDisabledReason?: string
+  lastAuditAction?: string
+  lastAuditActionText?: string
+  lastAuditRemark?: string
+  lastAuditAt?: string | null
   createdAt: string
   likeCount: number
   collectCount: number

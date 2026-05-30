@@ -83,18 +83,31 @@ type UpsertKnowledgeContentReq struct {
 	ContentDraft string `json:"contentDraft" binding:"required"`
 }
 
+// PublishKnowledgeNodeReq 提交知识节点审核请求体
+type PublishKnowledgeNodeReq struct {
+	IncludeDescendants bool `json:"includeDescendants"`
+}
+
+// PublishKnowledgeNodeRes 提交知识节点审核结果
+type PublishKnowledgeNodeRes struct {
+	SubmittedNodeIDs   []uint `json:"submittedNodeIds"`
+	SubmittedCount     int    `json:"submittedCount"`
+	IncludeDescendants bool   `json:"includeDescendants"`
+}
+
 // AuthorChildNodeRes 创作者视角的子节点信息
 type AuthorChildNodeRes struct {
-	ID          uint   `json:"id"`
-	SubjectID   int    `json:"subjectId"`
-	ParentID    int    `json:"parentId"`
-	Name        string `json:"name"`
-	NameDraft   string `json:"nameDraft"`
-	Status      string `json:"status"`
-	AuditStatus int8   `json:"auditStatus"`
-	HasDraft    int8   `json:"hasDraft"`
-	Path        string `json:"path"`
-	IsLeaf      int8   `json:"isLeaf"`
+	ID                   uint   `json:"id"`
+	SubjectID            int    `json:"subjectId"`
+	ParentID             int    `json:"parentId"`
+	Name                 string `json:"name"`
+	NameDraft            string `json:"nameDraft"`
+	Status               string `json:"status"`
+	AuditStatus          int8   `json:"auditStatus"`
+	HasDraft             int8   `json:"hasDraft"`
+	DraftDescendantCount int    `json:"draftDescendantCount"`
+	Path                 string `json:"path"`
+	IsLeaf               int8   `json:"isLeaf"`
 }
 
 // AuthorNodeContentRes 创作者视角的节点内容信息
@@ -108,6 +121,8 @@ type AuthorNodeContentRes struct {
 
 // AuthorInitEditRes 创作者进入编辑页面的初始响应信息
 type AuthorInitEditRes struct {
-	LastNodeID int                  `json:"lastNodeId"` // 最后编辑或默认的节点ID
-	NodeList   []AuthorChildNodeRes `json:"nodeList"`   // 需要展开的节点树扁平列表
+	LastNodeID         int                  `json:"lastNodeId"`         // 最后编辑或默认的节点ID
+	NodeList           []AuthorChildNodeRes `json:"nodeList"`           // 需要展开的节点树扁平列表
+	SubjectAuditStatus int8                 `json:"subjectAuditStatus"` // 教材审核状态
+	SubjectStatus      string               `json:"subjectStatus"`      // 教材发布状态
 }

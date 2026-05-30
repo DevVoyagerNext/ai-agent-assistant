@@ -4,6 +4,7 @@ import (
 	"backend/global"
 	"backend/model"
 	"context"
+	"errors"
 	"time"
 
 	"gorm.io/gorm"
@@ -73,15 +74,30 @@ func (d *SubjectDao) UpdateSubjectDraftWithTx(tx *gorm.DB, subjectId int, nameDr
 	}).Error
 }
 
-// PublishSubject 发布教材，修改审核状态和草稿标记
-func (d *SubjectDao) PublishSubject(ctx context.Context, subjectId int, userId uint) error {
-	return global.GVA_DB.WithContext(ctx).
-		Model(&model.Subject{}).
+func (d *SubjectDao) UpdateSubjectNameWithTx(tx *gorm.DB, subjectId int, userId uint, name string) error {
+	return tx.Model(&model.Subject{}).
 		Where("id = ? AND creator_id = ?", subjectId, userId).
 		Updates(map[string]interface{}{
-			"audit_status": 1,
-			"has_draft":    0,
+			"name":       name,
+			"name_draft": name,
 		}).Error
+}
+
+// PublishSubject 发布教材，先进入待审核状态
+func (d *SubjectDao) PublishSubject(ctx context.Context, subjectId int, userId uint) error {
+	tx := global.GVA_DB.WithContext(ctx).
+		Model(&model.Subject{}).
+		Where("id = ? AND creator_id = ? AND status = ? AND audit_status <> ?", subjectId, userId, "draft", 1).
+		Updates(map[string]interface{}{
+			"audit_status": 1,
+		})
+	if tx.Error != nil {
+		return tx.Error
+	}
+	if tx.RowsAffected == 0 {
+		return errors.New("教材正在审核中或不是草稿状态，不能重复发布")
+	}
+	return nil
 }
 
 func (d *SubjectDao) GetSubjectWritingProgress(ctx context.Context, userId uint, subjectId int) (*model.SubjectWritingProgress, error) {
@@ -427,4 +443,20 @@ func (d *SubjectDao) GetSubjectsStats(ctx context.Context, subjectIds []uint) (m
 	}
 
 	return likeCountMap, collectCountMap, nil
+}
+
+func (d *SubjectDao) GetAuditLogsByIDs(ctx context.Context, logIDs []int64) (map[int64]model.AuditLog, error) {
+	logMap := make(map[int64]model.AuditLog)
+	if len(logIDs) == 0 {
+		return logMap, nil
+	}
+
+	var logs []model.AuditLog
+	if err := global.GVA_DB.WithContext(ctx).Where("id IN ?", logIDs).Find(&logs).Error; err != nil {
+		return nil, err
+	}
+	for _, log := range logs {
+		logMap[log.ID] = log
+	}
+	return logMap, nil
 }

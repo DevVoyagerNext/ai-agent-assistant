@@ -9,7 +9,9 @@ import type {
   AuthorNodeContent,
   CreateKnowledgeNodePayload,
   UpdateKnowledgeNodeDraftPayload,
-  UpsertKnowledgeContentPayload
+  UpsertKnowledgeContentPayload,
+  PublishKnowledgeNodePayload,
+  PublishKnowledgeNodeResult
 } from '../types/node'
 import { validateNoteContent } from '../utils/noteValidation'
 
@@ -90,4 +92,8 @@ export const updateKnowledgeNodeDraft = (nodeId: number, data: UpdateKnowledgeNo
 // 6. 更新或创建知识点正文内容草稿
 export const upsertKnowledgeContent = (nodeId: number, data: UpsertKnowledgeContentPayload) => {
   return request.put<ApiResponse<null>>(`/nodes/${nodeId}/content`, data)
+}
+
+export const publishKnowledgeNode = (nodeId: number, data: PublishKnowledgeNodePayload = {}) => {
+  return request.put<ApiResponse<PublishKnowledgeNodeResult>>(`/nodes/${nodeId}/publish`, data)
 }

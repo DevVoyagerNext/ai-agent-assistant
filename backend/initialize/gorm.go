@@ -51,6 +51,7 @@ func Gorm() *gorm.DB {
 			&model.UserDailyActionStat{},
 			&model.UserFollow{},
 			&model.UserPrivateNote{},
+			&model.AuditLog{},
 		)
 		if err != nil {
 			return nil

@@ -1,6 +1,7 @@
 import request from '../utils/request'
 import type { ApiResponse } from '../types/index'
 import type { Subject, SubjectCategory, SubjectSearchRes } from '../types/subject'
+import type { CreatedSubjectItem } from '../types/user'
 
 // 获取教材分类
 export const getSubjectCategories = () => {
@@ -26,4 +27,9 @@ export const searchSubjects = (keyword: string, page = 1, pageSize = 20) => {
 // 获取教材详情
 export const getSubjectDetail = (id: number) => {
   return request.get<ApiResponse<Subject>>(`/subjects/${id}`)
+}
+
+// 作者第一次发布教材：进入后台待审核队列，审核通过后才会正式 published
+export const publishSubject = (subjectId: number) => {
+  return request.put<ApiResponse<CreatedSubjectItem>>(`/user/subjects/${subjectId}/publish`)
 }

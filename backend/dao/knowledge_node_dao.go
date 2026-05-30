@@ -39,25 +39,25 @@ func (dao *KnowledgeNodeDao) GetChildNodesWithoutStatus(parentID int) ([]model.K
 	return nodes, err
 }
 
-// GetNodesByParentIDs 批量根据 parentId 列表获取子节点列表
-func (dao *KnowledgeNodeDao) GetNodesByParentIDs(parentIDs []int) ([]model.KnowledgeNode, error) {
+// GetNodesByParentIDs 批量根据 parentId 列表获取指定教材下的子节点列表
+func (dao *KnowledgeNodeDao) GetNodesByParentIDs(subjectID int, parentIDs []int) ([]model.KnowledgeNode, error) {
 	var nodes []model.KnowledgeNode
 	if len(parentIDs) == 0 {
 		return nodes, nil
 	}
-	err := global.GVA_DB.Where("parent_id IN ? AND status = ?", parentIDs, "published").
+	err := global.GVA_DB.Where("subject_id = ? AND parent_id IN ? AND status = ?", subjectID, parentIDs, "published").
 		Order("parent_id asc, sort_order asc").
 		Find(&nodes).Error
 	return nodes, err
 }
 
-// GetNodesByParentIDsWithoutStatus 批量根据 parentId 列表获取子节点列表（不限制状态）
-func (dao *KnowledgeNodeDao) GetNodesByParentIDsWithoutStatus(parentIDs []int) ([]model.KnowledgeNode, error) {
+// GetNodesByParentIDsWithoutStatus 批量根据 parentId 列表获取指定教材下的子节点列表（不限制状态）
+func (dao *KnowledgeNodeDao) GetNodesByParentIDsWithoutStatus(subjectID int, parentIDs []int) ([]model.KnowledgeNode, error) {
 	var nodes []model.KnowledgeNode
 	if len(parentIDs) == 0 {
 		return nodes, nil
 	}
-	err := global.GVA_DB.Where("parent_id IN ?", parentIDs).
+	err := global.GVA_DB.Where("subject_id = ? AND parent_id IN ?", subjectID, parentIDs).
 		Order("parent_id asc, sort_order asc").
 		Find(&nodes).Error
 	return nodes, err
@@ -80,6 +80,20 @@ func (dao *KnowledgeNodeDao) GetNodeByIDWithoutStatus(nodeID int) (model.Knowled
 // CreateKnowledgeNodeWithTx 在事务中创建知识节点
 func (dao *KnowledgeNodeDao) CreateKnowledgeNodeWithTx(tx *gorm.DB, node *model.KnowledgeNode) error {
 	return tx.Create(node).Error
+}
+
+// UpdateAncestorDraftDescendantCountWithTx updates ancestor cached descendant draft counts.
+func (dao *KnowledgeNodeDao) UpdateAncestorDraftDescendantCountWithTx(tx *gorm.DB, subjectID int, nodeIDs []int, delta int) error {
+	if len(nodeIDs) == 0 || delta == 0 {
+		return nil
+	}
+	expr := gorm.Expr("draft_descendant_count + ?", delta)
+	if delta < 0 {
+		expr = gorm.Expr("CASE WHEN draft_descendant_count + ? < 0 THEN 0 ELSE draft_descendant_count + ? END", delta, delta)
+	}
+	return tx.Model(&model.KnowledgeNode{}).
+		Where("subject_id = ? AND id IN ?", subjectID, nodeIDs).
+		Update("draft_descendant_count", expr).Error
 }
 
 // UpdateNodeIsLeafWithTx 在事务中更新节点的 IsLeaf 状态
@@ -107,14 +121,61 @@ func (dao *KnowledgeNodeDao) UpdateSubjectTopNodeDraftWithTx(tx *gorm.DB, subjec
 		}).Error
 }
 
+func (dao *KnowledgeNodeDao) UpdateSubjectTopNodeNameWithTx(tx *gorm.DB, subjectID int, name string) error {
+	return tx.Model(&model.KnowledgeNode{}).
+		Where("subject_id = ? AND parent_id = 0", subjectID).
+		Updates(map[string]interface{}{
+			"name":       name,
+			"name_draft": name,
+		}).Error
+}
+
 // UpdateKnowledgeNodeDraft 更新知识点节点的草稿名称
 func (dao *KnowledgeNodeDao) UpdateKnowledgeNodeDraft(nodeID int, nameDraft string) error {
-	return global.GVA_DB.Model(&model.KnowledgeNode{}).
-		Where("id = ?", nodeID).
+	_, err := dao.UpdateKnowledgeNodeDraftWithTx(global.GVA_DB, nodeID, nameDraft)
+	return err
+}
+
+// UpdateKnowledgeNodeDraftWithTx 更新知识点节点的草稿名称
+func (dao *KnowledgeNodeDao) UpdateKnowledgeNodeDraftWithTx(tx *gorm.DB, nodeID int, nameDraft string) (bool, error) {
+	res := tx.Model(&model.KnowledgeNode{}).
+		Where("id = ? AND has_draft = ?", nodeID, 0).
 		Updates(map[string]interface{}{
 			"name_draft": nameDraft,
 			"has_draft":  1,
-		}).Error
+		})
+	if res.Error != nil {
+		return false, res.Error
+	}
+	if res.RowsAffected > 0 {
+		return true, nil
+	}
+	err := tx.Model(&model.KnowledgeNode{}).
+		Where("id = ?", nodeID).
+		Update("name_draft", nameDraft).Error
+	return false, err
+}
+
+// UpdateKnowledgeNodeHasDraftWithTx marks a node as having its own draft.
+func (dao *KnowledgeNodeDao) UpdateKnowledgeNodeHasDraftWithTx(tx *gorm.DB, nodeID int) (bool, error) {
+	res := tx.Model(&model.KnowledgeNode{}).
+		Where("id = ? AND has_draft = ?", nodeID, 0).
+		Update("has_draft", 1)
+	if res.Error != nil {
+		return false, res.Error
+	}
+	return res.RowsAffected > 0, nil
+}
+
+// ClearKnowledgeNodeHasDraftWithTx clears a node draft flag and reports whether it changed.
+func (dao *KnowledgeNodeDao) ClearKnowledgeNodeHasDraftWithTx(tx *gorm.DB, nodeID int) (bool, error) {
+	res := tx.Model(&model.KnowledgeNode{}).
+		Where("id = ? AND has_draft = ?", nodeID, 1).
+		Update("has_draft", 0)
+	if res.Error != nil {
+		return false, res.Error
+	}
+	return res.RowsAffected > 0, nil
 }
 
 // GetNodeContentByID 获取知识点内容（正文等）
@@ -126,8 +187,13 @@ func (dao *KnowledgeNodeDao) GetNodeContentByID(nodeID int) (model.KnowledgeCont
 
 // UpsertKnowledgeContent 更新或创建知识点正文内容草稿
 func (dao *KnowledgeNodeDao) UpsertKnowledgeContent(nodeID int, contentDraft string) error {
+	return dao.UpsertKnowledgeContentWithTx(global.GVA_DB, nodeID, contentDraft)
+}
+
+// UpsertKnowledgeContentWithTx 更新或创建知识点正文内容草稿
+func (dao *KnowledgeNodeDao) UpsertKnowledgeContentWithTx(tx *gorm.DB, nodeID int, contentDraft string) error {
 	var content model.KnowledgeContent
-	err := global.GVA_DB.Where("node_id = ?", nodeID).First(&content).Error
+	err := tx.Where("node_id = ?", nodeID).First(&content).Error
 
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -139,13 +205,13 @@ func (dao *KnowledgeNodeDao) UpsertKnowledgeContent(nodeID int, contentDraft str
 				AuditStatus:  0,
 				HasDraft:     1,
 			}
-			return global.GVA_DB.Create(&content).Error
+			return tx.Create(&content).Error
 		}
 		return err
 	}
 
 	// 如果存在记录，则更新其 draft 字段
-	return global.GVA_DB.Model(&content).Updates(map[string]interface{}{
+	return tx.Model(&content).Updates(map[string]interface{}{
 		"content_draft": contentDraft,
 		"has_draft":     1,
 	}).Error

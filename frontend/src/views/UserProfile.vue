@@ -14,8 +14,10 @@ import {
   updatePrivateNoteTitle, updatePrivateNotePublic, 
   updateCollectFolderPublic, updateCollectFolderName,
   getSubjectsInFolder, getPrivateNoteDetail, updatePrivateNoteContent,
-  createPrivateNote, sharePrivateNote, updateShareNoteStatus, updateShareNoteExpire, deleteSharedNote, createSubject
+  createPrivateNote, sharePrivateNote, updateShareNoteStatus, updateShareNoteExpire, deleteSharedNote, createSubject, updateSubjectName
 } from '../api/user'
+import { publishSubject } from '../api/subject'
+import type { CreatedSubjectItem } from '../types/user'
 
 const router = useRouter()
 const isAuthenticated = computed(() => !!localStorage.getItem('token'))
@@ -59,8 +61,31 @@ const publishedWithDraftSubjects = computed(() =>
 )
 
 const draftSubjects = computed(() => 
-  createdSubjects.value.filter(s => s.status === 'draft')
+  createdSubjects.value.filter(s => s.status === 'draft' && Number(s.auditStatus) !== 1)
 )
+
+const pendingSubjectAudits = computed(() =>
+  createdSubjects.value.filter(s => s.status === 'draft' && Number(s.auditStatus) === 1)
+)
+
+const canPublishCreatedSubject = (subject: CreatedSubjectItem) => {
+  if (typeof subject.canPublish === 'boolean') return subject.canPublish
+  return subject.status === 'draft' && Number(subject.auditStatus) !== 1 && Number(subject.auditStatus) !== 2
+}
+
+const getPublishDisabledReason = (subject: CreatedSubjectItem) => {
+  if (subject.publishDisabledReason) return subject.publishDisabledReason
+  if (Number(subject.auditStatus) === 1) return '教材正在审核中，请勿重复提交'
+  if (subject.status !== 'draft') return '只有草稿状态的教材可以发布'
+  if (Number(subject.auditStatus) === 2) return '教材已通过审核，无需再次发布'
+  return ''
+}
+
+const getPublishButtonText = (subject: CreatedSubjectItem) => {
+  if (Number(subject.auditStatus) === 1) return '审核中'
+  if (Number(subject.auditStatus) === 3) return '重新提交'
+  return '发布'
+}
 
 const toast = reactive({
   show: false,
@@ -125,10 +150,12 @@ const renameTitle = ref('')
 const renaming = ref(false)
 const pendingRenameNote = ref<any>(null)
 const pendingRenameFolder = ref<any>(null)
+const pendingRenameSubject = ref<any>(null)
 
 const openRename = (note: any) => {
   pendingRenameNote.value = note
   pendingRenameFolder.value = null
+  pendingRenameSubject.value = null
   renameTitle.value = note.title
   showRenameModal.value = true
 }
@@ -136,27 +163,47 @@ const openRename = (note: any) => {
 const openRenameFolder = (folder: any) => {
   pendingRenameFolder.value = folder
   pendingRenameNote.value = null
+  pendingRenameSubject.value = null
   renameTitle.value = folder.name
   showRenameModal.value = true
 }
 
+const openRenameSubject = (subject: any) => {
+  pendingRenameSubject.value = subject
+  pendingRenameNote.value = null
+  pendingRenameFolder.value = null
+  renameTitle.value = subject.nameDraft || subject.name || ''
+  showRenameModal.value = true
+}
+
 const handleRename = async () => {
-  if (!renameTitle.value.trim()) return
+  const nextName = renameTitle.value.trim()
+  if (!nextName) return
   renaming.value = true
   try {
     if (pendingRenameNote.value) {
-      const res = await updatePrivateNoteTitle(pendingRenameNote.value.id, renameTitle.value)
+      const res = await updatePrivateNoteTitle(pendingRenameNote.value.id, nextName)
       if (res.data?.code === 200) {
-        pendingRenameNote.value.title = renameTitle.value
+        pendingRenameNote.value.title = nextName
         showToast('重命名成功', 'success')
         showRenameModal.value = false
       } else {
         showToast(res.data?.msg || '重命名失败', 'error')
       }
     } else if (pendingRenameFolder.value) {
-      const res = await updateCollectFolderName(pendingRenameFolder.value.id, renameTitle.value)
+      const res = await updateCollectFolderName(pendingRenameFolder.value.id, nextName)
       if (res.data?.code === 200) {
-        pendingRenameFolder.value.name = renameTitle.value
+        pendingRenameFolder.value.name = nextName
+        showToast('重命名成功', 'success')
+        showRenameModal.value = false
+      } else {
+        showToast(res.data?.msg || '重命名失败', 'error')
+      }
+    } else if (pendingRenameSubject.value) {
+      const res = await updateSubjectName(pendingRenameSubject.value.id, nextName)
+      if (res.data?.code === 200) {
+        pendingRenameSubject.value.name = nextName
+        pendingRenameSubject.value.nameDraft = nextName
         showToast('重命名成功', 'success')
         showRenameModal.value = false
       } else {
@@ -609,17 +656,33 @@ const scrollTo = (id: string) => {
 }
 
 // 创建教材逻辑
+const showCreateSubjectModal = ref(false)
 const creatingSubject = ref(false)
+const publishingSubjectId = ref<number | null>(null)
+const newSubjectName = ref('')
+
+const openCreateSubjectModal = () => {
+  if (creatingSubject.value) return
+  newSubjectName.value = ''
+  showCreateSubjectModal.value = true
+}
 
 const handleCreateSubject = async () => {
   if (creatingSubject.value) return
+  const subjectName = newSubjectName.value.trim()
+  if (!subjectName) {
+    showToast('请先输入教材名称', 'error')
+    return
+  }
+
   creatingSubject.value = true
 
   try {
     const res = await createSubject({
-      nameDraft: '未命名新教材'
+      nameDraft: subjectName
     })
     if (res.data?.code === 200 && res.data.data?.subjectId) {
+      showCreateSubjectModal.value = false
       showToast('教材创建成功，即将前往编辑页面', 'success')
       setTimeout(() => {
         router.push(`/author/subject/${res.data.data.subjectId}`)
@@ -631,6 +694,39 @@ const handleCreateSubject = async () => {
     showToast(err?.response?.data?.msg || '创建失败', 'error')
   } finally {
     creatingSubject.value = false
+  }
+}
+
+const handlePublishSubject = async (subject: CreatedSubjectItem) => {
+  if (!canPublishCreatedSubject(subject)) {
+    showToast(getPublishDisabledReason(subject) || '当前教材不可发布', 'error')
+    return
+  }
+  const subjectId = subject.id
+  if (publishingSubjectId.value) return
+  publishingSubjectId.value = subjectId
+  try {
+    const res = await publishSubject(subjectId)
+    if (res.data?.code === 200) {
+      showToast('教材已提交审核', 'success')
+      if (res.data.data) {
+        const index = createdSubjects.value.findIndex(item => item.id === subjectId)
+        if (index >= 0) {
+          createdSubjects.value.splice(index, 1, {
+            ...createdSubjects.value[index],
+            ...res.data.data
+          })
+        }
+      } else {
+        await refreshAll()
+      }
+    } else {
+      showToast(res.data?.msg || '提交审核失败', 'error')
+    }
+  } catch (err: any) {
+    showToast(err?.response?.data?.msg || '提交审核失败', 'error')
+  } finally {
+    publishingSubjectId.value = null
   }
 }
 </script>
@@ -867,7 +963,7 @@ const handleCreateSubject = async () => {
               <Layers :size="20" class="icon-blue" />
               <h2>创建的教材</h2>
             </div>
-            <button class="create-subject-btn" @click="handleCreateSubject" :disabled="creatingSubject">
+            <button class="create-subject-btn" @click="openCreateSubjectModal" :disabled="creatingSubject">
               <Loader2 v-if="creatingSubject" :size="16" class="spin" />
               <Plus v-else :size="16" />
               创建教材
@@ -896,6 +992,7 @@ const handleCreateSubject = async () => {
                 <div class="note-title-line">
                   <Book :size="16" class="note-type-icon icon-teal" />
                   <h4>{{ subject.name }}</h4>
+                  <Edit3 :size="12" class="edit-icon-mini" @click.stop="openRenameSubject(subject)" />
                   <span class="status-badge published">已发布</span>
                   <span class="date">{{ formatDate(subject.createdAt) }}</span>
                 </div>
@@ -915,7 +1012,34 @@ const handleCreateSubject = async () => {
                 <div class="note-title-line">
                   <Book :size="16" class="note-type-icon icon-orange" />
                   <h4>{{ subject.name }}</h4>
+                  <Edit3 :size="12" class="edit-icon-mini" @click.stop="openRenameSubject(subject)" />
                   <span class="status-badge has-draft">有草稿</span>
+                  <span class="date">{{ formatDate(subject.createdAt) }}</span>
+                </div>
+              </div>
+            </div>
+
+            <div v-if="pendingSubjectAudits.length" class="subject-group">
+              <h3 class="group-title">审核中</h3>
+              <div
+                v-for="subject in pendingSubjectAudits"
+                :key="subject.id"
+                class="note-item"
+                @click="router.push(`/author/subject/${subject.id}`)"
+                style="cursor: pointer;"
+              >
+                <div class="note-title-line">
+                  <Book :size="16" class="note-type-icon icon-orange" />
+                  <h4>{{ subject.nameDraft || subject.name || '未命名教材' }}</h4>
+                  <span class="status-badge pending">待审核</span>
+                  <button
+                    class="publish-subject-btn"
+                    disabled
+                    :title="getPublishDisabledReason(subject)"
+                    @click.stop
+                  >
+                    <span>{{ getPublishButtonText(subject) }}</span>
+                  </button>
                   <span class="date">{{ formatDate(subject.createdAt) }}</span>
                 </div>
               </div>
@@ -934,7 +1058,18 @@ const handleCreateSubject = async () => {
                 <div class="note-title-line">
                   <Book :size="16" class="note-type-icon icon-gray" />
                   <h4>{{ subject.nameDraft || subject.name || '未命名教材' }}</h4>
-                  <span class="status-badge draft">草稿</span>
+                  <Edit3 :size="12" class="edit-icon-mini" @click.stop="openRenameSubject(subject)" />
+                  <span v-if="Number(subject.auditStatus) === 3" class="status-badge rejected">被驳回</span>
+                  <span v-else class="status-badge draft">草稿</span>
+                  <button
+                    class="publish-subject-btn"
+                    :disabled="publishingSubjectId === subject.id || !canPublishCreatedSubject(subject)"
+                    :title="getPublishDisabledReason(subject)"
+                    @click.stop="handlePublishSubject(subject)"
+                  >
+                    <Loader2 v-if="publishingSubjectId === subject.id" :size="13" class="spin" />
+                    <span>{{ getPublishButtonText(subject) }}</span>
+                  </button>
                   <span class="date">{{ formatDate(subject.createdAt) }}</span>
                 </div>
               </div>
@@ -1220,6 +1355,45 @@ const handleCreateSubject = async () => {
       </div>
     </Teleport>
 
+    <!-- 新建教材弹窗 -->
+    <Teleport to="body">
+      <div v-if="showCreateSubjectModal" class="modal-overlay create-modal-overlay" @click.self="!creatingSubject && (showCreateSubjectModal = false)">
+        <div class="modal-content small-modal">
+          <header class="modal-header">
+            <div class="header-left">
+              <Book :size="20" class="icon-blue" />
+              <h3>创建教材</h3>
+            </div>
+            <button class="close-btn" :disabled="creatingSubject" @click="showCreateSubjectModal = false">
+              <X :size="20" />
+            </button>
+          </header>
+          <div class="modal-body">
+            <div class="form-group">
+              <label>教材名称</label>
+              <input
+                v-model="newSubjectName"
+                type="text"
+                placeholder="请输入教材名称"
+                maxlength="100"
+                autocomplete="off"
+                @keyup.enter="handleCreateSubject"
+              />
+            </div>
+          </div>
+          <footer class="modal-footer">
+            <div class="form-actions">
+              <button class="cancel-btn" :disabled="creatingSubject" @click="showCreateSubjectModal = false">取消</button>
+              <button class="confirm-btn" :disabled="creatingSubject || !newSubjectName.trim()" @click="handleCreateSubject">
+                <Loader2 v-if="creatingSubject" class="spin" :size="16" />
+                <span>确认创建</span>
+              </button>
+            </div>
+          </footer>
+        </div>
+      </div>
+    </Teleport>
+
     <!-- 重命名弹窗 -->
     <Teleport to="body">
       <div v-if="showRenameModal" class="modal-overlay rename-modal-overlay" @click.self="showRenameModal = false">
@@ -1233,13 +1407,13 @@ const handleCreateSubject = async () => {
           <div class="modal-body">
             <div class="form-group">
               <label>新名称</label>
-              <input v-model="renameTitle" type="text" placeholder="请输入新名称" maxlength="255" @keyup.enter="handleRename" />
+              <input v-model="renameTitle" type="text" placeholder="请输入新名称" :maxlength="pendingRenameSubject ? 100 : 255" @keyup.enter="handleRename" />
             </div>
           </div>
           <footer class="modal-footer">
             <div class="form-actions">
               <button class="cancel-btn" @click="showRenameModal = false">取消</button>
-              <button class="confirm-btn" :disabled="renaming" @click="handleRename">
+              <button class="confirm-btn" :disabled="renaming || !renameTitle.trim()" @click="handleRename">
                 <Loader2 v-if="renaming" class="spin" :size="16" />
                 <span>确认</span>
               </button>
@@ -2990,9 +3164,41 @@ const handleCreateSubject = async () => {
   color: #f59e0b;
 }
 
+.status-badge.pending {
+  background: rgba(59, 130, 246, 0.1);
+  color: #3b82f6;
+}
+
+.status-badge.rejected {
+  background: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
+}
+
 .status-badge.draft {
   background: rgba(107, 114, 128, 0.1);
   color: #6b7280;
+}
+
+.publish-subject-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-height: 26px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 4px;
+  background: var(--notion-blue);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  margin-left: 8px;
+}
+
+.publish-subject-btn:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
 }
 
 .icon-gray {

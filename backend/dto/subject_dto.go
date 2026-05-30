@@ -59,22 +59,30 @@ type SubjectListRes struct {
 
 // UserCreatedSubjectRes 用户创建的教材返回结构，包含草稿和统计信息
 type UserCreatedSubjectRes struct {
-	ID                uint      `json:"id"`
-	Slug              string    `json:"slug"`
-	Name              string    `json:"name"`
-	NameDraft         string    `json:"nameDraft"`
-	Icon              string    `json:"icon"`
-	IconDraft         string    `json:"iconDraft"`
-	Description       string    `json:"description"`
-	DescriptionDraft  string    `json:"descriptionDraft"`
-	CoverImageID      int       `json:"coverImageId"`
-	CoverImageIDDraft int       `json:"coverImageIdDraft"`
-	Status            string    `json:"status"`
-	AuditStatus       int8      `json:"auditStatus"`
-	HasDraft          int8      `json:"hasDraft"`
-	CreatedAt         time.Time `json:"createdAt"`
-	LikeCount         int64     `json:"likeCount"`    // 点赞总数
-	CollectCount      int64     `json:"collectCount"` // 收藏总数
+	ID                    uint       `json:"id"`
+	Slug                  string     `json:"slug"`
+	Name                  string     `json:"name"`
+	NameDraft             string     `json:"nameDraft"`
+	Icon                  string     `json:"icon"`
+	IconDraft             string     `json:"iconDraft"`
+	Description           string     `json:"description"`
+	DescriptionDraft      string     `json:"descriptionDraft"`
+	CoverImageID          int        `json:"coverImageId"`
+	CoverImageIDDraft     int        `json:"coverImageIdDraft"`
+	Status                string     `json:"status"`
+	AuditStatus           int8       `json:"auditStatus"`
+	AuditStatusText       string     `json:"auditStatusText"`
+	LastLogID             int64      `json:"lastLogId"`
+	HasDraft              int8       `json:"hasDraft"`
+	CanPublish            bool       `json:"canPublish"`
+	PublishDisabledReason string     `json:"publishDisabledReason"`
+	LastAuditAction       string     `json:"lastAuditAction"`
+	LastAuditActionText   string     `json:"lastAuditActionText"`
+	LastAuditRemark       string     `json:"lastAuditRemark"`
+	LastAuditAt           *time.Time `json:"lastAuditAt"`
+	CreatedAt             time.Time  `json:"createdAt"`
+	LikeCount             int64      `json:"likeCount"`    // 点赞总数
+	CollectCount          int64      `json:"collectCount"` // 收藏总数
 }
 
 type UserCreatedSubjectListRes struct {
@@ -106,6 +114,10 @@ type CreateSubjectReq struct {
 	DescriptionDraft  string `json:"descriptionDraft" binding:"max=500"`
 	IconDraft         string `json:"iconDraft" binding:"max=255"`
 	CoverImageIdDraft int    `json:"coverImageIdDraft" binding:"min=0"`
+}
+
+type UpdateSubjectNameReq struct {
+	Name string `json:"name" binding:"required,min=1,max=100"`
 }
 
 type UpdateSubjectDraftReq struct {

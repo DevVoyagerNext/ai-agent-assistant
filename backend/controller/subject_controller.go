@@ -6,6 +6,7 @@ import (
 	"backend/pkg/utils/response"
 	"backend/service"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 )
@@ -36,6 +37,11 @@ func (con *SubjectController) CreateSubject(c *gin.Context) {
 	var req dto.CreateSubjectReq
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.FailWithMsg(errmsg.CodeError, "参数错误: "+err.Error(), c)
+		return
+	}
+	req.NameDraft = strings.TrimSpace(req.NameDraft)
+	if req.NameDraft == "" {
+		response.FailWithMsg(errmsg.CodeError, "教材名称不能为空", c)
 		return
 	}
 
@@ -73,6 +79,36 @@ func (con *SubjectController) UpdateSubjectDraft(c *gin.Context) {
 	response.Ok(nil, c)
 }
 
+// UpdateSubjectName 修改教材名称
+func (con *SubjectController) UpdateSubjectName(c *gin.Context) {
+	userId, err := con.authService.GetUserID(c)
+	if err != nil || userId == 0 {
+		response.FailWithCode(errmsg.UserTokenNotExist, c)
+		return
+	}
+
+	subjectIdStr := c.Param("id")
+	subjectId, err := strconv.Atoi(subjectIdStr)
+	if err != nil || subjectId <= 0 {
+		response.FailWithCode(errmsg.CodeError, c)
+		return
+	}
+
+	var req dto.UpdateSubjectNameReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.FailWithMsg(errmsg.CodeError, "参数错误: "+err.Error(), c)
+		return
+	}
+
+	err = con.subjectService.UpdateSubjectName(c.Request.Context(), userId, subjectId, req.Name)
+	if err != nil {
+		response.FailWithMsg(errmsg.CodeError, err.Error(), c)
+		return
+	}
+
+	response.Ok(nil, c)
+}
+
 // PublishSubject 发布教材
 func (con *SubjectController) PublishSubject(c *gin.Context) {
 	userId, err := con.authService.GetUserID(c)
@@ -88,13 +124,13 @@ func (con *SubjectController) PublishSubject(c *gin.Context) {
 		return
 	}
 
-	err = con.subjectService.PublishSubject(c.Request.Context(), userId, subjectId)
+	res, err := con.subjectService.PublishSubject(c.Request.Context(), userId, subjectId)
 	if err != nil {
 		response.FailWithMsg(errmsg.CodeError, err.Error(), c)
 		return
 	}
 
-	response.Ok(nil, c)
+	response.Ok(res, c)
 }
 
 // ToggleSubjectLike 点赞或取消点赞教材（需要登录）

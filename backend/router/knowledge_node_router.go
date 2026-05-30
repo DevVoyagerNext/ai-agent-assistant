@@ -33,6 +33,7 @@ func (s *KnowledgeNodeRouter) InitAuthKnowledgeNodeRouter(Router *gin.RouterGrou
 		authNodeRouter.PUT("/:nodeId/draft", nodeController.UpdateKnowledgeNodeDraft)
 		// 3. 更新或创建知识点正文内容草稿
 		authNodeRouter.PUT("/:nodeId/content", nodeController.UpsertKnowledgeContent)
+		authNodeRouter.PUT("/:nodeId/publish", nodeController.PublishKnowledgeNode)
 		// 4. 创作者获取子节点列表
 		authNodeRouter.GET("/:nodeId/author-children", nodeController.GetAuthorChildNodes)
 		// 5. 创作者获取节点内容
